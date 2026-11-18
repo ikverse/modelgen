@@ -450,6 +450,12 @@ def find_models(q, limit=10):
     return {"models": made, "ready_made": catalogue}
 
 
+def _good_enough(v, min_score):
+    """Whether a version meets a job's bar: its score against min_score, or its own pass when unscored."""
+    score = v.get("score")
+    return score >= min_score if score is not None else bool(v.get("passed"))
+
+
 async def _reuse(job):
     """An accepted model that IS the object asked for, checked by the caster; (project, version) or None."""
     req = job["request"]
@@ -460,6 +466,8 @@ async def _reuse(job):
     for m in _made_models():
         if head and asset_catalog._norm(head) not in m["words"]:
             continue
+        if not _good_enough(m["version"], req["min_score"]):
+            continue  # a model that never passed is not reused: build anew
         found.append((len(wanted & m["words"]), m))
     if not found:
         return None
