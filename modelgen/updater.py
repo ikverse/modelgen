@@ -3,15 +3,18 @@
 An installed copy (the installer leaves installed.json in its folder) asks GitHub for the latest
 release when it starts and every few hours (updates: in config.yaml; the Settings page can switch
 it off). Only the release's version is read: nothing about this PC or its user is sent. When a
-newer one is there, the top bar offers it; installing downloads the release's ModelGen-Setup.exe,
-checks it against the SHA-256 fingerprint published with it, starts it quietly and closes
-ModelGen. The setup replaces the program files, keeps the person's models, library and settings,
+newer one is there, the top bar offers it; installing downloads the release's ModelGen-Setup.exe
+and its signature (ModelGen-Setup.exe.sig), only from this repository's release downloads, and
+checks the signature against the public key built into ModelGen (update_key.py). The signature
+covers the version and the setup's SHA-256, so neither a changed file nor an older signed setup
+under a newer version gets through. Then it starts the setup quietly and closes ModelGen. The setup replaces the program files, keeps the person's models, library and settings,
 and starts ModelGen again.
 
 A source folder (no installed.json, such as the one ModelGen is developed in) never installs an
 update: the page says it runs from the source folder.
 """
 
+import base64
 import hashlib
 import json
 import os
@@ -24,9 +27,11 @@ import urllib.request
 from pathlib import Path
 
 from . import __version__, config, db, pipeline, settings_store
+from .update_key import PUBLIC_KEY
 
 ASSET = "ModelGen-Setup.exe"
-SUMS = ASSET + ".sha256"
+SUMS = ASSET + ".sha256"  # still published, for copies older than 1.1.0 and for people checking by hand
+SIG = ASSET + ".sig"
 MARKER = "installed.json"
 USER_AGENT = "ModelGen-updater"
 EXIT_DELAY_S = 1.5  # time for the page to get its answer before ModelGen closes for the setup
@@ -39,7 +44,7 @@ class UpdateError(Exception):
 _lock = threading.Lock()
 _listeners = []
 STATE = {"version": __version__, "latest": None, "available": False, "state": "idle", "checked_at": None,
-         "error": None, "notes_url": None, "_setup_url": None, "_sums_url": None}
+         "error": None, "notes_url": None, "_setup_url": None, "_sig_url": None}
 
 
 def repo():
@@ -121,10 +126,43 @@ def check(fetch=None):
     tag = str(release.get("tag_name") or "")
     latest = parse_version(tag)
     assets = {a.get("name"): a.get("browser_download_url") for a in release.get("assets") or []}
-    newer = bool(latest and latest > parse_version(__version__) and assets.get(ASSET) and assets.get(SUMS))
+    setup, sig = assets.get(ASSET), assets.get(SIG)
+    # only a signed setup, from this repository's own release downloads, is ever offered
+    newer = bool(latest and latest > parse_version(__version__) and _ours(setup) and _ours(sig))
     _set(state="idle", latest=tag.lstrip("v") if latest else None, available=newer, checked_at=db.now(),
-         error=None, notes_url=release.get("html_url"), _setup_url=assets.get(ASSET), _sums_url=assets.get(SUMS))
+         error=None, notes_url=release.get("html_url"), _setup_url=setup if newer else None,
+         _sig_url=sig if newer else None)
     return public_state()
+
+
+def _ours(url):
+    """Whether url is a download from this repository's GitHub releases."""
+    return bool(url) and str(url).startswith(f"https://github.com/{repo()}/releases/download/")
+
+
+# --- signatures ---------------------------------------------------------------------------
+
+def signed_message(version, sha256_hex):
+    """What a release signature covers: the version and the setup's SHA-256."""
+    return f"ModelGen {str(version).lstrip('v')}\n{sha256_hex.lower()}".encode("utf-8")
+
+
+def sign(setup, version, private_key):
+    """The signature file's text for this setup (installer\\sign_release.py, with the owner's private key)."""
+    digest = hashlib.sha256(Path(setup).read_bytes()).hexdigest()
+    return base64.b64encode(private_key.sign(signed_message(version, digest))).decode("ascii") + "\n"
+
+
+def verify(public_key_b64, version, sha256_hex, signature_text):
+    """Whether the signature is the key's, over this version and SHA-256. Never raises."""
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+        key = Ed25519PublicKey.from_public_bytes(base64.b64decode(public_key_b64))
+        key.verify(base64.b64decode(str(signature_text).strip()), signed_message(version, sha256_hex))
+        return True
+    except (InvalidSignature, ValueError, TypeError, ImportError):
+        return False
 
 
 def _download(url, dest):
@@ -142,13 +180,10 @@ def _download(url, dest):
     return digest.hexdigest()
 
 
-def _expected_sum(url):
+def _signature(url):
+    """The release's signature file, as text (a few hundred bytes at most)."""
     with _request(url) as resp:
-        text = resp.read().decode("utf-8", "replace")
-    m = re.search(r"\b[0-9a-fA-F]{64}\b", text)
-    if not m:
-        raise UpdateError("the release has no readable SHA-256 fingerprint")
-    return m.group(0).lower()
+        return resp.read(500).decode("ascii", "replace")
 
 
 def _launch(setup):
@@ -165,16 +200,16 @@ def running_builds():
     return [p["name"] for p in db.list_projects() if pipeline.is_running(p["name"])]
 
 
-def install(force=False, download=None, expected=None, launch=None, exit_soon=None):
-    """Download, check and start the newer setup, then close ModelGen. With a build running and
-    force False, nothing happens and the answer asks the page to confirm first. The caller stops
-    the running builds (on the server's event loop) before calling with force True."""
+def install(force=False, download=None, signature=None, launch=None, exit_soon=None, public_key=None):
+    """Download, check the signature of, and start the newer setup, then close ModelGen. With a
+    build running and force False, nothing happens and the answer asks the page to confirm first.
+    The caller stops the running builds (on the server's event loop) before calling with force True."""
     if not installed():
         raise UpdateError("This copy of ModelGen runs from its source folder, so it is not updated automatically.")
     with _lock:
-        ready = STATE["available"] and STATE["_setup_url"] and STATE["_sums_url"]
+        ready = STATE["available"] and STATE["_setup_url"] and STATE["_sig_url"]
         busy = STATE["state"] in ("downloading", "installing")
-        latest, setup_url, sums_url = STATE["latest"], STATE["_setup_url"], STATE["_sums_url"]
+        latest, setup_url, sig_url = STATE["latest"], STATE["_setup_url"], STATE["_sig_url"]
     if busy:
         raise UpdateError("The update is already on its way.")
     if not ready:
@@ -183,17 +218,17 @@ def install(force=False, download=None, expected=None, launch=None, exit_soon=No
     running = running_builds() + [f"{j['client']}: {j['object']}" for j in db.queued_jobs()]
     if running and not force:
         return {"action": "confirm", "running": running}
-    download, expected = download or _download, expected or _expected_sum
+    download, signature = download or _download, signature or _signature
     folder = Path(tempfile.gettempdir()) / "modelgen-update"
     folder.mkdir(parents=True, exist_ok=True)
     setup = folder / f"ModelGen-Setup-{latest}.exe"
     _set(state="downloading", error=None)
     try:
-        want = expected(sums_url)
+        signed = signature(sig_url)
         got = download(setup_url, setup)
-        if got.lower() != want:
+        if not verify(public_key or PUBLIC_KEY, latest, got, signed):
             setup.unlink(missing_ok=True)
-            raise UpdateError("the downloaded setup does not match its fingerprint, so it was deleted")
+            raise UpdateError("the downloaded setup is not signed with ModelGen's key, so it was deleted")
         _set(state="installing")
         (launch or _launch)(setup)
     except UpdateError as exc:

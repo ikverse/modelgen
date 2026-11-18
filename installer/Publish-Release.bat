@@ -1,6 +1,8 @@
 @echo off
 rem Publishes the version in modelgen\__init__.py as a GitHub release of ikverse/modelgen:
-rem builds the setup, pushes the code, and uploads ModelGen-Setup.exe and its SHA-256 fingerprint.
+rem builds the setup, signs it, pushes the code, and uploads ModelGen-Setup.exe, its signature (.sig)
+rem and its SHA-256 fingerprint (still read by copies older than 1.1.0). Installed copies from 1.1.0 on
+rem install only a setup signed with the key from installer\make_signing_key.py.
 rem Every installed ModelGen sees the new release within a few hours (or at once with "Check now").
 rem Before running it: raise __version__ in modelgen\__init__.py and commit your changes.
 setlocal
@@ -17,12 +19,16 @@ if not errorlevel 1 ( echo v%VER% is already released. Raise __version__ in mode
 call installer\Build-Installer.bat /nopause
 if errorlevel 1 goto failed
 
+echo Signing the setup ...
+.venv\Scripts\python.exe installer\sign_release.py
+if errorlevel 1 goto failed
+
 echo Pushing the code ...
 git push
 if errorlevel 1 goto failed
 
 echo Publishing v%VER% ...
-gh release create v%VER% dist\ModelGen-Setup.exe dist\ModelGen-Setup.exe.sha256 --title "ModelGen %VER%" --notes "Download ModelGen-Setup.exe and run it. ModelGen needs ClaudeIn on the same PC. Installed copies update themselves."
+gh release create v%VER% dist\ModelGen-Setup.exe dist\ModelGen-Setup.exe.sig dist\ModelGen-Setup.exe.sha256 --title "ModelGen %VER%" --notes "Download ModelGen-Setup.exe and run it. ModelGen needs ClaudeIn on the same PC. Installed copies update themselves."
 if errorlevel 1 goto failed
 
 echo.

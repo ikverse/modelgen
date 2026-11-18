@@ -165,8 +165,9 @@ def test_an_update_asks_first_while_jobs_wait(api, monkeypatch, tmp_path):
     (tmp_path / updater.MARKER).write_text("{}", encoding="utf-8")
     major, minor, patch = updater.parse_version(__version__)
     tag = f"v{major}.{minor}.{patch + 1}"
+    host = f"https://github.com/{updater.repo()}/releases/download/{tag}"
     updater.check(fetch=lambda url: {"tag_name": tag, "html_url": "https://example.invalid", "assets": [
-        {"name": n, "browser_download_url": f"https://example.invalid/{n}"} for n in (updater.ASSET, updater.SUMS)]})
+        {"name": n, "browser_download_url": f"{host}/{n}"} for n in (updater.ASSET, updater.SIG)]})
     api.post("/v1/jobs", json=HYDRANT)
     out = updater.install(launch=lambda p: pytest.fail("must not start yet"))
     assert out == {"action": "confirm", "running": ["village: fire hydrant"]}
