@@ -1,0 +1,12 @@
+{
+ "files": [
+  "barrel_03.bin",
+  "barrel_03.gltf",
+  "textures/barrel_03_arm_1k.jpg",
+  "textures/barrel_03_diff_1k.jpg",
+  "textures/barrel_03_nor_gl_1k.jpg"
+ ],
+ "bytes": 574136,
+ "source": "https://api.polyhaven.com/files/barrel_03",
+ "license": "CC0, https://polyhaven.com/license"
+}

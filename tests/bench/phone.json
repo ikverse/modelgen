@@ -1,0 +1,209 @@
+{
+ "id": "phone",
+ "title": "Samsung Galaxy S26 Ultra",
+ "source": "samsung-galaxy-s26-ultra",
+ "request": "Build a Samsung Galaxy S26 Ultra-style smartphone as a game asset. Real size: about 163 mm tall, 78 mm wide and 8 mm thick. Follow the S Ultra design language: a flat, squared-off slab with slightly rounded corners, a flat front display, a flat back and a flat-sided titanium frame. The front is a near edge-to-edge black glass screen with thin, even bezels and a small centred punch-hole selfie camera at the top. On the back, put the S Ultra camera layout at the top left: a vertical column of three large individual lens rings with a fourth smaller lens beside them, plus a flash and a laser autofocus sensor. Each lens is its own raised metal ring with dark glass and no shared camera bump. The right side has the volume rocker and the power button. The bottom edge has a USB-C port, speaker grille holes, a SIM tray and the S Pen silo with the pen's flush clicker end. Defaults: titanium grey frame, matte frosted titanium-black back glass, glossy black screen (it can show a simple dark lock-screen texture). Game-ready: a moderate, clean polycount with sensible topology, real-world scale in metres, PBR materials, clean UVs, and export as GLB.",
+ "spec": {
+  "object": "Samsung Galaxy S26 Ultra-style smartphone (game asset)",
+  "category": "general",
+  "use": "game",
+  "style": "modern minimal flagship smartphone, flat squared-off slab with slightly rounded corners, flat-sided titanium frame",
+  "dimensions": {
+   "width": 0.078,
+   "depth": 0.008,
+   "height": 0.163
+  },
+  "materials": [
+   "titanium grey metal frame (brushed, PBR metallic)",
+   "glossy black glass front (dark lock-screen texture on display)",
+   "matte frosted titanium-black glass back",
+   "dark glass with brushed metal rings for camera lenses",
+   "black plastic/rubber for S Pen tip and clicker",
+   "dark grey plastic for speaker grille and SIM tray"
+  ],
+  "summary": "A thin, flat smartphone about 163 x 78 x 8 mm. The front is a near edge-to-edge black glass display with thin even bezels and a centred punch-hole selfie camera. The back is flat matte frosted glass with a top-left camera layout: a vertical column of three large raised metal lens rings plus a smaller fourth lens beside them, a flash and a laser autofocus sensor. The titanium frame has a USB-C port, speaker holes, a SIM tray and an S Pen silo with a flush clicker on the bottom edge, and volume and power buttons on the right side.",
+  "parts": [
+   {
+    "name": "frame",
+    "description": "Flat-sided titanium band around the perimeter with slightly rounded corners, forming the phone's side wall. Slight edge chamfer on both faces.",
+    "size": {
+     "width": 0.078,
+     "depth": 0.008,
+     "height": 0.163
+    },
+    "count": 1,
+    "material": "titanium grey brushed metal",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "display_glass",
+    "description": "Flat front cover glass, near edge-to-edge, glossy black with a simple dark lock-screen texture. Thin even bezels.",
+    "size": {
+     "width": 0.0765,
+     "depth": 0.0008,
+     "height": 0.1615
+    },
+    "count": 1,
+    "material": "glossy black glass",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "punch_hole_camera",
+    "description": "Small centred circular selfie camera hole at the top of the display, dark lens inset.",
+    "size": {
+     "width": 0.004,
+     "depth": 0.0005,
+     "height": 0.004
+    },
+    "count": 1,
+    "material": "black glass",
+    "attaches_to": "display_glass"
+   },
+   {
+    "name": "back_glass",
+    "description": "Flat back panel with frosted matte titanium-black finish, rounded corners matching the frame.",
+    "size": {
+     "width": 0.0765,
+     "depth": 0.0008,
+     "height": 0.1615
+    },
+    "count": 1,
+    "material": "matte frosted titanium-black glass",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "lens_ring",
+    "description": "Large individual raised metal ring around a dark glass lens, arranged in a vertical column at the top left of the back. Each is its own separate ring with no shared camera bump.",
+    "size": {
+     "width": 0.0125,
+     "depth": 0.0025,
+     "height": 0.0125
+    },
+    "count": 3,
+    "material": "brushed titanium ring with dark glass lens",
+    "attaches_to": "back_glass"
+   },
+   {
+    "name": "lens_small",
+    "description": "Smaller raised lens ring placed beside the column of three large lenses, dark glass centre.",
+    "size": {
+     "width": 0.008,
+     "depth": 0.002,
+     "height": 0.008
+    },
+    "count": 1,
+    "material": "brushed titanium ring with dark glass lens",
+    "attaches_to": "back_glass"
+   },
+   {
+    "name": "flash",
+    "description": "Small flush LED flash window beside the lenses.",
+    "size": {
+     "width": 0.006,
+     "depth": 0.0003,
+     "height": 0.003
+    },
+    "count": 1,
+    "material": "off-white glass with dark surround",
+    "attaches_to": "back_glass"
+   },
+   {
+    "name": "laser_af_sensor",
+    "description": "Tiny dark flush laser autofocus window next to the flash.",
+    "size": {
+     "width": 0.004,
+     "depth": 0.0003,
+     "height": 0.002
+    },
+    "count": 1,
+    "material": "dark glass",
+    "attaches_to": "back_glass"
+   },
+   {
+    "name": "volume_rocker",
+    "description": "Two-piece raised button on the right side frame, upper half of the side.",
+    "size": {
+     "width": 0.0012,
+     "depth": 0.0012,
+     "height": 0.011
+    },
+    "count": 1,
+    "material": "titanium grey metal",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "power_button",
+    "description": "Slim raised button on the right side frame, below the volume rocker.",
+    "size": {
+     "width": 0.0012,
+     "depth": 0.0012,
+     "height": 0.006
+    },
+    "count": 1,
+    "material": "titanium grey metal",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "usb_c_port",
+    "description": "Rectangular USB-C opening centred on the bottom edge.",
+    "size": {
+     "width": 0.0088,
+     "depth": 0.003,
+     "height": 0.0028
+    },
+    "count": 1,
+    "material": "dark recessed plastic",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "speaker_grille",
+    "description": "Row of small round speaker holes on the bottom edge, either side of the USB-C port.",
+    "size": {
+     "width": 0.001,
+     "depth": 0.001,
+     "height": 0.001
+    },
+    "count": 2,
+    "material": "dark recessed plastic",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "sim_tray",
+    "description": "Small flush SIM tray with a tiny ejector hole on the left side frame.",
+    "size": {
+     "width": 0.0008,
+     "depth": 0.006,
+     "height": 0.0105
+    },
+    "count": 1,
+    "material": "titanium grey metal",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "s_pen_silo",
+    "description": "Rectangular pen slot in the bottom edge, offset to one side of the USB-C port.",
+    "size": {
+     "width": 0.0085,
+     "depth": 0.0035,
+     "height": 0.0035
+    },
+    "count": 1,
+    "material": "dark recessed plastic",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "s_pen_clicker",
+    "description": "Flush pen clicker end sitting inside the silo, a small dark rounded button.",
+    "size": {
+     "width": 0.0065,
+     "depth": 0.0015,
+     "height": 0.0035
+    },
+    "count": 1,
+    "material": "black plastic",
+    "attaches_to": "s_pen_silo"
+   }
+  ],
+  "notes": "Real-world scale in metres, origin at the centre of the phone. Keep the front and back flat with no curved edges (flat-sided Ultra look). Lens rings and camera area are the main visual detail: keep them as separate, clearly raised rings. Moderate clean polycount with sensible topology, clean UVs, PBR materials, export as GLB. Use defaults: titanium grey frame, frosted titanium-black back glass, glossy black screen with a simple dark lock-screen texture. The S Pen silo is on the bottom edge, not a separate pen body."
+ }
+}

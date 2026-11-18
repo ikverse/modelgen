@@ -1,0 +1,171 @@
+/* The studio map: room colours for daylight and evening, the screens and machines, and every
+   character pose and animation. A character's root group carries one view class (rig = front,
+   sd = side, bk = back) plus a state or movement class; the joints below it are posed from here. */
+
+.scene { --wall: #ECE9E4; --floor: #DDD9D2; --plank: #D1CCC4; --base: #D6CFC2; --sky: #CFE3F0; --frame: #8E98A3; --glass: #BFD8E0;
+  --carpet: #CFC2AA; --tilefloor: #D5CFC4; --tile: #C4BDB1; --rug: #CDB38E; --rugline: #BFA27A; --mat: #C9D3DB; --matline: #8E9AA6; --label: #6B675E; --halo: #F1E9DC; }
+[data-theme="dark"] .scene { --wall: #3A3835; --floor: #45423E; --plank: #3D3A37; --base: #46433D; --sky: #2B3550; --frame: #7D8791; --glass: #6E8C99;
+  --carpet: #4E463B; --tilefloor: #4A4741; --tile: #423F3A; --rug: #6B5A44; --rugline: #5E4F3B; --mat: #3A4450; --matline: #6E7C8A; --label: #C9C0B2; --halo: #2F2A24; }
+
+.scene .labels text { font: 500 13px system-ui, sans-serif; fill: var(--label); pointer-events: none; }
+.scene .cap { font: 600 12px system-ui, sans-serif; fill: var(--label); paint-order: stroke; stroke: var(--halo); stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
+.scene .cap.s-working { fill: #2F6EA8; } .scene .cap.s-waiting { fill: #A76A12; } .scene .cap.s-failed { fill: #B03B33; }
+[data-theme="dark"] .scene .cap.s-working { fill: #8CC0EE; } [data-theme="dark"] .scene .cap.s-waiting { fill: #F0BE6C; } [data-theme="dark"] .scene .cap.s-failed { fill: #F0948B; }
+.scene .sun path { fill: #FFF6DC; opacity: .32; animation: sun 80s ease-in-out infinite alternate; }
+[data-theme="dark"] .scene .sun { display: none; }
+@keyframes sun { from { transform: translateX(-30px); } to { transform: translateX(40px); } }
+.scene.zoomed { cursor: grab; }
+.scene.zoomed:active { cursor: grabbing; }
+
+/* walkers: hover and selection rings */
+.walker { cursor: pointer; }
+.walker .ring { opacity: 0; transition: opacity .2s; }
+.walker.hover .ring { opacity: .45; }
+.walker.sel .ring { opacity: 1; animation: ring 1.8s ease-in-out infinite; }
+@keyframes ring { 50% { stroke-width: 8; } }
+
+/* machines: drive and server lights; the GPU room speeds up while Blender works (studio.js sets busy) */
+.led { animation: led 1.8s steps(1) infinite; }
+.farm.busy .led { animation-duration: .45s; }
+.farm .glow { opacity: .4; transition: opacity .6s; }
+.farm.busy .glow { opacity: 1; }
+.gpuc.busy .bar { animation-duration: .6s; }
+@keyframes led { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+/* screens: an owner's screen shows the layer for the owner's state (studio.js sets s-<state>,
+   or s-off for a builder seat nobody sits at) */
+.scr > g { display: none; }
+.scr.s-idle > .l-idle, .scr.s-off > .l-idle, .scr.s-working > .l-working, .scr.s-waiting > .l-waiting,
+.scr.s-failed > .l-failed, .scr.s-done > .l-done { display: inline; }
+.scr.s-off { opacity: .45; }
+.scr.s-off .ss { animation: none; }
+
+/* what's on the screens, and the lab's machines */
+.scene .spin { transform-box: fill-box; transform-origin: center; animation: spn 2.6s ease-in-out infinite alternate; }
+.scene .rot { transform-box: fill-box; transform-origin: center; animation: jw 3s linear infinite; }
+.scene .typ { transform-box: fill-box; transform-origin: left; animation: typ 2.4s steps(8) infinite; }
+.scene .grow { transform-box: fill-box; transform-origin: left; animation: grw 4s ease-out infinite; }
+.scene .fill { transform-box: fill-box; transform-origin: bottom; animation: fil 4s ease-out infinite; }
+.scene .bar { transform-box: fill-box; transform-origin: bottom; animation: bar 1.8s ease-in-out infinite alternate; }
+.scene .print { transform-box: fill-box; transform-origin: bottom; animation: prt 12s linear infinite; }
+.scene .noz { animation: slx 1.4s ease-in-out infinite alternate; }
+.scene .ph { animation: slx 3s linear infinite; }
+.scene .scan { animation: sly 5s linear infinite; }
+.scene .tick { animation: tck 3.6s ease-in-out infinite; }
+.scene .tile { animation: tl 3.6s ease-in-out infinite; }
+.scene .hl { opacity: 0; animation: hl 4s linear infinite; }
+.scene .mat { animation: mat 6s infinite; }
+.scene .draw { stroke-dasharray: 1; animation: drw 3.2s ease-in-out infinite; }
+.scene .ss { animation: ss 5s ease-in-out infinite; }
+.scene .sweep { animation: swp 2s ease-in-out infinite; }
+@keyframes spn { from { transform: scaleX(1); } to { transform: scaleX(-1); } }
+@keyframes typ { from { transform: scaleX(0); } }
+@keyframes grw { from { transform: scaleX(0); } 70%, to { transform: scaleX(1); } }
+@keyframes fil { from { transform: scaleY(0); } 70%, to { transform: scaleY(1); } }
+@keyframes bar { from { transform: scaleY(.45); } to { transform: scaleY(1); } }
+@keyframes prt { from { transform: scaleY(0); } 90%, to { transform: scaleY(1); } }
+@keyframes slx { to { transform: translateX(var(--d)); } }
+@keyframes sly { to { transform: translateY(var(--d)); } }
+@keyframes tck { 0%, 15% { opacity: 0; } 25%, 100% { opacity: 1; } }
+@keyframes tl { 0%, 10% { opacity: .35; } 20%, 100% { opacity: 1; } }
+@keyframes hl { 0%, 9% { opacity: 1; } 11%, 100% { opacity: 0; } }
+@keyframes mat { 0%, 30% { fill: #B5824E; } 35%, 63% { fill: #7C9CB5; } 68%, 95% { fill: #C9A44A; } 100% { fill: #B5824E; } }
+@keyframes drw { from { stroke-dashoffset: 1; } 70%, to { stroke-dashoffset: 0; } }
+@keyframes ss { 50% { opacity: .35; } }
+@keyframes swp { 50% { opacity: .04; } }
+
+/* ---- the rig ---------------------------------------------------------------------- */
+.rig .p, .bk .p { transition: transform .45s cubic-bezier(.4, .1, .2, 1), opacity .3s; }
+.blink { animation: bl 4.6s infinite; }
+.rig .bub, .rig .cloud, .rig .conf, .rig .e-hap, .rig .m-open, .rig .m-flat, .rig .m-talk, .rig .m-foc, .rig .badge, .rig .vrh { opacity: 0; }
+
+/* still portraits and the default front pose */
+.st-still .uaL, .st-idle .uaL { transform: rotate(4deg); } .st-still .faL, .st-idle .faL { transform: rotate(-8deg); }
+.st-still .uaR, .st-idle .uaR { transform: rotate(-4deg); } .st-still .faR, .st-idle .faR { transform: rotate(8deg); }
+.st-idle .upper { animation: br 3.2s ease-in-out infinite; } .st-idle .eyes { animation: gl 7s ease-in-out infinite; }
+.is-done .badge { opacity: 1; }
+
+/* working: a focused mouth (most work happens seated, back to us; see below) */
+.st-working .m-smile { opacity: 0; } .st-working .m-foc { opacity: 1; }
+
+/* waiting for the human */
+.st-waiting .uaL { transform: rotate(20deg); } .st-waiting .faL { transform: rotate(55deg); } .st-waiting .uaR { transform: rotate(-20deg); } .st-waiting .faR { transform: rotate(-55deg); }
+.st-waiting .head { transform: rotate(-5deg); } .st-waiting .brows { transform: translateY(-2.5px); }
+.st-waiting .bub { opacity: 1; animation: bb 1.6s ease-in-out infinite; }
+
+/* done */
+.st-done .uaL { transform: rotate(150deg); } .st-done .faL { transform: rotate(15deg); } .st-done .uaR { transform: rotate(-150deg); } .st-done .faR { transform: rotate(-15deg); }
+.st-done .jump { animation: jp .55s ease-out 3; } .st-done .eyes { opacity: 0; } .st-done .e-hap { opacity: 1; }
+.st-done .m-smile { opacity: 0; } .st-done .m-open { opacity: 1; } .st-done .conf { animation: fa 1.7s ease-in forwards; }
+
+/* failed */
+.st-failed .uaL { transform: rotate(6deg); } .st-failed .faL { transform: rotate(4deg); } .st-failed .uaR { transform: rotate(-6deg); } .st-failed .faR { transform: rotate(-4deg); }
+.st-failed .upper { transform: translateY(3px); } .st-failed .head { transform: translateY(5px) rotate(9deg); } .st-failed .eyes { transform: translateY(2.5px); }
+.st-failed .m-smile { opacity: 0; } .st-failed .m-flat { opacity: 1; } .st-failed .cloud { opacity: 1; animation: bb 2.4s ease-in-out infinite; }
+
+/* working with your back to us, at a machine or a screen */
+.bk-work .bup { animation: br 2.2s ease-in-out infinite; }
+.bk-work .bLf { animation: pt 1.6s ease-in-out infinite; }
+
+/* seated at a workstation, back to us: legs under the desk, hands on the keyboard */
+.bk.sit { transform: translateY(30px); }
+.bk.sit .lgL, .bk.sit .lgR { display: none; }
+.bk.sit .bL { transform: rotate(-10deg); } .bk.sit .bR { transform: rotate(10deg); }
+.bk.sit.bk-work .bLf { animation: ty .5s ease-in-out infinite; } .bk.sit.bk-work .bRf { animation: ty .5s ease-in-out infinite -.25s; }
+
+/* in the VR test zone: headset on, controllers held up, looking around */
+.rig.vr .vrh { opacity: 1; }
+.rig.vr .uaL { transform: rotate(-10deg); } .rig.vr .faL { transform: rotate(-80deg); }
+.rig.vr .uaR { transform: rotate(10deg); } .rig.vr .faR { transform: rotate(80deg); }
+.rig.vr .head { animation: lk 4s ease-in-out infinite; }
+
+/* walking and running, front and back views */
+.fw .lgL, .bw .lgL { animation: lf 1s linear infinite; } .fw .lgR, .bw .lgR { animation: lf 1s linear infinite -.5s; }
+.fw .uaR, .bw .bR { animation: as 1s ease-in-out infinite; } .fw .uaL, .bw .bL { animation: as 1s ease-in-out infinite -.5s; }
+.fw .upper, .bw .bup { animation: wb .5s ease-in-out infinite; }
+.fr .lgL, .brn .lgL { animation: lf2 .66s linear infinite; } .fr .lgR, .brn .lgR { animation: lf2 .66s linear infinite -.33s; }
+.fr .uaR, .brn .bR { animation: as2 .66s ease-in-out infinite; } .fr .uaL, .brn .bL { animation: as2 .66s ease-in-out infinite -.33s; }
+.fr .upper, .brn .bup { animation: rb .33s ease-in-out infinite; }
+/* side view */
+.mv-walk .thA, .mv-walk .thB { animation: wt 1s linear infinite; } .mv-walk .shA, .mv-walk .shB { animation: ws 1s linear infinite; }
+.mv-walk .uaB, .mv-walk .uaF { animation: wa 1s ease-in-out infinite; } .mv-walk .faB, .mv-walk .faF { animation: wf 1s ease-in-out infinite; }
+.mv-walk .thB, .mv-walk .shB, .mv-walk .uaF, .mv-walk .faF { animation-delay: -.5s; }
+.mv-walk .bob { animation: wb .5s ease-in-out infinite; }
+.mv-run .thA, .mv-run .thB { animation: rt .66s linear infinite; } .mv-run .shA, .mv-run .shB { animation: rs .66s linear infinite; }
+.mv-run .uaB, .mv-run .uaF { animation: ra .66s ease-in-out infinite; } .mv-run .faB, .mv-run .faF { animation: rf .66s ease-in-out infinite; }
+.mv-run .thB, .mv-run .shB, .mv-run .uaF, .mv-run .faF { animation-delay: -.33s; }
+.mv-run .bob { animation: rb .33s ease-in-out infinite; } .mv-run .lean { transform: rotate(7deg); }
+/* carrying a parcel: arms stay put */
+.carry .uaL, .carry .uaR, .carry .uaB, .carry .uaF, .carry .bL, .carry .bR { animation: none; }
+
+@keyframes br { 50% { transform: translateY(1.5px); } }
+@keyframes gl { 0%, 40%, 100% { transform: translateX(0); } 48%, 70% { transform: translateX(2.5px); } }
+@keyframes bl { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@keyframes pt { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(8deg); } }
+@keyframes ty { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+@keyframes lk { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+@keyframes jw { to { transform: rotate(360deg); } }
+@keyframes bb { 50% { transform: translateY(-3px); } }
+@keyframes jp { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-14px); } }
+@keyframes fa { 0% { opacity: 1; transform: translateY(-6px); } 100% { opacity: 0; transform: translateY(70px); } }
+@keyframes lf { 0%, 50%, 100% { transform: scaleY(1); } 25% { transform: scaleY(.9); } }
+@keyframes lf2 { 0%, 50%, 100% { transform: scaleY(1); } 25% { transform: scaleY(.82); } }
+@keyframes as { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes as2 { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(18deg); } }
+@keyframes wt { 0% { transform: rotate(-25deg); } 25% { transform: rotate(-5deg); } 50% { transform: rotate(25deg); } 65% { transform: rotate(10deg); } 80% { transform: rotate(-15deg); } 100% { transform: rotate(-25deg); } }
+@keyframes ws { 0% { transform: rotate(5deg); } 25% { transform: rotate(8deg); } 50% { transform: rotate(18deg); } 65% { transform: rotate(55deg); } 80% { transform: rotate(30deg); } 100% { transform: rotate(5deg); } }
+@keyframes wa { 0%, 100% { transform: rotate(20deg); } 50% { transform: rotate(-20deg); } }
+@keyframes wf { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(-30deg); } }
+@keyframes wb { 0%, 100% { transform: translateY(1.5px); } 50% { transform: translateY(-1.5px); } }
+@keyframes rt { 0% { transform: rotate(-40deg); } 25% { transform: rotate(0deg); } 50% { transform: rotate(35deg); } 70% { transform: rotate(0deg); } 85% { transform: rotate(-35deg); } 100% { transform: rotate(-40deg); } }
+@keyframes rs { 0% { transform: rotate(20deg); } 25% { transform: rotate(15deg); } 50% { transform: rotate(40deg); } 70% { transform: rotate(100deg); } 85% { transform: rotate(60deg); } 100% { transform: rotate(20deg); } }
+@keyframes ra { 0%, 100% { transform: rotate(35deg); } 50% { transform: rotate(-35deg); } }
+@keyframes rf { 0%, 100% { transform: rotate(-70deg); } 50% { transform: rotate(-100deg); } }
+@keyframes rb { 0%, 100% { transform: translateY(1px); } 50% { transform: translateY(-4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-idle .upper, .st-idle .eyes, .blink, .sun path, .walker.sel .ring, .led, .rig.vr .head, .bk.sit.bk-work .bLf, .bk.sit.bk-work .bRf,
+  .scene .spin, .scene .rot, .scene .typ, .scene .grow, .scene .fill, .scene .bar, .scene .print, .scene .noz, .scene .ph, .scene .scan,
+  .scene .tick, .scene .tile, .scene .mat, .scene .draw, .scene .ss, .scene .sweep { animation: none !important; }
+  .scene .hl { animation: none !important; }
+}

@@ -1,0 +1,1399 @@
+"""Tested building blocks ("kits") for kinds of object the plain helpers get wrong. Runs inside Blender only.
+
+Use them as `from bpy_lib import kits as k`. Each function makes the main form of one kind of object
+the right way, so a builder starts from a correct shape and adds its own details with the helpers:
+
+- containers (mug, cup, bowl, bottle, vase, pot): `vessel` is ONE hollow solid with a real inside, a
+  rounded rim and a foot; `handle` is a loop handle; `fuse` joins the handle to the body without a seam.
+- devices (phone, handheld console, remote, speaker): `device_shell` is one rounded slab; `pocket`
+  and `slots` carve recesses into it; `plate`, `round_button` and `dpad` are the pieces set into it.
+- buildings: `openings` lays out windows and a door on all four walls; `walls`, `windows` and `door`
+  are built from that one layout so they fit; `roof` and `curtain_tower` finish the building.
+- wheeled vehicles that are not cars: `wheel`, `wheel_arches`, `axle_positions`.
+- scene props: `tree`, `bench`, `fence`, `lamp_post`.
+
+Conventions are the helpers': metres, Z up, the front faces -Y. Kit meshes carry placeholder
+materials, one per named slot (listed in each function); the materials step fills a slot with
+`m.assign_slot(obj, "inside", material)`. Never `m.assign` a kit part: that would paint every slot
+with one material. Faces of a device or a building are named "front" (-Y), "back" (+Y), "left"
+(-X), "right" (+X), "top" (+Z) and "bottom" (-Z); a point on a face is (u, v): (x, z) on the front
+and back, (y, z) on the left and right, (x, y) on the top and bottom, always in world axes.
+"""
+
+import math
+import random
+
+import bmesh
+import bpy
+from mathutils import Matrix, Vector
+
+from . import helpers as h
+
+SLOT_COLOURS = {
+    "outside": (0.55, 0.58, 0.62), "inside": (0.90, 0.90, 0.88), "shell": (0.72, 0.72, 0.70),
+    "seam": (0.10, 0.10, 0.11), "pocket": (0.30, 0.30, 0.32), "slot": (0.05, 0.05, 0.055),
+    "trim": (0.08, 0.08, 0.09), "button": (0.25, 0.25, 0.27), "screen": (0.30, 0.38, 0.30),
+    "wall": (0.70, 0.62, 0.55), "reveal": (0.80, 0.78, 0.74), "plinth": (0.50, 0.50, 0.50),
+    "frame": (0.92, 0.92, 0.90), "glass": (0.12, 0.16, 0.20), "sill": (0.75, 0.74, 0.70),
+    "door": (0.20, 0.32, 0.22), "metal": (0.20, 0.20, 0.22), "roof": (0.25, 0.25, 0.28),
+    "gable": (0.70, 0.62, 0.55), "band": (0.82, 0.81, 0.78), "mullion": (0.22, 0.23, 0.25),
+    "tyre": (0.04, 0.04, 0.045), "rim": (0.70, 0.71, 0.73), "trunk": (0.32, 0.22, 0.14),
+    "leaves": (0.22, 0.45, 0.20), "wood": (0.50, 0.33, 0.18), "post": (0.85, 0.85, 0.83),
+    "rail": (0.85, 0.85, 0.83), "lamp": (0.95, 0.93, 0.80), "body": (0.62, 0.64, 0.68),
+    "lamp_red": (0.70, 0.05, 0.05), "lamp_amber": (0.95, 0.60, 0.05), "lamp_clear": (0.92, 0.92, 0.88),
+}
+
+# the public functions of each kind of object (so a prompt can show only the kit that fits)
+KIT_FUNCTIONS = {
+    "container": ["vessel", "handle", "fuse"],
+    "device": ["device_shell", "pocket", "slots", "plate", "round_button", "dpad"],
+    "building": ["openings", "walls", "windows", "door", "roof", "curtain_tower"],
+    "vehicle": ["vehicle_body", "hood", "wheel", "wheel_arches", "axle_positions", "pocket"],
+    "scene": ["tree", "bench", "fence", "lamp_post"],
+}
+
+# face -> (axis of u, axis of v, axis the face looks along, which way it looks)
+FACES = {"front": (0, 2, 1, -1), "back": (0, 2, 1, 1), "left": (1, 2, 0, -1), "right": (1, 2, 0, 1),
+         "top": (0, 1, 2, 1), "bottom": (0, 1, 2, -1)}
+
+
+# --- small private tools ---------------------------------------------------------------
+
+def _slot(name, colour=None):
+    """The placeholder material of a slot (made once), tagged so m.assign_slot can fill it."""
+    key = f"slot_{name}"
+    mat = bpy.data.materials.get(key)
+    if mat is None:
+        mat = bpy.data.materials.new(key)
+        mat.use_nodes = True
+        colour = colour or SLOT_COLOURS.get(name, (0.6, 0.6, 0.6))
+        bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+        bsdf.inputs["Base Color"].default_value = (*colour, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.45
+        mat.diffuse_color = (*colour, 1.0)
+        mat["mg_slot"] = name
+    return mat
+
+
+def _slot_index(obj, name):
+    """The index of the slot on the object, adding it when it is not there yet."""
+    me = obj.data
+    for i, mat in enumerate(me.materials):
+        if mat is not None and mat.get("mg_slot") == name:
+            return i
+    me.materials.append(_slot(name))
+    return len(me.materials) - 1
+
+
+def _set_slots(obj, names, choose=None):
+    """Give the object these slots; choose(polygon) picks the index of each face (default 0)."""
+    me = obj.data
+    me.materials.clear()
+    for name in names:
+        me.materials.append(_slot(name))
+    for p in me.polygons:
+        p.material_index = choose(p) if choose else 0
+    return obj
+
+
+def _same_slots(obj, like, name=None):
+    """Give obj the slot list of `like` and put all its faces in slot `name` (default the first)."""
+    index = _slot_index(like, name) if name else 0
+    obj.data.materials.clear()
+    for mat in like.data.materials:
+        obj.data.materials.append(mat)
+    for p in obj.data.polygons:
+        p.material_index = index
+    return obj
+
+
+def _new_object(bm, name, slots, no_bevel=False):
+    """A mesh object from a bmesh whose faces already carry slot indices."""
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    for s in slots:
+        me.materials.append(_slot(s))
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    if no_bevel:
+        obj[h.NO_BEVEL_KEY] = 1
+    return obj
+
+
+def _add_box(bm, size, center, index=0, matrix=None):
+    """A box into the bmesh: size (x, y, z) about center, optionally turned by a 3x3 or 4x4 matrix
+    applied about the box's own centre."""
+    made = bmesh.ops.create_cube(bm, size=1.0)["verts"]
+    bmesh.ops.scale(bm, vec=Vector(size), verts=made)
+    if matrix is not None:
+        bmesh.ops.rotate(bm, cent=(0, 0, 0), matrix=matrix, verts=made)
+    bmesh.ops.translate(bm, vec=Vector(center), verts=made)
+    faces = {f for v in made for f in v.link_faces}
+    for f in faces:
+        f.material_index = index
+    return made
+
+
+def _add_revolved(bm, profile, segments, index=0, matrix=None, offset=(0, 0, 0)):
+    """A solid of revolution about Z into the bmesh. profile: (radius, z) points whose first and last
+    lie on the axis (radius 0)."""
+    pts = h._dedupe([(float(r), float(z)) for r, z in profile])
+    rings = []
+    for r, z in pts:
+        if r <= 1e-9:
+            rings.append([bm.verts.new((0.0, 0.0, z))])
+        else:
+            rings.append([bm.verts.new((r * math.cos(2 * math.pi * i / segments),
+                                        r * math.sin(2 * math.pi * i / segments), z)) for i in range(segments)])
+    faces = []
+    for a, b in zip(rings, rings[1:]):
+        for i in range(segments):
+            j = (i + 1) % segments
+            if len(a) == 1 and len(b) == 1:
+                continue
+            if len(a) == 1:
+                faces.append(bm.faces.new((a[0], b[j], b[i])))
+            elif len(b) == 1:
+                faces.append(bm.faces.new((a[i], a[j], b[0])))
+            else:
+                faces.append(bm.faces.new((a[i], a[j], b[j], b[i])))
+    verts = [v for ring in rings for v in ring]
+    for f in faces:
+        f.material_index = index
+    if matrix is not None:
+        bmesh.ops.rotate(bm, cent=(0, 0, 0), matrix=matrix, verts=verts)
+    bmesh.ops.translate(bm, vec=Vector(offset), verts=verts)
+    return verts
+
+
+def _world(face, u, v, w):
+    """The world point of (u, v) on a face's plane system, w along the axis the face looks along."""
+    au, av, aw, _ = FACES[face]
+    p = [0.0, 0.0, 0.0]
+    p[au], p[av], p[aw] = u, v, w
+    return Vector(p)
+
+
+def _face_plane(obj, face):
+    """Where the object's outer surface is on that face: the coordinate along the face's axis."""
+    lo, hi = h.bounds(obj)
+    _, _, aw, sign = FACES[face]
+    return hi[aw] if sign > 0 else lo[aw]
+
+
+def _prism(face, outline, w0, w1, name="prism"):
+    """A closed prism: the (u, v) outline on a face's plane system, from w0 to w1 along its axis."""
+    pts = h._dedupe([(float(a), float(b)) for a, b in outline])
+    bm = bmesh.new()
+    lower = [bm.verts.new(_world(face, u, v, w0)) for u, v in pts]
+    upper = [bm.verts.new(_world(face, u, v, w1)) for u, v in pts]
+    n = len(pts)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((lower[i], lower[j], upper[j], upper[i]))
+    bm.faces.new(lower)
+    bm.faces.new(list(reversed(upper)))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def _rect_outline(rect, segments=None):
+    cu, cv, w, hgt = rect[:4]
+    r = rect[4] if len(rect) > 4 else 0.0
+    if segments is None:  # a round or nearly round outline needs more sides than a rounded corner
+        segments = 10 if r >= min(w, hgt) * 0.3 else 5
+    return h.rounded_rect_points(w, hgt, r, corner_segments=segments, center=(cu, cv))
+
+
+def _open_edges(obj):
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    count = sum(1 for e in bm.edges if not e.is_manifold)
+    bm.free()
+    return count
+
+
+def _cut(target, cutters, slot=None):
+    """Cut the cutters out of the target in one boolean; the cut faces go into `slot` (default the
+    target's first slot)."""
+    cutters = [c for c in cutters if c is not None]
+    if not cutters:
+        return target
+    cutter = h.join(cutters, "cutter") if len(cutters) > 1 else cutters[0]
+    h.apply_modifiers(target)
+    if not target.data.materials:  # a plain helper-built target: its own faces become the slot "body"
+        _set_slots(target, ["body"])
+    _same_slots(cutter, target, slot)
+    h.boolean(target, cutter)
+    return h.merge_by_distance(target, 1e-6)
+
+
+_ICO = []
+
+
+def _icosphere():
+    """The points and faces of a unit icosphere (80 triangles subdivided once: 162 points)."""
+    if not _ICO:
+        bm = bmesh.new()
+        bmesh.ops.create_icosphere(bm, subdivisions=2, radius=1.0)
+        bm.verts.ensure_lookup_table()
+        _ICO.append(([tuple(v.co) for v in bm.verts], [tuple(v.index for v in f.verts) for f in bm.faces]))
+        bm.free()
+    return _ICO[0]
+
+
+def _smoothstep(t):
+    t = max(0.0, min(1.0, t))
+    return t * t * (3 - 2 * t)
+
+
+# --- containers --------------------------------------------------------------------------
+
+def _inner_wall(outer, wall, floor_z):
+    """The outer (radius, z) profile moved `wall` toward the inside; points under floor_z are lifted
+    to it, and the first point is the centre of the inner floor."""
+    n = len(outer)
+    normals = []
+    for a, b in zip(outer, outer[1:]):
+        dr, dz = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dr, dz) or 1.0
+        normals.append((-dz / length, dr / length))  # to the left of the way the profile runs: inside
+    inner = []
+    for i in range(n):
+        if i == 0:
+            inner.append((0.0, floor_z))
+            continue
+        n1 = normals[i - 1]
+        n2 = normals[i] if i < n - 1 else n1
+        mx, mz = n1[0] + n2[0], n1[1] + n2[1]
+        length = math.hypot(mx, mz)
+        if length < 1e-9:
+            mx, mz, length = n1[0], n1[1], 1.0
+        mx, mz = mx / length, mz / length
+        scale = wall / max(0.35, mx * n1[0] + mz * n1[1])
+        r, z = outer[i][0] + mx * scale, max(floor_z, outer[i][1] + mz * scale)
+        if r <= 1e-5:
+            raise ValueError(f"the vessel is narrower than twice its wall at z = {outer[i][1]:.4f}")
+        inner.append((r, z))
+    # drop inner points that fold back under the floor line (a sharp base corner)
+    cleaned = [inner[0]]
+    for p in inner[1:]:
+        if abs(p[1] - floor_z) < 1e-9 and abs(cleaned[-1][1] - floor_z) < 1e-9 and len(cleaned) > 1:
+            cleaned[-1] = p if p[0] > cleaned[-1][0] else cleaned[-1]
+        else:
+            cleaned.append(p)
+    return cleaned
+
+
+def _chain_distance(point, chain):
+    best = math.inf
+    px, pz = point
+    for (ax, az), (bx, bz) in zip(chain, chain[1:]):
+        dx, dz = bx - ax, bz - az
+        d2 = dx * dx + dz * dz
+        t = 0.0 if d2 < 1e-18 else max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / d2))
+        best = min(best, math.hypot(px - (ax + t * dx), pz - (az + t * dz)))
+    return best
+
+
+def vessel(profile, wall=0.004, floor=None, rim=True, foot=None, segments=48, inside_over_rim=0.0, name="vessel"):
+    """A hollow container as ONE closed solid: mug, cup, bowl, bottle, vase, pot, bucket.
+    profile: the OUTER outline as (radius, z) points from the bottom to the top, e.g. a straight
+    mug [(0.040, 0), (0.042, 0.095)], a bowl [(0.03, 0), (0.06, 0.02), (0.075, 0.06)], a bottle with
+    shoulder and neck. Pass h.smooth_points(...) for a curved wall. The base is closed flat at the
+    first point's height. The vessel is EXACTLY as tall as the profile: its top is the last point's z
+    (the rounded rim is inside that height, not on top of it), so a profile from z = 0 to z = 0.100
+    gives a vessel 100 mm tall standing on z = 0. wall: wall thickness; the inside follows the
+    outside at that distance. floor: thickness of the bottom (default: the wall). rim=True rounds the
+    top edge (a half-round across the wall); False leaves it flat. foot=(height, width): a foot ring
+    of that height and width under the base, the base inside it recessed; it is inside the profile's
+    height too. segments: sides around. inside_over_rim: how far down the OUTSIDE, measured from the
+    top, the inside's colour reaches, for a glaze that wraps over the lip (0.004 puts the glaze line
+    4 mm below the top edge); 0 splits the two colours at the top of the rim.
+    The axis is the Z axis through the origin.
+    Slots: "outside" (outer wall, base, and the rim's outer half unless inside_over_rim covers it)
+    and "inside" (inner wall, inner floor, the rim's inner half, and the outside above the glaze
+    line): fill them with m.assign_slot for a glaze of two colours."""
+    pts = h._dedupe([(float(r), float(z)) for r, z in profile])
+    if len(pts) < 2:
+        raise ValueError("a vessel profile needs at least two (radius, z) points")
+    if pts[0][0] > 1e-9:
+        pts.insert(0, (0.0, pts[0][1]))
+    z0 = pts[0][1]
+    z_top = pts[-1][1]
+    floor = wall if floor is None else floor
+    foot_h, foot_w = foot if foot else (0.0, 0.0)
+    if rim:
+        # the half-round rim is wall / 2 high: end the wall that much short, so the rim's top is the profile's top
+        (r1, z1), (r2, z2) = pts[-2], pts[-1]
+        length = math.hypot(r2 - r1, z2 - z1)
+        if length > wall / 2 + 1e-6:
+            t = (wall / 2) / length
+            pts[-1] = (r2 - (r2 - r1) * t, z2 - (z2 - z1) * t)
+    line = z_top - inside_over_rim if inside_over_rim > 0 else None
+    if line is not None:
+        # an edge at the glaze line, so the two colours meet in a clean ring
+        for i in range(len(pts) - 1, 0, -1):
+            (r1, z1), (r2, z2) = pts[i - 1], pts[i]
+            if min(z1, z2) + 1e-7 < line < max(z1, z2) - 1e-7:
+                t = (line - z1) / (z2 - z1)
+                pts.insert(i, (r1 + (r2 - r1) * t, line))
+                break
+    inner = _inner_wall(pts, wall, z0 + foot_h + floor)
+    outer = list(pts)
+    if foot:
+        base = pts[1]
+        if foot_w >= base[0]:
+            raise ValueError("the foot ring is wider than the base")
+        outer = [(0.0, z0 + foot_h), (base[0] - foot_w, z0 + foot_h), (base[0] - foot_w, z0)] + pts[1:]
+    top_out, top_in = outer[-1], inner[-1]
+    arc = []
+    if rim:
+        mx, mz = (top_out[0] + top_in[0]) / 2, (top_out[1] + top_in[1]) / 2
+        ax, az = top_out[0] - mx, top_out[1] - mz
+        radius = math.hypot(ax, az)
+        tx, tz = pts[-1][0] - pts[-2][0], pts[-1][1] - pts[-2][1]
+        length = math.hypot(tx, tz) or 1.0
+        tx, tz = tx / length * radius, tz / length * radius
+        steps = 6
+        arc = [(mx + ax * math.cos(math.pi * i / steps) + tx * math.sin(math.pi * i / steps),
+                mz + az * math.cos(math.pi * i / steps) + tz * math.sin(math.pi * i / steps))
+               for i in range(1, steps)]
+    half = len(arc) // 2
+    outer_chain = outer + arc[:half + 1]
+    inner_chain = arc[half:] + list(reversed(inner))
+    obj = h.revolve(outer + arc + list(reversed(inner)), segments=segments, name=name)
+
+    def side(p):
+        c = p.center
+        if line is not None and c.z > line:
+            return 1
+        point = (math.hypot(c.x, c.y), c.z)
+        return 1 if _chain_distance(point, inner_chain) < _chain_distance(point, outer_chain) else 0
+
+    return _set_slots(obj, ["outside", "inside"], side)
+
+
+def _power(value, exponent):
+    return math.copysign(abs(value) ** exponent, value)
+
+
+def handle(top_z, bottom_z, body_radius, reach=0.03, section=(0.014, 0.010), embed=0.002, flare=0.9,
+           samples=22, squareness=2.6, name="handle"):
+    """A loop handle for a mug, jug or pot, on the +X side, as one closed solid: a smooth D-shaped
+    loop of oval section that leaves the wall square to it at the top, runs down and comes back
+    square to it at the bottom, and curves out into the wall at both ends with a rounded fillet,
+    like a handle moulded on.
+    top_z, bottom_z: heights of the centres of its two joints. body_radius: the body's outer radius
+    there, or (radius at the top joint, radius at the bottom joint) for a tapered body. reach: how
+    far the inside of the loop stands off the body (0.022 to 0.030 takes two or three fingers).
+    section: (width along Y, thickness) of its oval cross-section (a mug: 0.014 x 0.010).
+    embed: how far its ends sink into the wall (keep it under the wall thickness); the ends follow
+    the wall's curve, so the whole end is sunk evenly. flare: how much it swells where it meets the
+    body, as a share of half the thickness (0.9 on a 10 mm handle is 4.5 mm more all round at the
+    wall, easing out over the last 15 mm or so of the loop); under 0.5 the joint reads as a stub
+    pressed on, 0 is a plain butt joint. samples: the least number of rings
+    along the loop (22; never under 16); rings are added by themselves where the loop bends, so no
+    bend is sharp enough to show as a facet. squareness: 2 is a half-ellipse (a round ear), 2.6 a D,
+    4 nearly a squared loop.
+    Built in place around the Z axis, so no placing is needed; join it to the body with
+    k.fuse(body, [handle]). No slots of its own: fused, it takes the body's "outside". About 1,200
+    to 1,500 triangles."""
+    width, thick = section
+    span = top_z - bottom_z
+    if span <= thick * 2:
+        raise ValueError("the handle's top and bottom are too close together")
+    r_top, r_bottom = body_radius if isinstance(body_radius, (list, tuple)) else (body_radius, body_radius)
+    far = max(r_top, r_bottom) + reach + thick / 2  # the centre line's furthest point from the axis
+    mid = (top_z + bottom_z) / 2
+
+    def wall_at(z):  # where the handle's ends sit: just under the wall's surface
+        t = (top_z - z) / span
+        return r_top + (r_bottom - r_top) * max(0.0, min(1.0, t)) - embed
+
+    dense = []
+    for i in range(481):
+        angle = math.pi / 2 - math.pi * i / 480
+        z = mid + (span / 2) * _power(math.sin(angle), 2 / squareness)
+        start = wall_at(z)
+        dense.append((start + (far - start) * _power(math.cos(angle), 2 / squareness), z))
+    lengths = [0.0]
+    for p0, p1 in zip(dense, dense[1:]):
+        lengths.append(lengths[-1] + math.hypot(p1[0] - p0[0], p1[1] - p0[1]))
+    total = lengths[-1]
+
+    def heading(i):
+        p0, p1 = dense[max(0, i - 1)], dense[min(len(dense) - 1, i + 1)]
+        return math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+
+    # the flare: a quarter ellipse from the wall out along the loop, `fillet` high at the wall and `run`
+    # long, so the handle swells into the wall gradually (a short one reads as a collar) and meets it
+    # at a shallow angle
+    fillet = max(0.0, flare) * thick / 2
+    run = min(max(thick, width) * 1.2, total * 0.2)
+    # the first ring stands clear of the wall (half a millimetre on a mug): one lying on the wall's surface
+    # leaves slivers and a nub where the two are joined
+    arc = [math.radians(a) for a in (16, 30, 45, 60, 75, 90)] if fillet > 1e-6 else []
+    near_wall = [(embed + run * (1 - math.cos(a)), fillet * (1 - math.sin(a))) for a in arc]  # (distance, swell)
+    reach_of_fillet = embed + run if arc else embed
+
+    # rings: one wherever the loop has turned 14 degrees or run a full step since the last one
+    step = total / max(16, int(samples))
+    stops, turned, last, last_heading = [0.0], 0.0, 0.0, heading(0)
+    for i in range(1, len(dense) - 1):
+        here = heading(i)
+        delta = abs((here - last_heading + math.pi) % (2 * math.pi) - math.pi)
+        turned += delta
+        last_heading = here
+        inside = reach_of_fillet < lengths[i] < total - reach_of_fillet
+        if inside and (turned >= math.radians(14) or lengths[i] - last >= step):
+            stops.append(lengths[i])
+            turned, last = 0.0, lengths[i]
+    stops.append(total)
+    for distance, _ in near_wall:
+        stops += [distance, total - distance]
+    stops.sort()
+    spaced = [stops[0]]
+    for stop in stops[1:]:
+        if stop - spaced[-1] > 2e-4:
+            spaced.append(stop)
+    spaced[-1] = total
+
+    def swell_at(along):
+        d = min(along, total - along)
+        if fillet <= 1e-6 or d >= reach_of_fillet:
+            return 0.0
+        if d <= embed + run * (1 - math.cos(arc[0])):
+            return fillet * (1 - math.sin(arc[0]))  # inside the wall and at its surface: the flare's widest
+        x = (d - embed) / run  # along the loop from the wall's surface, 0 to 1
+        return fillet * (1 - math.sqrt(max(1 - (1 - x) ** 2, 0.0)))
+
+    oval = [(math.cos(2 * math.pi * i / 18), math.sin(2 * math.pi * i / 18)) for i in range(18)]
+    sections, j = [], 0
+    for n, want in enumerate(spaced):
+        while j < len(lengths) - 2 and lengths[j + 1] < want:
+            j += 1
+        gap = lengths[j + 1] - lengths[j]
+        t = 0.0 if gap < 1e-12 else (want - lengths[j]) / gap
+        x = dense[j][0] + (dense[j + 1][0] - dense[j][0]) * t
+        z = dense[j][1] + (dense[j + 1][1] - dense[j][1]) * t
+        first, last_ring = n == 0, n == len(spaced) - 1
+        if want < reach_of_fillet:
+            tx, tz = 1.0, 0.0   # square to the wall all through the fillet
+        elif want > total - reach_of_fillet:
+            tx, tz = -1.0, 0.0
+        else:
+            tx, tz = math.cos(heading(j)), math.sin(heading(j))
+        nx, nz = -tz, tx  # across the loop, in the handle's plane
+        grow = swell_at(want)
+        half_w, half_t = width / 2 + grow, thick / 2 + grow
+        ring = [(x + nx * half_t * c2, half_w * c1, z + nz * half_t * c2) for c1, c2 in oval]
+        # near the wall the rings bend with the wall's curve, so the fillet meets it evenly all the way
+        # round instead of standing off it at the sides like a collar; the bend fades out along the loop
+        d = min(want, total - want)
+        follow = max(0.0, 1.0 - max(0.0, d - embed) / run) if fillet > 1e-6 else 0.0
+        if follow > 0:
+            bent = []
+            for px, py, pz in ring:
+                surface = wall_at(pz) + embed
+                bent.append((px + follow * (math.sqrt(max(surface * surface - py * py, 1e-10)) - surface), py, pz))
+            ring = bent
+        if first or last_ring:
+            # the end follows the wall's curve, sunk `embed` everywhere: no corner pokes out, none goes through
+            ring = [(math.sqrt(max(wall_at(pz) ** 2 - py * py, 1e-10)), py, pz) for _, py, pz in ring]
+        sections.append(ring)
+    return h.loft(sections, closed=True, cap=True, name=name)
+
+
+def fuse(body, pieces):
+    """Join pieces (a handle, a spout, lugs, feet) into the body as ONE closed solid with no seam,
+    notch or gap where they meet. The pieces must already be in place and sink a little into the
+    body. The result keeps the body's slots; the pieces' faces take the body's first slot.
+    Returns the body."""
+    if not isinstance(pieces, (list, tuple)):
+        pieces = [pieces]
+    backup = body.data.copy()
+    for p in pieces:
+        h.apply_modifiers(p)
+        _same_slots(p, body)
+    h.boolean(body, list(pieces), "UNION", keep_cutters=True)
+    h.merge_by_distance(body, 1e-6)
+    if _open_edges(body):  # the union did not close: keep every piece as a closed solid sunk into the body
+        body.data = backup
+        return h.join([body] + list(pieces), body.name)
+    bpy.data.meshes.remove(backup)
+    for p in pieces:
+        bpy.data.objects.remove(p, do_unlink=True)
+    return body
+
+
+# --- devices -----------------------------------------------------------------------------
+
+def _slab_outline(width, height, radii, grow=0.0, segments=8):
+    """Outline (x, z) of an upright rounded rectangle standing on z = 0, each corner with its own
+    radius (bl, br, tr, tl), grown outward by `grow` (negative shrinks); same point count always."""
+    w, hgt = width + 2 * grow, height + 2 * grow
+    limit = min(w, hgt) / 2 - 1e-6
+    lo, hi = -grow, height + grow
+    out = []
+    for key, sx, top, start in (("br", 1, False, 270), ("tr", 1, True, 0), ("tl", -1, True, 90), ("bl", -1, False, 180)):
+        r = max(1e-5, min(limit, radii[key] + grow))
+        ox = sx * (w / 2 - r)
+        oz = hi - r if top else lo + r
+        for i in range(segments + 1):
+            a = math.radians(start + 90 * i / segments)
+            out.append((ox + r * math.cos(a), oz + r * math.sin(a)))
+    return out
+
+
+def device_shell(width, height, depth, corner_radius, corners=None, edge_radius=0.0015, seam=None, name="shell"):
+    """The body of a hand-held device as ONE rounded slab: phone, console, remote, tablet, speaker.
+    It stands upright: the front face is at y = -depth / 2, the back at y = +depth / 2, the bottom on
+    z = 0, centred on x = 0. corner_radius: the radius of the four corners seen from the front;
+    corners: a dict to give some their own, e.g. {"br": 0.018} (keys bl, br, tr, tl, as seen from the
+    front, so br is at +x). edge_radius: the rounding of the front and back edges. seam=(y_offset,
+    width, depth): a groove round the sides where the two halves of the case meet, y_offset from the
+    middle. Carve screens, button wells and ports into it with k.pocket and k.slots.
+    Slots: "shell", and "seam" inside the groove."""
+    radii = {key: corner_radius for key in ("bl", "br", "tr", "tl")}
+    radii.update(corners or {})
+    obj = h.extrude(_slab_outline(width, height, radii), depth, name=name, plane="XZ", center=True)
+    _set_slots(obj, ["shell"])
+    if edge_radius > 0:
+        h.bevel(obj, min(edge_radius, depth * 0.45), segments=3)
+    if seam:
+        y, sw, sd = seam
+        inner = _slab_outline(width, height, radii, grow=-sd)
+        outer = _slab_outline(width, height, radii, grow=max(0.004, sd))
+        bm = bmesh.new()
+        rings = [[bm.verts.new((x, yy, z)) for x, z in loop]
+                 for loop, yy in ((inner, y - sw / 2), (outer, y - sw / 2), (outer, y + sw / 2), (inner, y + sw / 2))]
+        n = len(inner)
+        for a, b in zip(rings, rings[1:] + rings[:1]):
+            for i in range(n):
+                j = (i + 1) % n
+                bm.faces.new((a[i], a[j], b[j], b[i]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        me = bpy.data.meshes.new("seam_cutter")
+        bm.to_mesh(me)
+        bm.free()
+        ring = bpy.data.objects.new("seam_cutter", me)
+        bpy.context.scene.collection.objects.link(ring)
+        _cut(obj, [ring], "seam")
+    obj[h.NO_BEVEL_KEY] = 1
+    return obj
+
+
+def pocket(target, rect, depth, face="front", slot=None):
+    """Sink a rounded-rectangle recess into a face of the target (a screen well, a button well, a
+    port, a cartridge bay, a battery door outline). rect = (cu, cv, width, height, corner_radius),
+    centred on (cu, cv) of that face: (x, z) on "front" and "back", (y, z) on "left" and "right",
+    (x, y) on "top" and "bottom", in world axes. depth: how deep it goes from the target's outermost
+    surface on that face. slot: the slot its floor and sides get (e.g. "pocket", "slot", "glass");
+    default the target's first slot. The target may be any closed solid, also one built with the
+    plain helpers (a vehicle body, a cabinet): its own faces then become the slot "body".
+    Returns the target."""
+    plane = _face_plane(target, face)
+    sign = FACES[face][3]
+    cutter = _prism(face, _rect_outline(rect), plane - sign * depth, plane + sign * max(depth, 0.01))
+    return _cut(target, [cutter], slot)
+
+
+def slots(target, center, count, slot_size, pitch, angle_deg=0.0, depth=0.001, face="front", slot="slot"):
+    """Cut a row of parallel round-ended slots into a face (a speaker grille, vents).
+    center: (u, v) of the middle of the row on that face. count: how many. slot_size: (width, length)
+    of one slot. pitch: distance between neighbours, measured across the slots. angle_deg: how the
+    slots lean: 0 has them lying along u (horizontal on the front), 90 standing along v. depth: how
+    deep. slot: the slot the cut faces get (dark by default). Returns the target."""
+    plane = _face_plane(target, face)
+    sign = FACES[face][3]
+    width, length = slot_size
+    a = math.radians(angle_deg)
+    along, across = (math.cos(a), math.sin(a)), (-math.sin(a), math.cos(a))
+    r = width / 2
+    straight = max(0.0, length - width) / 2
+    stadium = [(straight + r * math.cos(math.radians(t)), r * math.sin(math.radians(t))) for t in range(-90, 91, 30)]
+    stadium += [(-straight + r * math.cos(math.radians(t)), r * math.sin(math.radians(t))) for t in range(90, 271, 30)]
+    cutters = []
+    for i in range(count):
+        off = (i - (count - 1) / 2) * pitch
+        cu, cv = center[0] + across[0] * off, center[1] + across[1] * off
+        outline = [(cu + along[0] * x + across[0] * y, cv + along[1] * x + across[1] * y) for x, y in stadium]
+        cutters.append(_prism(face, outline, plane - sign * depth, plane + sign * max(depth, 0.01)))
+    return _cut(target, cutters, slot)
+
+
+def plate(rect, thickness, face="front", shell_depth=None, plane=None, sink=0.0, slot="trim", name="plate"):
+    """A thin rounded-rectangle plate lying on a face: a screen bezel, the screen glass, a camera
+    island, a port, a label, a battery door. rect = (cu, cv, width, height, corner_radius) on that
+    face ((x, z) on front/back, (y, z) on left/right, (x, y) on top/bottom). Where the face is: give
+    shell_depth (the device's depth) for the front or back of a k.device_shell, or `plane`, the
+    face's coordinate along its own axis (e.g. the right side of a 0.09 wide shell is plane=0.045).
+    sink: how far its underside lies below the face, i.e. the depth of the pocket it sits in; with
+    sink equal to thickness it is flush, with less it stands proud. Built in place: do not move it.
+    Slots: `slot` (one slot, "trim" by default; use e.g. "screen", "glass", "button")."""
+    sign = FACES[face][3]
+    if plane is None:
+        if shell_depth is None or face not in ("front", "back"):
+            raise ValueError("give shell_depth for a front or back plate, or plane for any face")
+        plane = sign * shell_depth / 2
+    w0 = plane - sign * sink
+    obj = _prism(face, _rect_outline(rect), w0, w0 + sign * thickness, name=name)
+    return _set_slots(obj, [slot])
+
+
+def _turn_to_face(obj, face):
+    """Turn a piece built standing on z = 0 with its top toward +Z so its top looks out of `face`."""
+    turns = {"front": Matrix.Rotation(math.radians(90), 4, "X"), "back": Matrix.Rotation(math.radians(-90), 4, "X"),
+             "left": Matrix.Rotation(math.radians(-90), 4, "Y"), "right": Matrix.Rotation(math.radians(90), 4, "Y"),
+             "top": Matrix.Identity(4), "bottom": Matrix.Rotation(math.radians(180), 4, "X")}
+    obj.data.transform(turns[face])
+    obj.data.update()
+    return obj
+
+
+def round_button(radius, height, dome=0.3, face="front", segments=24, slot="button", name="button"):
+    """A round push button (also a knob, a lens, an LED): a short cylinder whose top is domed.
+    radius, height: its size; dome: 0 a flat top with a small rounded edge, 1 a full dome.
+    face: the face it sits on; its base is at the origin and its top points out of that face (for
+    "front" toward -Y), so place it at a point on that face, sunk a little into its well.
+    Slots: `slot` ("button" by default)."""
+    dome = max(0.0, min(1.0, dome))
+    rise = max(height * 0.12, height * dome)
+    side = height - rise
+    profile = [(0.0, 0.0), (radius, 0.0), (radius, side)]
+    steps = 6
+    for i in range(1, steps + 1):
+        a = math.pi / 2 * i / steps
+        profile.append((radius * math.cos(a) if i < steps else 0.0, side + rise * math.sin(a)))
+    obj = h.revolve(profile, segments=segments, name=name)
+    _set_slots(obj, [slot])
+    obj[h.NO_BEVEL_KEY] = 1
+    return _turn_to_face(obj, face)
+
+
+def dpad(size, arm, height, face="front", slot="button", name="dpad"):
+    """A plus-shaped direction pad. size: its full span; arm: the width of each arm; height: how
+    thick it is. face: the face it sits on; its base is at the origin, centred, and it points out of
+    that face (for "front" toward -Y). Slots: `slot` ("button" by default)."""
+    s, a = size / 2, arm / 2
+    outline = [(-a, -s), (a, -s), (a, -a), (s, -a), (s, a), (a, a), (a, s), (-a, s), (-a, a), (-s, a), (-s, -a), (-a, -a)]
+    obj = h.extrude(outline, height, name=name)
+    _set_slots(obj, [slot])
+    h.bevel(obj, min(arm * 0.12, height * 0.3), segments=2)
+    return _turn_to_face(obj, face)
+
+
+# --- buildings -----------------------------------------------------------------------------
+
+def _face_span(face, width, depth):
+    """(length of the wall, its plane's coordinate) for a wall face of a width x depth building."""
+    if face in ("front", "back"):
+        return width, (depth / 2) * FACES[face][3]
+    return depth, (width / 2) * FACES[face][3]
+
+
+def openings(width, depth, floors, floor_height, bays_front, bays_side, window=(1.0, 1.5), sill=0.9,
+             ground_floor=0.0, door=None, faces=("front", "back", "left", "right")):
+    """The layout of every window and the door of a box-shaped building, as a list that k.walls,
+    k.windows and k.door all take, so the three fit each other. Each wall is split into equal bays
+    with one window centred in each, on every floor.
+    width (X), depth (Y): the building's footprint. floors, floor_height: storeys and their height.
+    bays_front: bays across the front and back; bays_side: across the left and right. window: (width,
+    height) of a window. sill: height of the window's bottom above its floor. ground_floor: height of
+    the ground floor's floor above z = 0 (a raised ground floor or a plinth). door: None, or a dict
+    {"bay": 1, "width": 1.0, "height": 2.2, "face": "front"}: the door takes the place of the ground
+    floor window of that bay (counted from the left as seen from outside, starting at 0). faces: the
+    walls that get openings (all four by default; never leave a visible wall blank).
+    Returns dicts {"face", "u", "z", "w", "h", "kind"}: u is the opening's centre along the wall (x on
+    front and back, y on left and right, world axes), z its bottom, kind "window" or "door". Edit the
+    list freely (drop or resize entries) before building from it."""
+    out = []
+    door = dict(door) if door else None
+    for face in faces:
+        length, _ = _face_span(face, width, depth)
+        bays = bays_front if face in ("front", "back") else bays_side
+        if bays < 1:
+            continue
+        for floor_i in range(floors):
+            for bay in range(bays):
+                u = -length / 2 + length * (bay + 0.5) / bays
+                # bays are counted left to right as seen from outside the wall
+                if face in ("back", "left"):
+                    u = -u
+                z = ground_floor + floor_i * floor_height
+                if door and floor_i == 0 and face == door.get("face", "front") and bay == door.get("bay", bays // 2):
+                    out.append({"face": face, "u": u, "z": z, "w": door.get("width", 1.0),
+                                "h": door.get("height", 2.2), "kind": "door"})
+                    continue
+                out.append({"face": face, "u": u, "z": z + sill, "w": window[0], "h": window[1], "kind": "window"})
+    return out
+
+
+def walls(width, depth, height, openings, reveal=0.12, plinth=None, name="walls"):
+    """The walls of a box-shaped building as one closed solid, with every opening of the layout sunk
+    `reveal` deep into the wall (a recess, not a hole: nothing is seen through it, and the window or
+    door sits at its back). width (X), depth (Y), height: the box; it stands on z = 0, centred on the
+    origin. openings: the list from k.openings. reveal: how far the windows sit back from the wall
+    face (0.05 to 0.15 for real buildings). plinth=(height, out): a base course that tall, standing
+    `out` proud of the wall. Slots: "wall" (the faces), "reveal" (the sides and back of each recess)
+    and "plinth"."""
+    obj = h.box((width, depth, height), anchor="bottom", name=name)
+    _set_slots(obj, ["wall", "reveal", "plinth"])
+    if plinth:
+        ph, out = plinth
+        base = h.box((width + 2 * out, depth + 2 * out, ph), anchor="bottom", name="plinth")
+        _same_slots(base, obj, "plinth")
+        h.boolean(obj, base, "UNION")
+    cutters = []
+    for o in openings:
+        _, plane = _face_span(o["face"], width, depth)
+        sign = FACES[o["face"]][3]
+        outline = [(o["u"] - o["w"] / 2, o["z"]), (o["u"] + o["w"] / 2, o["z"]),
+                   (o["u"] + o["w"] / 2, o["z"] + o["h"]), (o["u"] - o["w"] / 2, o["z"] + o["h"])]
+        cutters.append(_prism(o["face"], outline, plane - sign * reveal, plane + sign * (reveal + 1.0)))
+    _cut(obj, cutters, "reveal")
+    obj[h.NO_BEVEL_KEY] = 1
+    return obj
+
+
+def _wall_box(bm, face, plane, u, v, w_in, w_out, su, sv, index):
+    """A box on a wall face: centred on (u, v), su wide and sv high, running from w_in to w_out
+    metres inside the wall plane (negative = outside it)."""
+    sign = FACES[face][3]
+    a, b = plane - sign * w_in, plane - sign * w_out
+    au, av, aw, _ = FACES[face]
+    size, centre = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    size[au], size[av], size[aw] = su, sv, abs(a - b)
+    centre[au], centre[av], centre[aw] = u, v, (a + b) / 2
+    _add_box(bm, size, centre, index)
+
+
+def windows(openings, width, depth, reveal=0.12, frame=0.06, bars=(1, 2), sill=0.04, name="windows"):
+    """Every window of the layout, built in place in the recesses of k.walls made from the same
+    numbers: a dark pane at the back of each recess, a frame round it, glazing bars and a sill.
+    openings, width, depth, reveal: exactly what k.walls got. frame: the width of the frame members.
+    bars: (panes across, panes up), e.g. (1, 2) a sash window, (2, 3) small panes, (1, 1) one sheet.
+    sill: the sill's thickness (0 for none); it stands a little proud of the wall.
+    Built in place: leave it at the origin, like the walls. Slots: "frame", "glass", "sill"."""
+    bm = bmesh.new()
+    pane_t = 0.012
+    frame_d = min(0.05, reveal * 0.6)
+    for o in openings:
+        if o.get("kind", "window") != "window":
+            continue
+        face = o["face"]
+        _, plane = _face_span(face, width, depth)
+        u, w, hgt = o["u"], o["w"], o["h"]
+        z = o["z"]
+        mid = z + hgt / 2
+        f = min(frame, w / 4, hgt / 4)
+        lap = f * 0.25  # pieces overlap by this much instead of meeting corner to corner
+        _wall_box(bm, face, plane, u, mid, reveal, reveal - pane_t, w - 2 * lap, hgt - 2 * lap, 1)
+        for du in (-(w - f) / 2, (w - f) / 2):
+            _wall_box(bm, face, plane, u + du, mid, reveal, reveal - frame_d, f, hgt, 0)
+        for dv in (-(hgt - f) / 2, (hgt - f) / 2):
+            _wall_box(bm, face, plane, u, mid + dv, reveal, reveal - frame_d * 0.96, w - 2 * f + 2 * lap, f, 0)
+        cols, rows = bars
+        bar = f * 0.5
+        for c in range(1, cols):
+            _wall_box(bm, face, plane, u - w / 2 + w * c / cols, mid, reveal, reveal - frame_d * 0.8, bar,
+                      hgt - 2 * f + 2 * lap, 0)
+        for r in range(1, rows):
+            _wall_box(bm, face, plane, u, z + hgt * r / rows, reveal, reveal - frame_d * 0.75, w - 2 * f + 2 * lap,
+                      bar, 0)
+        if sill > 0:
+            _wall_box(bm, face, plane, u, z + sill / 2, reveal - frame_d * 0.5, -0.03, w - 0.004, sill, 2)
+    return _new_object(bm, name, ["frame", "glass", "sill"], no_bevel=True)
+
+
+def door(openings, width, depth, reveal=0.12, frame=0.07, panels=(2, 2), name="door"):
+    """Every door of the layout, built in place in its recess of k.walls: a leaf with raised panels, a
+    frame round the top and sides, a handle and a step-high threshold. openings, width, depth,
+    reveal: exactly what k.walls got. frame: the frame's width. panels: (across, up) raised panels on
+    the leaf. Built in place: leave it at the origin. Slots: "door" (the leaf), "frame", "metal"
+    (handle and threshold)."""
+    bm = bmesh.new()
+    leaf_t = 0.045
+    for o in openings:
+        if o.get("kind") != "door":
+            continue
+        face = o["face"]
+        _, plane = _face_span(face, width, depth)
+        u, w, hgt, z = o["u"], o["w"], o["h"], o["z"]
+        mid = z + hgt / 2
+        f = min(frame, w / 5)
+        lap = f * 0.25  # pieces overlap by this much instead of meeting corner to corner
+        _wall_box(bm, face, plane, u, mid - lap / 2, reveal, reveal - leaf_t, w - 2 * lap, hgt - lap, 0)
+        frame_d = min(0.07, reveal * 0.75)
+        for du in (-(w - f) / 2, (w - f) / 2):
+            _wall_box(bm, face, plane, u + du, mid, reveal, reveal - frame_d, f, hgt, 1)
+        _wall_box(bm, face, plane, u, z + hgt - f / 2, reveal, reveal - frame_d * 0.96, w - 2 * f + 2 * lap, f, 1)
+        _wall_box(bm, face, plane, u, z + 0.015, reveal - frame_d * 0.5, -0.02, w - 0.004, 0.03, 2)
+        cols, rows = panels
+        leaf_w, leaf_h = w - 2 * f, hgt - f - 0.03
+        gap = min(0.09, leaf_w / (cols * 3))
+        pw = (leaf_w - gap * (cols + 1)) / cols
+        ph = (leaf_h - gap * (rows + 1)) / rows
+        for c in range(cols):
+            for r in range(rows):
+                pu = u - leaf_w / 2 + gap + pw / 2 + c * (pw + gap)
+                pv = z + 0.03 + gap + ph / 2 + r * (ph + gap)
+                _wall_box(bm, face, plane, pu, pv, reveal - leaf_t + 0.002, reveal - leaf_t - 0.012, pw, ph, 0)
+        side = 1 if face in ("front", "right") else -1
+        _wall_box(bm, face, plane, u + side * (leaf_w / 2 - 0.07), z + 1.0, reveal - leaf_t + 0.002,
+                  reveal - leaf_t - 0.05, 0.03, 0.14, 2)
+    return _new_object(bm, name, ["door", "frame", "metal"], no_bevel=True)
+
+
+def roof(width, depth, kind="gable", pitch_deg=40.0, overhang=0.3, thickness=0.15, ridge="x", parapet=0.5,
+         name="roof"):
+    """A roof for a width (X) x depth (Y) box building, as one closed solid. Its underside is flat on
+    z = 0, centred on the origin: place it at the height of the wall top.
+    kind "gable": two slopes meeting at a ridge, with the two triangular gable ends closed (slot
+    "gable", so they can take the wall material); "hip": slopes on all four sides; "flat": a slab
+    with a parapet wall `parapet` high round its edge. pitch_deg: the slope. overhang: how far the
+    eaves stand out past the walls (use 0 for flat). thickness: the eave's edge height (for flat, the
+    slab). ridge: "x" or "y", the direction the ridge runs (gable and hip).
+    Slots: "roof" (slopes, eaves and top), "gable" (gable ends; parapet faces on a flat roof)."""
+    w, d = width + 2 * overhang, depth + 2 * overhang
+    tan = math.tan(math.radians(pitch_deg))
+    if kind == "flat":
+        obj = h.box((w, d, thickness + parapet), anchor="bottom", name=name)
+        _set_slots(obj, ["roof", "gable"], lambda p: 1 if abs(p.normal.z) < 0.5 else 0)
+        t = min(0.25, w / 6, d / 6)
+        if parapet > 0:
+            well = h.box((w - 2 * t, d - 2 * t, parapet + 0.5), location=(0, 0, thickness), anchor="bottom")
+            _cut(obj, [well], "roof")
+        obj[h.NO_BEVEL_KEY] = 1
+        return obj
+    along, across = (w, d) if ridge == "x" else (d, w)
+    half = across / 2
+    rise = half * tan
+    bm = bmesh.new()
+    if kind == "gable":
+        section = [(-half, 0.0), (half, 0.0), (half, thickness), (0.0, thickness + rise), (-half, thickness)]
+        ends = [[bm.verts.new((x, y, z)) for y, z in section] for x in (-along / 2, along / 2)]
+        n = len(section)
+        for i in range(n):
+            j = (i + 1) % n
+            bm.faces.new((ends[0][i], ends[0][j], ends[1][j], ends[1][i])).material_index = 0
+        bm.faces.new(ends[0]).material_index = 1
+        bm.faces.new(list(reversed(ends[1]))).material_index = 1
+    elif kind == "hip":
+        run = max(0.0, along / 2 - half)  # half the ridge length
+        low = [bm.verts.new((sx * along / 2, sy * half, 0.0)) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        eave = [bm.verts.new((sx * along / 2, sy * half, thickness)) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+        bm.faces.new(list(reversed(low)))
+        for i in range(4):
+            j = (i + 1) % 4
+            bm.faces.new((low[i], low[j], eave[j], eave[i]))
+        if run > 1e-6:
+            r0 = bm.verts.new((-run, 0.0, thickness + rise))
+            r1 = bm.verts.new((run, 0.0, thickness + rise))
+            bm.faces.new((eave[0], eave[1], r1, r0))
+            bm.faces.new((eave[1], eave[2], r1))
+            bm.faces.new((eave[2], eave[3], r0, r1))
+            bm.faces.new((eave[3], eave[0], r0))
+        else:
+            top = bm.verts.new((0.0, 0.0, thickness + rise))
+            for i in range(4):
+                bm.faces.new((eave[i], eave[(i + 1) % 4], top))
+    else:
+        bm.free()
+        raise ValueError("roof kind must be gable, hip or flat")
+    if ridge != "x":
+        bmesh.ops.rotate(bm, cent=(0, 0, 0), matrix=Matrix.Rotation(math.radians(90), 3, "Z"), verts=bm.verts[:])
+    return _new_object(bm, name, ["roof", "gable"], no_bevel=True)
+
+
+def curtain_tower(width, depth, height, floor_height=3.6, bay=1.5, band=0.5, mullion=0.08, lobby=0.0,
+                  name="tower"):
+    """A modern glass tower as one part with no booleans: a glass shaft, a spandrel band at every
+    floor and at the top, and vertical mullions on all four faces. It stands on z = 0, centred on
+    the origin. width (X), depth (Y), height: the shaft. floor_height: storey height (a band every
+    storey). bay: spacing of the mullions. band: height of each floor band (0 for none). mullion:
+    the mullions' width (0 for none); they stand a little proud of the bands. lobby: height of a
+    taller ground floor with no bands below it (0: the first band is one storey up).
+    Slots: "glass" (the shaft), "band", "mullion". Vary floor_height, bay, band and mullion between
+    towers of one group so they do not read as copies."""
+    bm = bmesh.new()
+    _add_box(bm, (width, depth, height), (0, 0, height / 2), 0)
+    proud = 0.06
+    if band > 0:
+        z = lobby if lobby > 0 else floor_height
+        levels = []
+        while z < height - band * 1.5:
+            levels.append(z)
+            z += floor_height
+        levels.append(height - band / 2 + 0.02)
+        for z in levels:
+            _add_box(bm, (width + 2 * proud, depth + 2 * proud, band), (0, 0, z), 1)
+    if mullion > 0:
+        out = proud * 2
+        for length, fixed, axis in ((width, depth / 2, 0), (depth, width / 2, 1)):
+            count = max(1, round(length / bay))
+            for i in range(count + 1):
+                t = -length / 2 + length * i / count
+                for side in (-1, 1):
+                    centre = [0.0, 0.0, height / 2]
+                    centre[axis] = t
+                    centre[1 - axis] = side * (fixed + out / 2 - 0.01)
+                    size = [0.0, 0.0, height]
+                    size[axis] = mullion
+                    size[1 - axis] = out + 0.02
+                    _add_box(bm, size, centre, 2)
+    return _new_object(bm, name, ["glass", "band", "mullion"], no_bevel=True)
+
+
+# --- vehicles ----------------------------------------------------------------------------
+
+def wheel(radius, width, rim_ratio=0.62, style="disc", spokes=5, dual=False, hub_reach=0.0, segments=32,
+          name="wheel"):
+    """A road wheel for a bus, truck, trailer, cart or train-like vehicle: a tyre with rounded
+    shoulders, a dished rim and a hub. The axle runs along X and the outer face looks toward +X; it
+    is centred on the origin (the centre of the outer tyre), so place it at the axle end and turn it
+    180 degrees about Z for the other side. radius: the tyre's outer radius. width: one tyre's width.
+    rim_ratio: rim radius over tyre radius (0.62 a bus or truck, 0.7 a van). style: "disc" (a plain
+    dished disc), "steel" (a disc with a ring of round holes and wheel nuts, as on trucks and buses)
+    or "spoke" (open spokes; `spokes` of them). dual=True adds a second tyre inboard (toward -X), as
+    on a truck's rear axle. hub_reach: the length of an axle stub running inboard from the back of
+    the rim, so the wheel touches the body or the back of its wheel arch (a wheel that touches
+    nothing counts as floating). segments: sides around. Slots: "tyre", "rim"."""
+    R, W = radius, width
+    rr = R * rim_ratio
+    sh = min(W * 0.28, (R - rr) * 0.6)
+    bm = bmesh.new()
+
+    def tyre(z_off):
+        prof = [(rr - 0.004, -W * 0.46), (R - sh, -W / 2)]
+        prof += [(R - sh + sh * math.sin(math.radians(a)), -W / 2 + sh - sh * math.cos(math.radians(a)))
+                 for a in (30, 60, 90)]
+        prof += [(R - sh + sh * math.cos(math.radians(a)), W / 2 - sh + sh * math.sin(math.radians(a)))
+                 for a in (0, 30, 60, 90)]
+        prof += [(rr - 0.004, W * 0.46)]
+        n = len(prof)
+        rings = [[bm.verts.new((r * math.cos(2 * math.pi * i / segments), r * math.sin(2 * math.pi * i / segments),
+                                z + z_off)) for i in range(segments)] for r, z in prof]
+        for k in range(n):
+            a, b = rings[k], rings[(k + 1) % n]
+            for i in range(segments):
+                j = (i + 1) % segments
+                bm.faces.new((a[i], a[j], b[j], b[i])).material_index = 0
+
+    tyre(0.0)
+    inner_end = -W * 0.47
+    if dual:
+        tyre(-(W * 1.12))
+        inner_end = -(W * 1.12) - W * 0.47
+    tyres = _new_object(bm, name, ["tyre", "rim"], no_bevel=True)
+    dish = min(W * 0.32, rr * 0.35)
+    face = W * 0.47
+    lip = rr + 0.004
+    back = [(0.0, inner_end - hub_reach), (rr * 0.28, inner_end - hub_reach), (rr * 0.28, inner_end)]         if hub_reach > 0 else [(0.0, inner_end)]
+    profile = back + [(lip, inner_end), (lip, face), (rr * 0.93, face), (rr * 0.84, face - dish),
+               (rr * 0.36, face - dish * 0.75), (rr * 0.30, face - dish * 0.2), (0.0, face - dish * 0.2)]
+    bm = bmesh.new()
+    _add_revolved(bm, profile, segments, 1)
+    rim = _new_object(bm, "rim", ["tyre", "rim"], no_bevel=True)
+    pieces = [tyres, rim]
+    if style in ("spoke", "steel"):
+        cutters = []
+        count = max(3, int(spokes)) if style == "spoke" else max(6, int(spokes) + 3)
+        z0, z1 = inner_end - 0.05, face + 0.05
+        for i in range(count):
+            if style == "spoke":
+                a0 = 2 * math.pi * (i + 0.22) / count
+                a1 = 2 * math.pi * (i + 0.78) / count
+                r_in, r_out = rr * 0.42, rr * 0.80
+                pts = [(r_out * math.cos(a0 + (a1 - a0) * k / 6), r_out * math.sin(a0 + (a1 - a0) * k / 6))
+                       for k in range(7)]
+                am = (a0 + a1) / 2
+                spread = (a1 - a0) * 0.18
+                pts += [(r_in * math.cos(am + spread), r_in * math.sin(am + spread)),
+                        (r_in * math.cos(am - spread), r_in * math.sin(am - spread))]
+            else:
+                a = 2 * math.pi * (i + 0.5) / count
+                cx, cy, hole = rr * 0.70 * math.cos(a), rr * 0.70 * math.sin(a), rr * 0.075
+                pts = [(cx + hole * math.cos(2 * math.pi * k / 10), cy + hole * math.sin(2 * math.pi * k / 10))
+                       for k in range(10)]
+            cutters.append(_prism("top", pts, z0, z1))
+        before = rim.data.copy()
+        _cut(rim, cutters, "rim")
+        if _open_edges(rim):  # the cut did not come out clean: keep the plain disc
+            rim.data = before
+        else:
+            bpy.data.meshes.remove(before)
+    if style == "steel":
+        bm = bmesh.new()
+        nuts = max(5, int(spokes) + 1)
+        for i in range(nuts):
+            a = 2 * math.pi * i / nuts
+            c = (rr * 0.50 * math.cos(a), rr * 0.50 * math.sin(a), face - dish * 0.72)
+            _add_revolved(bm, [(0.0, -0.01), (rr * 0.05, -0.01), (rr * 0.05, 0.02), (0.0, 0.02)], 8, 1, offset=c)
+        pieces.append(_new_object(bm, "nuts", ["tyre", "rim"], no_bevel=True))
+    obj = h.join(pieces, name)
+    obj[h.NO_BEVEL_KEY] = 1
+    obj.data.transform(Matrix.Rotation(math.radians(90), 4, "Y"))  # the build axis Z becomes the axle X
+    obj.data.update()
+    return obj
+
+
+def _window_row(row):
+    """(count, first, last, z_bottom, z_top) -> the rects (centre, centre z, width, height, radius) of
+    `count` equal windows filling first..last with 8 cm pillars between them."""
+    count, first, last, z0, z1 = row
+    count = max(1, int(count))
+    lo, hi = min(first, last), max(first, last)
+    pillar = 0.08 if count > 1 else 0.0
+    width = ((hi - lo) - pillar * (count - 1)) / count
+    if width <= 0.05 or z1 - z0 <= 0.05:
+        raise ValueError("the window row does not fit: too many windows for its length, or no height")
+    radius = min(0.05, width * 0.2, (z1 - z0) * 0.2)
+    return [(lo + width / 2 + i * (width + pillar), (z0 + z1) / 2, width, z1 - z0, radius) for i in range(count)]
+
+
+def vehicle_body(width, length, height, floor=0.3, roof_radius=0.25, windows=None, windshield=None,
+                 rear_window=None, doors=None, lamps=None, glass_depth=0.03, name="body"):
+    """The body of a bus, van, truck cab, trailer or railway coach as ONE closed solid with its glass,
+    doors and lamps sunk into it (nothing stuck on): a box with rounded roof edges, its underside
+    `floor` above the ground and its top at `height`, centred on the origin in X and Y, the front
+    toward -Y. Call it again without glass for a cargo box or a trailer; an engine hood is k.hood,
+    which slopes and narrows (a box makes a hood look too long).
+    width, length, height: overall size in metres (height from the ground, z = 0, to the roof).
+    floor: height of the underside. roof_radius: rounding of the two long roof edges.
+    windows: the side windows, on BOTH sides alike: one row (count, y_first, y_last, z_bottom, z_top)
+    or a list of rows; a row's `count` equal windows fill y_first..y_last with pillars between.
+    windshield: (z_bottom, z_top) or (z_bottom, z_top, side_margin): one pane across the front.
+    rear_window: the same, across the back.
+    doors: a list of (face, centre, width, z_bottom, z_top) or with a sixth value False for a door
+    without glass: a door panel outlined by a shallow recess, its upper half glazed. face is "left",
+    "right" (centre is then a Y position), "front" or "back" (centre is an X position). A door goes
+    where no window of a row is, so end the window row before it.
+    lamps: a list of (face, centre, z, size, slot): a recessed lamp; size is a diameter for a round
+    lamp or (width, height); slot is "lamp_red", "lamp_amber" or "lamp_clear" (headlights), so each
+    colour is its own material. Faces as for doors.
+    glass_depth: how far the glass sits behind the body's surface.
+    Cut the wheel arches afterwards with k.wheel_arches(body, ...).
+    Slots: "body" (index 0), "glass", "door", "lamp_red", "lamp_amber", "lamp_clear" (those used).
+    About 200 triangles plus 40 to 60 for each opening."""
+    if height - floor <= 0.2:
+        raise ValueError("the body needs some height above its floor")
+    rr = max(0.0, min(roof_radius, width / 2 - 0.01, (height - floor) / 2))
+    half = width / 2
+    profile = [(-half, floor), (half, floor), (half, height - rr)]
+    if rr > 1e-6:
+        profile += [(half - rr + x, height - rr + z) for x, z in h.arc_points(rr, 0, 90, 5)[1:]]
+        profile += [(-half + rr + x, height - rr + z) for x, z in h.arc_points(rr, 90, 180, 5)]
+    else:
+        profile += [(half, height), (-half, height)]
+    profile += [(-half, height - rr)] if rr > 1e-6 and abs(profile[-1][1] - (height - rr)) > 1e-9 else []
+    body = h.extrude(profile, length, plane="XZ", name=name)  # runs from y = 0 toward -Y
+    h.place(body, location=(0, length / 2, 0))
+    h.apply_transform(body)
+    h.bevel(body, min(0.05, (height - floor) * 0.03, width * 0.03), segments=2)
+    _set_slots(body, ["body"])
+
+    planes = {face: _face_plane(body, face) for face in ("front", "back", "left", "right")}
+
+    def cutter(face, rect, depth, round_lamp=False):
+        sign = FACES[face][3]
+        outline = _rect_outline(rect, segments=4 if round_lamp else 2)  # light corners: these are game meshes
+        return _prism(face, outline, planes[face] - sign * depth, planes[face] + sign * max(depth, 0.05))
+
+    # side windows never overlap one another, so each side is one cut; every other opening is cut by
+    # itself, so a door's pane inside a rear window, or a lamp beside a door, cannot spoil the cut
+    side_glass, glass, panels, lamp_cuts = [], [], [], []
+    rows = [] if windows is None else ([windows] if not isinstance(windows[0], (list, tuple)) else list(windows))
+    for row in rows:
+        for rect in _window_row(row):
+            side_glass += [cutter("left", rect, glass_depth), cutter("right", rect, glass_depth)]
+    for face, pane in (("front", windshield), ("back", rear_window)):
+        if pane:
+            margin = pane[2] if len(pane) > 2 else max(0.12, rr * 0.6)
+            z0, z1 = pane[0], pane[1]
+            rect = (0.0, (z0 + z1) / 2, width - 2 * margin, z1 - z0, min(0.08, (z1 - z0) * 0.2))
+            glass.append(cutter(face, rect, glass_depth))
+    for door in doors or []:
+        face, centre, wide, z0, z1 = door[:5]
+        glazed = door[5] if len(door) > 5 else True
+        panels.append(cutter(face, (centre, (z0 + z1) / 2, wide, z1 - z0, 0.03), 0.015))
+        if glazed:
+            top = z1 - 0.10
+            bottom = z0 + (z1 - z0) * 0.48
+            glass.append(cutter(face, (centre, (top + bottom) / 2, wide - 0.16, top - bottom, 0.03), glass_depth + 0.015))
+    for face, centre, z, size, slot in lamps or []:
+        if isinstance(size, (list, tuple)):
+            rect = (centre, z, size[0], size[1], min(size) * 0.2)
+        else:
+            rect = (centre, z, size, size, size / 2)
+        lamp_cuts.append((slot, cutter(face, rect, 0.02, round_lamp=not isinstance(size, (list, tuple)))))
+    for piece in panels:
+        _cut(body, [piece], "door")
+    if side_glass:
+        _cut(body, side_glass, "glass")
+    for piece in glass:
+        _cut(body, [piece], "glass")
+    for slot, piece in lamp_cuts:
+        _cut(body, [piece], slot)
+    body[h.NO_BEVEL_KEY] = 1
+    return body
+
+
+def hood(width, length, height, floor=0.45, nose_height=None, nose_width=None, corner_radius=0.18,
+         grille=None, lamps=None, fenders=None, name="hood"):
+    """The engine hood (nose) of a bus, truck, tractor or van as one closed solid: it starts at the
+    cab or body as wide and high as given, then narrows and slopes down to the grille, with rounded
+    top edges. Not a box: a box of the same length reads as a longer, heavier nose.
+    Its REAR face is at y = +length / 2 (set that against the body's front), its nose at
+    y = -length / 2; it is centred on the origin in X, and its underside is at z = `floor`.
+    width, height: at the rear, where it meets the body; height is measured from the ground. Keep it
+    narrower than the body (about 90%) and its top below the windshield's bottom edge.
+    length: from the body's front face to the grille. Take it from a side view of the real vehicle
+    (the distance from the bumper to where the cab begins, less the bumper), never from a round
+    share of the vehicle's length.
+    nose_height: the top's height at the grille (default: four fifths of the way up from the floor
+    to `height`). nose_width: the width at the grille (default 86% of `width`).
+    grille: (width, height, z_centre): a dark recess in the nose (slot "trim").
+    lamps: a list of (x, z, size, slot): recessed lamps in the nose; size is a diameter or
+    (width, height); slot "lamp_clear" for headlights, "lamp_amber" for indicators.
+    fenders: (axle_y, wheel_radius): a fender over each front wheel, standing out to the hood's
+    full rear width, with axle_y in the hood's own frame (0 is its middle). Cut the wheel arches
+    afterwards with k.wheel_arches(hood, [axle_y], wheel_radius + 0.08).
+    Slots: "body" (index 0), "trim", and the lamp slots used. About 150 to 500 triangles."""
+    top_rear = height
+    if top_rear - floor <= 0.1:
+        raise ValueError("the hood needs some height above its floor")
+    top_nose = floor + (top_rear - floor) * 0.8 if nose_height is None else nose_height
+    w_nose = width * 0.86 if nose_width is None else nose_width
+    sections = []
+    for t in (0.0, 0.3, 0.6, 0.85, 0.97, 1.0):
+        ease = t * t * (3 - 2 * t)
+        w = width + (w_nose - width) * ease
+        top = top_rear + (top_nose - top_rear) * (t ** 1.4)
+        if t == 1.0:  # the nose's leading edge is rounded off a little
+            w, top = w - 0.04, top - 0.03
+        r = max(0.01, min(corner_radius, w / 4, (top - floor) / 2))
+        y = length / 2 - length * t
+        half = w / 2
+        outline = [(-half, floor), (half, floor), (half, top - r)]
+        outline += [(half - r + x, top - r + z) for x, z in h.arc_points(r, 0, 90, 4)[1:]]
+        outline += [(-half + r + x, top - r + z) for x, z in h.arc_points(r, 90, 180, 4)]
+        sections.append([(x, y, z) for x, z in outline])
+    obj = h.loft(sections, closed=True, cap=True, name=name)
+    _set_slots(obj, ["body"])
+    if fenders:
+        axle_y, radius = fenders
+        inner, outer = radius + 0.06, radius + 0.18
+        band = [(axle_y + outer * math.cos(math.radians(a)), radius + outer * math.sin(math.radians(a)))
+                for a in range(0, 181, 15)]
+        band += [(axle_y + inner * math.cos(math.radians(a)), radius + inner * math.sin(math.radians(a)))
+                 for a in range(180, -1, -15)]
+        band = [(y, max(z, floor)) for y, z in band]
+        pieces = [_prism("right", band, w_nose / 2 - 0.15, width / 2 + 0.02, name="fender"),
+                  _prism("left", band, -(w_nose / 2 - 0.15), -(width / 2 + 0.02), name="fender")]
+        obj = fuse(obj, pieces)
+    plane = -length / 2
+    cuts = []
+    if grille:
+        gw, gh, gz = grille
+        cuts.append(("trim", (0.0, gz, gw, gh, min(gw, gh) * 0.08), 0.04, False))
+    for x, z, size, slot in lamps or []:
+        if isinstance(size, (list, tuple)):
+            cuts.append((slot, (x, z, size[0], size[1], min(size) * 0.2), 0.02, False))
+        else:
+            cuts.append((slot, (x, z, size, size, size / 2), 0.02, True))
+    for slot, rect, depth, round_lamp in cuts:
+        outline = _rect_outline(rect, segments=4 if round_lamp else 2)
+        _cut(obj, [_prism("front", outline, plane + depth, plane - 0.1)], slot)
+    obj[h.NO_BEVEL_KEY] = 1
+    return obj
+
+
+def wheel_arches(target, axles, radius, z=None, depth=0.4, slot="trim"):
+    """Cut wheel arches into both sides of a vehicle body, so the wheels sit in the body instead of
+    hiding under it. target: the body, a closed solid lying along Y (any helper-built shape).
+    axles: the axle positions along Y, e.g. [-2.6, 2.3]. radius: the arch radius (the tyre radius
+    plus 6 to 12 cm of clearance). z: the height of the arch centre (default: the tyre radius, i.e.
+    `radius` less 8 cm). depth: how far each arch goes in from the body side (at least the tyre
+    width, doubled tyres need twice that). The arch is open downward. slot: the slot its inside
+    gets (dark "trim" by default). Returns the target."""
+    lo, hi = h.bounds(target)
+    z = (radius - 0.08) if z is None else z
+    cutters = []
+    for y in axles:
+        outline = [(y + radius * math.cos(math.radians(a)), z + radius * math.sin(math.radians(a)))
+                   for a in range(0, 181, 12)]
+        outline += [(y - radius, lo.z - 0.5), (y + radius, lo.z - 0.5)]
+        cutters.append(_prism("right", outline, hi.x - depth, hi.x + 0.5))
+        cutters.append(_prism("left", outline, lo.x + depth, lo.x - 0.5))
+    return _cut(target, cutters, slot)
+
+
+def axle_positions(axles, track, radius):
+    """Where the wheels of a vehicle go: for each axle position along Y in `axles` (e.g. [-3.2, 2.4]
+    for a bus whose front axle is 3.2 m ahead of the middle), the two wheel centres at x = -track / 2
+    and +track / 2, at height `radius` so the tyres stand on the floor. Returns a list of dicts
+    {"location": (x, y, z), "rotation_deg": (0, 0, 0 or 180)}: the left wheels (-X) are turned 180
+    degrees so their outer face looks outward. Use with h.place / h.instance in the assembly."""
+    out = []
+    for y in axles:
+        out.append({"location": (track / 2, y, radius), "rotation_deg": (0, 0, 0)})
+        out.append({"location": (-track / 2, y, radius), "rotation_deg": (0, 0, 180)})
+    return out
+
+
+# --- scene props -------------------------------------------------------------------------
+
+def tree(height=4.0, kind="round", seed=0, name="tree"):
+    """A stylised low-poly tree as one part, standing on z = 0 at the origin. kind "round": a trunk
+    with a flared foot and a crown of several lumpy overlapping masses (a broadleaf tree); "conifer":
+    a trunk and stacked, slightly irregular cones. height: total height. seed: change it for a
+    different tree of the same kind; give every tree in a scene its own seed and vary the heights.
+    About 1,500 triangles. Slots: "trunk", "leaves"."""
+    rng = random.Random(seed)
+    bm = bmesh.new()
+    if kind == "conifer":
+        trunk_h, r = height * 0.22, height * 0.035
+        _add_revolved(bm, [(0, 0), (r * 1.5, 0), (r * 1.05, trunk_h * 0.35), (r * 0.8, trunk_h * 1.3), (0, trunk_h * 1.3)],
+                      8, 0)
+        tiers = 4
+        step = (height - trunk_h) / tiers
+        base_r = height * 0.24
+        for t in range(tiers):
+            f = t / tiers
+            z = trunk_h + t * step
+            tier_h = step if t == tiers - 1 else step * 1.55
+            r0 = base_r * (1 - f * 0.72) * rng.uniform(0.92, 1.08)
+            r1 = 0.0 if t == tiers - 1 else r0 * 0.28
+            lean = 0.0 if t == tiers - 1 else rng.uniform(-4, 4)
+            tilt = Matrix.Rotation(math.radians(lean), 4, "X") @ Matrix.Rotation(rng.uniform(0, math.pi), 4, "Z")
+            profile = [(0, 0), (r0, 0), (r0 * 0.96, tier_h * 0.06), (r1, tier_h), (0, tier_h)]
+            verts = _add_revolved(bm, profile, 9, 1, matrix=tilt, offset=(0, 0, z))
+            for v in verts:
+                if (v.co.x ** 2 + v.co.y ** 2) > (r0 * 0.5) ** 2:
+                    v.co.z += rng.uniform(-0.008, 0.008) * height
+        return _new_object(bm, name, ["trunk", "leaves"], no_bevel=True)
+    if kind != "round":
+        bm.free()
+        raise ValueError("tree kind must be round or conifer")
+    trunk_h, r = height * 0.45, height * 0.032
+    crown_r = height * 0.27
+    centre_z = height - crown_r * 1.05
+    blobs = [(0.0, 0.0, centre_z, crown_r)]
+    count = 5
+    for i in range(count):
+        a = 2 * math.pi * (i + rng.uniform(-0.25, 0.25)) / count
+        dist = crown_r * rng.uniform(0.55, 0.8)
+        br = crown_r * rng.uniform(0.55, 0.75)
+        blobs.append((dist * math.cos(a), dist * math.sin(a), centre_z + crown_r * rng.uniform(-0.45, 0.25), br))
+    blobs.append((crown_r * rng.uniform(-0.2, 0.2), crown_r * rng.uniform(-0.2, 0.2), centre_z + crown_r * 0.55,
+                  crown_r * 0.6))
+    top = 0.0
+    made = []
+    for x, y, z, br in blobs:
+        coords, faces = _icosphere()
+        verts = []
+        for c in coords:
+            k = br * (1.0 + rng.uniform(-0.12, 0.12))
+            verts.append(bm.verts.new((x + c[0] * k, y + c[1] * k, z + c[2] * k * 0.82)))
+        for f in faces:
+            bm.faces.new([verts[i] for i in f]).material_index = 1
+        made += verts
+        top = max(top, max(v.co.z for v in verts))
+    scale = (height - trunk_h * 0.8) / (top - trunk_h * 0.8)  # the crown's top lands exactly on `height`
+    for v in made:
+        v.co.z = trunk_h * 0.8 + (v.co.z - trunk_h * 0.8) * scale
+    reach = trunk_h * 0.8 + (centre_z - crown_r * 0.25 - trunk_h * 0.8) * scale  # the trunk runs up into the crown
+    _add_revolved(bm, [(0, 0), (r * 1.8, 0), (r * 1.2, trunk_h * 0.12), (r, trunk_h * 0.4), (r * 0.7, reach),
+                       (0, reach)], 8, 0)
+    return _new_object(bm, name, ["trunk", "leaves"], no_bevel=True)
+
+
+def bench(length=1.5, name="bench"):
+    """A park bench as one part: two metal side frames, wooden seat slats and a slatted backrest. It
+    stands on z = 0, centred on the origin, facing -Y (you sit looking toward -Y). length: its width
+    along X. About 0.6 m deep and 0.85 m high, seat at 0.45 m. Slots: "wood" (slats), "metal"
+    (frames)."""
+    bm = bmesh.new()
+    seat_z, depth, back_len = 0.45, 0.46, 0.86
+    leg = 0.05
+    angle = math.radians(10)
+    lean = Matrix.Rotation(-angle, 4, "X")  # the back legs and the backrest lean back (toward +Y)
+    back_c = (back_len / 2) * math.cos(angle) + (leg / 2) * math.sin(angle)  # so the leaned leg's foot is on z = 0
+    back_y = depth / 2 - leg / 2
+
+    def leg_y(z):  # the middle of a back leg at height z
+        return back_y + (z - back_c) * math.tan(angle)
+
+    for sx in (-1, 1):
+        x = sx * (length / 2 - 0.12)
+        _add_box(bm, (leg, leg, seat_z - 0.02), (x, -depth / 2 + leg / 2, (seat_z - 0.02) / 2), 1)
+        _add_box(bm, (leg, leg, back_len), (x, back_y, back_c), 1, matrix=lean)
+        _add_box(bm, (leg * 0.8, depth - 0.012, 0.04), (x, 0.0, seat_z - 0.04), 1)
+        _add_box(bm, (leg * 0.8, depth - leg, 0.03), (x, 0.0, 0.16), 1)
+    slat_w, slat_t = 0.085, 0.03
+    count = 4
+    first, last = -depth / 2 + slat_w / 2 - 0.01, leg_y(seat_z) - leg / 2 - slat_w / 2 - 0.01
+    for i in range(count):
+        y = first + (last - first) * i / (count - 1)
+        _add_box(bm, (length, slat_w, slat_t), (0, y, seat_z - 0.022 + slat_t / 2), 0)
+    for z in (0.62, 0.76):
+        y = leg_y(z) - (leg / 2 + slat_t / 2 - 0.004) / math.cos(angle)
+        _add_box(bm, (length, slat_t, slat_w), (0, y, z), 0, matrix=lean)
+    return _new_object(bm, name, ["wood", "metal"])
+
+
+def fence(points, height=1.0, post_spacing=2.0, rails=2, post=0.08, name="fence"):
+    """A post-and-rail fence along a line on the ground, as one part. points: (x, y) corner points of
+    its run in order; repeat the first point at the end for a closed enclosure, or leave a gap in the
+    run for a gate. height: the posts' height. post_spacing: the most between posts (they are spread
+    evenly along each stretch, with one at every corner). rails: how many horizontal rails. post: the
+    posts' thickness. Built in place on z = 0. Slots: "post", "rail"."""
+    pts = [(float(x), float(y)) for x, y in points]
+    bm = bmesh.new()
+    seen = set()
+    for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+        length = math.hypot(bx - ax, by - ay)
+        if length < 1e-6:
+            continue
+        angle = math.atan2(by - ay, bx - ax)
+        turn = Matrix.Rotation(angle, 4, "Z")
+        n = max(1, math.ceil(length / post_spacing))
+        for i in range(n + 1):
+            x, y = ax + (bx - ax) * i / n, ay + (by - ay) * i / n
+            key = (round(x, 4), round(y, 4))
+            if key in seen:
+                continue
+            seen.add(key)
+            _add_box(bm, (post, post, height), (x, y, height / 2), 0, matrix=turn)
+        for r in range(rails):
+            z = height * (0.88 - 0.5 * r / max(1, rails - 1)) if rails > 1 else height * 0.8
+            _add_box(bm, (length, post * 0.45, post * 1.1), ((ax + bx) / 2, (ay + by) / 2, z), 1, matrix=turn)
+    return _new_object(bm, name, ["post", "rail"], no_bevel=True)
+
+
+def lamp_post(height=4.0, name="lamp_post"):
+    """A park or street lamp as one part: a flared base, a slim tapered pole, a collar, a lantern and
+    a cap. It stands on z = 0 at the origin. height: total height. Slots: "metal" (base, pole,
+    collar, cap), "lamp" (the lantern's glass; give it a glowing material)."""
+    bm = bmesh.new()
+    r = max(0.04, height * 0.014)
+    head = height * 0.11
+    pole_top = height - head
+    _add_revolved(bm, [(0, 0), (r * 2.6, 0), (r * 2.6, height * 0.012), (r * 1.7, height * 0.05), (r * 1.25, height * 0.12),
+                       (r, height * 0.14), (r * 0.7, pole_top), (0, pole_top)], 12, 0)
+    _add_revolved(bm, [(0, 0), (r * 1.5, 0), (r * 2.6, head * 0.14), (r * 2.6, head * 0.2), (0, head * 0.2)], 12, 0,
+                  offset=(0, 0, pole_top - head * 0.06))
+    _add_revolved(bm, [(0, 0), (r * 2.2, 0), (r * 3.3, head * 0.62), (0, head * 0.62)], 10, 1,
+                  offset=(0, 0, pole_top + head * 0.12))
+    _add_revolved(bm, [(0, 0), (r * 3.8, 0), (r * 3.6, head * 0.05), (r * 0.8, head * 0.2), (r * 0.5, head * 0.28),
+                       (0, head * 0.28)], 10, 0, offset=(0, 0, pole_top + head * 0.72))
+    return _new_object(bm, name, ["metal", "lamp"], no_bevel=True)

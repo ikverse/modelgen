@@ -1,0 +1,22 @@
+# Your own work: never uploaded
+projects/
+library/
+data/
+car_examples/
+/*.jpg
+/install.log
+/installed.json
+
+# Made on each PC
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+modelgen/web/vendor/node_modules/
+blender/
+dist/
+
+# Working notes and local tools
+PLAN.md
+NEXT_SESSION_PROMPT.md
+.claude/

@@ -1,0 +1,175 @@
+{
+ "id": "canal_house",
+ "title": "Amsterdam canal house",
+ "source": "amsterdam-canal-house",
+ "request": "Create a house in Amsterdam style. Defaults chosen by the director (the person gave no further details): a single traditional Amsterdam canal house (grachtenpand), narrow and tall. About 6 m wide, 8 m deep, roughly 15 m tall to the gable top. Four storeys plus an attic. Dark brown-red brick facade with white-painted stone trim. A classic bell gable (klokgevel) with white sandstone scroll ornaments at the top, a white hoisting beam with a hook sticking out under the gable peak, and a slight forward lean of the facade is optional. Tall white-framed sash windows in a regular grid (3 per floor), with the windows getting slightly shorter on the upper floors. A raised front entrance with a short flight of stone steps (stoep) and black iron railings. A dark green or black painted front door with a transom window above. A small basement window beside the steps. Dark slate or tile roof behind the gable. Side walls plain brick, since it would normally stand between neighbours. No real brand names or text. Purpose: a realistic render. Use a realistic product-style studio render on a plain light background, at a front three-quarter view from street level, so the facade, the gable and some depth of the side wall all show. Make sure every fix shows up in the exported GLB, not only in the .blend file.",
+ "spec": {
+  "object": "Amsterdam canal house (grachtenpand) with bell gable",
+  "dimensions": {
+   "width": 6,
+   "depth": 8,
+   "height": 15
+  },
+  "style": "traditional Dutch Amsterdam canal house, realistic",
+  "use": "render",
+  "materials": [
+   "dark brown-red brick",
+   "white-painted stone trim and sandstone ornaments",
+   "white painted wood sash window frames",
+   "black iron railings",
+   "dark green or black painted wood door",
+   "dark slate or tile roof",
+   "white painted wood hoisting beam",
+   "grey stone steps"
+  ],
+  "summary": "A narrow, tall four-storey-plus-attic Amsterdam canal house in dark brown-red brick with a white-trimmed classic bell gable topped with sandstone scrolls and a hoisting beam with hook. The raised front has a short stoep of stone steps flanked by black iron railings, a dark green door with transom, and three tall white sash windows per floor, shrinking slightly upward. Side walls are plain brick, as the house would stand between neighbours.",
+  "category": "general",
+  "parts": [
+   {
+    "name": "facade_body",
+    "description": "Main front wall of brick, four storeys plus attic, slight forward lean optional",
+    "size": {
+     "width": 6,
+     "depth": 0.3,
+     "height": 12.5
+    },
+    "count": 1,
+    "material": "dark brown-red brick",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "side_wall",
+    "description": "Plain brick side walls, unadorned, visible on the side of the three-quarter view",
+    "size": {
+     "width": 0.3,
+     "depth": 8,
+     "height": 12.5
+    },
+    "count": 2,
+    "material": "brown-red brick",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "roof",
+    "description": "Pitched roof behind the gable, dark slate or tile, gable-facing side ends at the bell gable",
+    "size": {
+     "width": 5.6,
+     "depth": 7.6,
+     "height": 2.5
+    },
+    "count": 1,
+    "material": "dark slate tile",
+    "attaches_to": "facade_body"
+   },
+   {
+    "name": "bell_gable",
+    "description": "Classic klokgevel bell-shaped top of the facade with curved shoulders, white painted stone trim outline, rising to around 15 m total",
+    "size": {
+     "width": 6,
+     "depth": 0.4,
+     "height": 2.5
+    },
+    "count": 1,
+    "material": "brick with white painted stone trim",
+    "attaches_to": "facade_body"
+   },
+   {
+    "name": "gable_scroll",
+    "description": "White sandstone scroll ornaments on each side and top of the bell gable",
+    "size": {
+     "width": 0.6,
+     "depth": 0.2,
+     "height": 0.6
+    },
+    "count": 3,
+    "material": "white sandstone",
+    "attaches_to": "bell_gable"
+   },
+   {
+    "name": "hoisting_beam",
+    "description": "White painted wooden hoisting beam sticking out from the gable peak with a hook at its end",
+    "size": {
+     "width": 0.1,
+     "depth": 0.8,
+     "height": 0.1
+    },
+    "count": 1,
+    "material": "white painted wood and black iron hook",
+    "attaches_to": "bell_gable"
+   },
+   {
+    "name": "window_frame",
+    "description": "Tall white painted sash window frame with glazing bars, three per floor, slightly shorter on upper floors",
+    "size": {
+     "width": 0.9,
+     "depth": 0.1,
+     "height": 2.2
+    },
+    "count": 12,
+    "material": "white painted wood with glass",
+    "attaches_to": "facade_body"
+   },
+   {
+    "name": "stone_window_surround",
+    "description": "White painted stone lintel and sill around each window",
+    "size": {
+     "width": 1.1,
+     "depth": 0.1,
+     "height": 2.4
+    },
+    "count": 12,
+    "material": "white painted stone",
+    "attaches_to": "facade_body"
+   },
+   {
+    "name": "stoep_steps",
+    "description": "Short flight of stone steps up to the raised front entrance",
+    "size": {
+     "width": 1.4,
+     "depth": 1.2,
+     "height": 0.6
+    },
+    "count": 1,
+    "material": "grey stone",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "entrance_door",
+    "description": "Dark green or black painted wooden front door with transom window above",
+    "size": {
+     "width": 1,
+     "depth": 0.1,
+     "height": 2.2
+    },
+    "count": 1,
+    "material": "dark green painted wood with glass transom",
+    "attaches_to": "facade_body"
+   },
+   {
+    "name": "iron_railing",
+    "description": "Black wrought iron railings flanking the stoep steps",
+    "size": {
+     "width": 0.05,
+     "depth": 1.2,
+     "height": 0.9
+    },
+    "count": 2,
+    "material": "black painted iron",
+    "attaches_to": "stoep_steps"
+   },
+   {
+    "name": "basement_window",
+    "description": "Small window beside the steps at basement level",
+    "size": {
+     "width": 0.6,
+     "depth": 0.1,
+     "height": 0.6
+    },
+    "count": 1,
+    "material": "white painted wood with glass",
+    "attaches_to": "facade_body"
+   }
+  ],
+  "notes": "Defaults chosen by the director, no brand names or text. Realistic product-style studio render on a plain light background, front three-quarter view from street level so the facade, bell gable and some of the side wall are visible. Every fix must appear in the exported GLB, not only in the .blend file. Slight forward lean of the facade is optional."
+ }
+}

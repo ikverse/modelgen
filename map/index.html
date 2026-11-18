@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ModelGen Studio</title>
+  <link rel="stylesheet" href="css/app.css?v=21">
+  <link rel="stylesheet" href="css/studio.css?v=21">
+  <script type="importmap">
+    {"imports": {"three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/"}}
+  </script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M10 7l5 5-5 5"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-9l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="M15.5 7.5l-6.3 6.3a2 2 0 0 0 2.8 2.8l6.3-6.3a4 4 0 0 0-5.7-5.7L6.3 10.9a6 6 0 0 0 8.5 8.5l5-5"/></symbol>
+    <symbol id="i-photo" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20 16l-5-5-8 8"/></symbol>
+    <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 5v14"/></symbol>
+    <symbol id="i-sidebar-r" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M14 5v14"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4L18 18M6 18l1.6-1.6M16.4 7.6L18 6"/><circle cx="12" cy="12" r="6.3"/></symbol>
+    <symbol id="i-studio" viewBox="0 0 24 24"><path d="M4 20V9l8-5 8 5v11M9 20v-6h6v6"/></symbol>
+    <symbol id="i-stack" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4 8-4zM4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
+    <symbol id="i-parts" viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="6" height="6" rx="1.2"/><rect x="13.5" y="4.5" width="6" height="6" rx="1.2"/><rect x="4.5" y="13.5" width="6" height="6" rx="1.2"/><rect x="13.5" y="13.5" width="6" height="6" rx="1.2"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M4 4h7l9 9-7 7-9-9V4z"/><circle cx="8.5" cy="8.5" r="1.2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.5 5.5v13M15.5 5.5v13"/></symbol>
+    <symbol id="i-walk" viewBox="0 0 24 24"><circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2-6-3-3 1.5-5 3.5 3 3 1M12 15l3 6M9.5 7.5L6 11"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></symbol>
+    <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M14.5 9.5c-.5-.9-1.4-1.3-2.5-1.3-1.4 0-2.5.8-2.5 1.9 0 2.6 5 1.3 5 3.9 0 1.1-1.1 1.9-2.5 1.9-1.1 0-2-.5-2.5-1.4M12 6.5v1.7M12 15.8v1.7"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v7"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></symbol>
+    <symbol id="i-step" viewBox="0 0 24 24"><path d="M6 5v14M10 5.5v13l9-6.5z"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3.5l7.5 4.2v8.6L12 20.5l-7.5-4.2V7.7z"/><path d="M4.5 7.7L12 12l7.5-4.3M12 12v8.5"/></symbol>
+    <symbol id="i-shading" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+    <symbol id="i-measure" viewBox="0 0 24 24"><path d="M5 19L19 5M5 19v-5M5 19h5M19 5v5M19 5h-5"/></symbol>
+    <symbol id="i-slice" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M3 12h18"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8v.01"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M20 4l-6 6M14 5v5h5M4 20l6-6M10 19v-5H5"/></symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10V9h2.5M17 10V9h-2.5M7 14v1h2.5M17 14v1h-2.5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><path d="M4 4l16 16"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="row">
+      <div class="brand" title="ModelGen"><svg class="ic" aria-hidden="true"><use href="#i-box"/></svg></div>
+      <div class="row crumb" id="crumb"></div>
+    </div>
+    <div class="row progress" id="progress"></div>
+    <div class="row">
+      <button class="search" data-act="cmd"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="grow">Search or run a command</span><kbd>Ctrl K</kbd></button>
+      <span id="update"></span>
+      <span id="needs"></span>
+      <span class="xs mu" id="spend"></span>
+      <button class="btn primary" data-go="new"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>New model</button>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Main">
+    <button class="ri nav-tog" data-act="nav" title="Expand navigation (Ctrl B)" aria-label="Expand navigation" aria-expanded="false"><svg class="ic" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
+    <button class="ri on" data-screen="studio" title="Studio" aria-label="Studio"><svg class="ic" aria-hidden="true"><use href="#i-studio"/></svg><span class="rl">Studio</span></button>
+    <button class="ri" data-screen="models" title="Models" aria-label="Models"><svg class="ic" aria-hidden="true"><use href="#i-stack"/></svg><span class="rl">Models</span></button>
+    <button class="ri" data-screen="parts" title="Parts library" aria-label="Parts library"><svg class="ic" aria-hidden="true"><use href="#i-parts"/></svg><span class="rl">Parts library</span></button>
+    <button class="ri" data-screen="activity" title="Activity" aria-label="Activity"><svg class="ic" aria-hidden="true"><use href="#i-history"/></svg><span class="rl">Activity</span></button>
+    <div class="grow"></div>
+    <button class="ri" data-act="theme" aria-label="Toggle dark mode"></button>
+    <button class="ri" data-screen="settings" title="Settings" aria-label="Settings"><svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg><span class="rl">Settings</span></button>
+  </nav>
+
+    <main class="screens">
+      <!-- Studio workspace: the chat on the left, the open model's four stages on the right -->
+      <section class="screen on work" id="work" data-screen="studio">
+        <aside class="chat" id="chat" aria-label="Chat with Hange">
+          <header class="chat-head">
+            <div class="row grow" id="chat-who"></div>
+            <button class="icon-btn" data-act="collapse-chat" title="Hide chat (Ctrl \)" aria-label="Hide chat"><svg class="ic" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
+          </header>
+          <div class="chat-scope" id="chat-scope" role="group" aria-label="Which messages show"></div>
+          <div class="pinned" id="pinned"></div>
+          <div class="messages" id="messages" aria-live="polite"></div>
+          <div class="composer">
+            <div class="attach-chips" id="attach-chips"></div>
+            <textarea id="composer" rows="3" dir="auto" placeholder="Describe a model or ask for a change" aria-label="Message Hange"></textarea>
+            <input type="file" id="file-chat" accept="image/*" multiple hidden>
+            <div class="row between">
+              <div class="row">
+                <button class="icon-btn" data-act="attach-image" title="Attach a reference image" aria-label="Attach a reference image"><svg class="ic" aria-hidden="true"><use href="#i-photo"/></svg></button>
+                <span class="xs mu">Shift Enter for a new line</span>
+              </div>
+              <button class="btn primary" data-act="send">Send<kbd>Enter</kbd></button>
+            </div>
+          </div>
+        </aside>
+
+        <div class="ws" id="ws">
+          <header class="ws-head" id="ws-head"></header>
+          <nav class="tabs" id="tabs" role="tablist" aria-label="Stages of this model"></nav>
+          <div class="panes">
+            <section class="pane" id="pane-brief" data-pane="brief" role="tabpanel" aria-label="Brief"></section>
+
+            <section class="pane" id="pane-build" data-pane="build" role="tabpanel" aria-label="Build">
+              <div class="floor" id="floor">
+                <svg id="map" class="scene" role="img" aria-label="The ModelGen studio. Each agent is a character at their station." preserveAspectRatio="xMidYMid meet"></svg>
+                <div class="chip map-title row"><span class="b5">Studio floor</span><span class="xs mu" id="st-chip"></span></div>
+                <div class="chip map-zoom row">
+                  <button class="icon-btn" data-act="zoom-out" title="Zoom out" aria-label="Zoom out"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+                  <span class="xs pct" id="zoom-pct">100%</span>
+                  <button class="icon-btn" data-act="zoom-in" title="Zoom in" aria-label="Zoom in"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+                  <span class="vsep"></span>
+                  <button class="icon-btn" data-act="fit" title="Fit the studio (F)" aria-label="Fit the studio"><svg class="ic" aria-hidden="true"><use href="#i-maximize"/></svg></button>
+                  <button class="icon-btn on" data-act="labels" title="Labels (L)" aria-label="Toggle labels"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></button>
+                  <button class="icon-btn on" data-act="life" title="Pause studio life" aria-label="Toggle studio life"></button>
+                </div>
+              </div>
+              <aside class="build-side" aria-label="This build">
+                <section class="bs-sec" id="run"></section>
+                <section class="bs-sec bs-live" id="bs-live"><div class="sec-h">Live preview</div><div class="live-slot" id="live-slot"></div><div class="live-wait xs mu" id="live-wait" hidden></div></section>
+                <section class="bs-sec grow" id="activity"></section>
+              </aside>
+            </section>
+
+            <section class="pane" id="pane-review" data-pane="review" role="tabpanel" aria-label="Review">
+              <div class="rv-main">
+                <div class="viewer-slot" id="viewer-slot"></div>
+                <div class="vstrip" id="vstrip" aria-label="Versions"></div>
+              </div>
+              <aside class="rv-side" aria-label="Review of this version">
+                <div class="rv-body" id="rv-body"></div>
+                <footer class="decide" id="decide"></footer>
+              </aside>
+            </section>
+
+            <section class="pane" id="pane-export" data-pane="export" role="tabpanel" aria-label="Export">
+              <div class="ex-main"><div class="viewer-slot" id="export-slot"></div></div>
+              <aside class="ex-side" id="ex-side" aria-label="Files of this version"></aside>
+            </section>
+          </div>
+          <div class="ws-empty" id="ws-empty">
+            <div class="empty-card">
+              <div class="h">No model is open</div>
+              <p class="mu">Describe an object to Hange in the chat, or start from the New model page.</p>
+              <button class="btn primary" data-go="new"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>New model</button>
+            </div>
+          </div>
+        </div>
+        <div class="toasts" id="toasts" aria-live="polite"></div>
+      </section>
+
+      <!-- New model -->
+      <section class="screen page" data-screen="new">
+        <div class="new-grid">
+          <div>
+            <h1>What should the studio build?</h1>
+            <p class="lead mu">Describe the object. Hange asks at most two questions, then the team starts.</p>
+            <div class="card prompt-card">
+              <textarea id="prompt" rows="4" dir="auto" placeholder="A low walnut coffee table with tapered legs and a lower shelf" aria-label="Describe the model"></textarea>
+              <div class="xs err" id="prompt-err" role="alert"></div>
+              <input type="file" id="file-new" accept="image/*" multiple hidden>
+              <div class="row between">
+                <div class="row new-opts">
+                  <button class="btn" data-act="new-ref"><svg class="ic" aria-hidden="true"><use href="#i-photo"/></svg>Reference image</button>
+                  <button class="btn" data-act="new-size"><svg class="ic" aria-hidden="true"><use href="#i-ruler"/></svg>Size</button>
+                  <button class="btn" data-act="new-budget"><svg class="ic" aria-hidden="true"><use href="#i-coin"/></svg>Budget</button>
+                  <div class="pop" id="new-pop" role="dialog" aria-label="Model option"></div>
+                </div>
+                <button class="btn primary lg" data-act="start">Start<kbd>Ctrl Enter</kbd></button>
+              </div>
+              <div class="attach-chips new-refs" id="new-refs"></div>
+            </div>
+            <div class="lbl">Try one</div>
+            <div class="row wrap">
+              <button class="btn" data-act="example">A desk lamp with a hinged arm</button>
+              <button class="btn" data-act="example">A ceramic mug with a thick handle</button>
+              <button class="btn" data-act="example">A tall bookshelf with five shelves</button>
+              <button class="btn" data-act="example">A rocking chair with curved rails</button>
+            </div>
+            <div class="row between sub"><span class="h">Recent models</span><button class="link" data-go="models">View all</button></div>
+            <div class="mgrid three" id="recent"></div>
+          </div>
+          <div class="card team-card">
+            <div class="card-h"><span class="h">Your team</span><span class="xs mu" id="team-free">8 agents</span></div>
+            <div class="team" id="team"></div>
+            <p class="xs mu">Hange takes your description at the front desk, Armin writes the spec, Pieck plans the parts, and the rest of the studio takes it from there.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Models -->
+      <section class="screen page" data-screen="models">
+        <div class="page-h"><h1>Models</h1><button class="btn primary" data-go="new"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>New model</button></div>
+        <div class="mgrid" id="models-grid"></div>
+      </section>
+
+      <!-- Parts library -->
+      <section class="screen page" data-screen="parts">
+        <div class="page-h"><h1>Parts library</h1><span class="mu">Reusable parts Historia has saved from earlier models</span></div>
+        <div class="mgrid" id="parts-grid"></div>
+      </section>
+
+      <!-- Activity -->
+      <section class="screen page" data-screen="activity">
+        <div class="page-h"><h1>Activity</h1><label class="row"><svg class="ic mu" aria-hidden="true"><use href="#i-filter"/></svg><select id="f-agent" aria-label="Filter by agent"></select></label></div>
+        <div class="card list" id="activity-list"></div>
+      </section>
+
+      <!-- Settings -->
+      <section class="screen page" data-screen="settings">
+        <div class="page-h"><h1>Settings</h1></div>
+        <div class="settings">
+          <div class="card set">
+            <div class="h">Budget</div>
+            <label class="field"><span>Daily limit</span><span class="row"><span class="mu">$</span><input type="number" id="set-daily" min="0" step="0.5" aria-label="Daily limit in dollars"></span></label>
+            <label class="field"><span>Per model</span><span class="row"><span class="mu">$</span><input type="number" id="set-model" min="0" step="0.5" aria-label="Per model limit in dollars"></span></label>
+            <p class="xs mu">The run stops and Hange asks you before going over either limit. A model's own Budget, set when you start it, replaces the per-model limit for that model.</p>
+          </div>
+          <div class="card set">
+            <div class="h">Blender</div>
+            <label class="field"><span>Blender path</span><input type="text" id="set-blender-path" placeholder="Found automatically" aria-label="Blender path"></label>
+            <div class="field"><span>Status</span><span class="row"><span class="sq s-idle" id="set-blender-sq"></span><span id="set-blender">Not checked yet</span></span></div>
+            <p class="xs mu">Leave the path empty to use the newest Blender installed.</p>
+          </div>
+          <div class="card set">
+            <div class="h">Updates</div>
+            <label class="field check"><span>Check for updates</span><input type="checkbox" id="set-updates" checked></label>
+            <div class="field"><span>Version</span><span class="row"><span class="sq s-idle" id="set-update-sq"></span><span id="set-update">Not checked yet</span></span></div>
+            <div class="row"><button class="btn sm" data-act="update-check">Check now</button><button class="btn sm primary" data-act="update-now" id="set-update-now" hidden>Update now</button></div>
+            <p class="xs mu">ModelGen asks GitHub for its newest release when it starts and every few hours. Only the version number is read. Updating keeps your models, parts library and settings.</p>
+          </div>
+          <div class="card set">
+            <div class="h">Appearance</div>
+            <div class="field"><span>Theme</span><span class="row seg-ctl"><label><input type="radio" name="theme" value="dark">Dark</label><label><input type="radio" name="theme" value="light">Light</label></span></div>
+          </div>
+          <div class="card set">
+            <div class="h">Studio</div>
+            <label class="field check"><span>Station labels</span><input type="checkbox" id="set-labels" checked></label>
+            <label class="field check"><span>Studio life: free agents take breaks and visit each other</span><input type="checkbox" id="set-life" checked></label>
+            <p class="xs mu">These apply to the studio floor in the Build stage. Studio life starts off when your system asks for reduced motion.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="status">
+      <div class="row">
+        <span id="st-live"></span>
+        <span id="st-blender"></span>
+        <span id="st-builders"></span>
+        <span id="st-waiting"></span>
+      </div>
+      <div class="row">
+        <span id="st-budget"></span>
+        <span><kbd>Ctrl K</kbd> commands</span>
+        <span><kbd>Alt 1</kbd>–<kbd>4</kbd> stages</span>
+        <span><kbd>Ctrl \</kbd> chat</span>
+        <span><kbd>Ctrl B</kbd> navigation</span>
+      </div>
+    </footer>
+
+  <div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Command menu">
+    <div class="cmd-box">
+      <div class="cmd-in row"><svg class="ic mu" aria-hidden="true"><use href="#i-search"/></svg><input id="cmd-input" placeholder="Type a command or search" aria-label="Command"></div>
+      <div class="cmd-list" id="cmd-list"></div>
+      <div class="cmd-foot xs mu row"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span></div>
+    </div>
+  </div>
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Picture"></div>
+</div>
+
+<script src="js/cast.js?v=21"></script>
+<script src="js/stations.js?v=21"></script>
+<script src="js/studio.js?v=21"></script>
+<script src="js/panel.js?v=21"></script>
+<script src="js/app.js?v=21"></script>
+<script>
+  // The engine serves this page and live.js connects to it; ?demo=1 plays the scripted demo instead.
+  document.write('<script src="js/' + (/[?&]demo\b/.test(location.search) ? 'demo' : 'live') + '.js?v=21"><\/script>');
+</script>
+</body>
+</html>

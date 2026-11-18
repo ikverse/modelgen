@@ -1,0 +1,402 @@
+{
+ "id": "locomotive",
+ "title": "British steam locomotive",
+ "source": "british-steam-locomotive",
+ "request": "Build an old British steam train. The person asked for \"an old British train\". When asked whether they wanted a steam locomotive with its coal tender (like the Flying Scotsman) or a full train with carriages, they answered \"yes\", so the default is a classic steam locomotive with its coal tender, in the style of the LNER A3 Flying Scotsman. No carriages for now.\n\nDefaults:\n- Purpose: realistic studio render, at real-world scale. The locomotive and tender together are about 21 m long, about 2.7 m wide and about 4 m tall from the rail head. Include a short straight section of track (rails, sleepers, ballast) under it.\n- Wheel layout 4-6-2 Pacific: a 2-axle front bogie, 3 large driving wheels per side (about 2.03 m diameter) joined by coupling and connecting rods, one trailing axle under the cab, and outside cylinders at the front. The tender rides on 6 wheels (3 axles per side).\n- Body: a long cylindrical boiler with a black smokebox and smokebox door at the front, a short chimney, a steam dome, safety valves, running boards along both sides with valances, an enclosed cab with side windows and a roof, and a tender with coal heaped on top.\n- Colours (picker values): boiler, cab and tender in LNER apple green #4F7A3A with thin black-and-white lining. Smokebox, chimney, frames, running boards and wheel tyres in satin black #1A1A1A. Driving wheel centres in green or black. Front and rear buffer beams in signal red #B22222. Brass or copper details (dome cap, whistle, number plate, safety valves) in #B5893A, metallic. Coal in matte black. Painted parts semi-gloss, with slight wear.\n- Details: round buffers and a coupling hook on the buffer beam, a front number plate on the smokebox door, lamp irons, handrails along the boiler, and a cab number on the side.\n- Keep everything hard-surface and clean. Rods and wheels must line up correctly with the axles. Use a three-quarter hero render with neutral studio lighting.",
+ "spec": {
+  "object": "Old British steam locomotive with coal tender (LNER A3 Flying Scotsman style, 4-6-2 Pacific)",
+  "summary": "A classic LNER apple-green 4-6-2 Pacific steam locomotive with its six-wheel coal tender, standing on a short straight piece of track. The black smokebox, long lined green boiler, enclosed cab and coal-heaped tender are rendered at real-world scale in a three-quarter studio hero shot. No carriages.",
+  "category": "general",
+  "use": "render",
+  "style": "Realistic classic British steam, LNER apple green livery, hard-surface clean modelling",
+  "dimensions": {
+   "width": 2.7,
+   "depth": 21,
+   "height": 4
+  },
+  "materials": [
+   "LNER apple green paint #4F7A3A (semi-gloss, slight wear)",
+   "satin black paint #1A1A1A",
+   "signal red paint #B22222",
+   "polished brass/copper metallic #B5893A",
+   "matte black coal",
+   "steel rails and iron/steel wheels",
+   "wooden or concrete sleepers, crushed stone ballast"
+  ],
+  "parts": [
+   {
+    "name": "rail_track",
+    "description": "Short straight section of standard gauge track: two steel rails with fishplates at the ends",
+    "size": {
+     "width": 1.5,
+     "depth": 6,
+     "height": 0.15
+    },
+    "count": 2,
+    "material": "steel",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "sleeper",
+    "description": "Timber or concrete track sleepers under the rails",
+    "size": {
+     "width": 2.6,
+     "depth": 0.25,
+     "height": 0.15
+    },
+    "count": 12,
+    "material": "wood",
+    "attaches_to": "ballast"
+   },
+   {
+    "name": "ballast",
+    "description": "Bed of crushed stone under the sleepers",
+    "size": {
+     "width": 2.8,
+     "depth": 6,
+     "height": 0.2
+    },
+    "count": 1,
+    "material": "crushed stone",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "boiler",
+    "description": "Long cylindrical boiler barrel, apple green with thin black-and-white pinstripe lining, running from smokebox to firebox",
+    "size": {
+     "width": 1.4,
+     "depth": 9,
+     "height": 1.4
+    },
+    "count": 1,
+    "material": "green paint",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "smokebox",
+    "description": "Black cylindrical smokebox at the front with a round smokebox door and dogs/clamps",
+    "size": {
+     "width": 1.45,
+     "depth": 1.6,
+     "height": 1.45
+    },
+    "count": 1,
+    "material": "satin black paint",
+    "attaches_to": "boiler"
+   },
+   {
+    "name": "smokebox_door",
+    "description": "Round front door on the smokebox with a riveted rim and a front number plate in brass",
+    "size": {
+     "width": 1.4,
+     "depth": 0.05,
+     "height": 1.4
+    },
+    "count": 1,
+    "material": "satin black paint",
+    "attaches_to": "smokebox"
+   },
+   {
+    "name": "front_number_plate",
+    "description": "Brass number plate centred on the smokebox door",
+    "size": {
+     "width": 0.35,
+     "depth": 0.01,
+     "height": 0.2
+    },
+    "count": 1,
+    "material": "brass #B5893A",
+    "attaches_to": "smokebox_door"
+   },
+   {
+    "name": "chimney",
+    "description": "Short flared chimney on top of the smokebox with a cap rim",
+    "size": {
+     "width": 0.5,
+     "depth": 0.5,
+     "height": 0.6
+    },
+    "count": 1,
+    "material": "satin black paint",
+    "attaches_to": "smokebox"
+   },
+   {
+    "name": "steam_dome",
+    "description": "Domed cover on top of the boiler, with a brass dome cap",
+    "size": {
+     "width": 0.7,
+     "depth": 0.7,
+     "height": 0.45
+    },
+    "count": 1,
+    "material": "green paint with brass cap",
+    "attaches_to": "boiler"
+   },
+   {
+    "name": "safety_valve",
+    "description": "Brass safety valve cover on top of the boiler behind the dome",
+    "size": {
+     "width": 0.3,
+     "depth": 0.3,
+     "height": 0.2
+    },
+    "count": 1,
+    "material": "brass #B5893A",
+    "attaches_to": "boiler"
+   },
+   {
+    "name": "whistle",
+    "description": "Brass whistle on top of the boiler near the cab",
+    "size": {
+     "width": 0.15,
+     "depth": 0.15,
+     "height": 0.2
+    },
+    "count": 1,
+    "material": "brass #B5893A",
+    "attaches_to": "boiler"
+   },
+   {
+    "name": "boiler_handrail",
+    "description": "Thin handrails running along both sides of the boiler",
+    "size": {
+     "width": 0.03,
+     "depth": 6,
+     "height": 0.03
+    },
+    "count": 2,
+    "material": "satin black paint",
+    "attaches_to": "boiler"
+   },
+   {
+    "name": "running_board",
+    "description": "Long footplate running board along each side above the wheels, with a valance",
+    "size": {
+     "width": 0.5,
+     "depth": 14,
+     "height": 0.08
+    },
+    "count": 2,
+    "material": "satin black paint",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "frame",
+    "description": "Main steel frame plate on each side carrying the wheels and cylinders",
+    "size": {
+     "width": 0.1,
+     "depth": 15,
+     "height": 0.6
+    },
+    "count": 2,
+    "material": "satin black paint",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "front_bogie",
+    "description": "Two-axle leading bogie under the smokebox with wheels",
+    "size": {
+     "width": 1.3,
+     "depth": 1.6,
+     "height": 0.9
+    },
+    "count": 1,
+    "material": "satin black paint",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "bogie_wheel",
+    "description": "Small leading wheel with black tyre and green or black centre",
+    "size": {
+     "width": 0.1,
+     "depth": 0.92,
+     "height": 0.92
+    },
+    "count": 4,
+    "material": "steel tyre, black centre",
+    "attaches_to": "front_bogie"
+   },
+   {
+    "name": "driving_wheel",
+    "description": "Large driving wheel about 2.03 m diameter with black tyre and green or black centre, on coupled axles",
+    "size": {
+     "width": 0.12,
+     "depth": 2.03,
+     "height": 2.03
+    },
+    "count": 6,
+    "material": "satin black tyre, green or black centre",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "coupling_rod",
+    "description": "Connecting rods joining the driving wheel crankpins on each side, aligned with axles",
+    "size": {
+     "width": 0.06,
+     "depth": 2.4,
+     "height": 0.1
+    },
+    "count": 4,
+    "material": "satin black paint",
+    "attaches_to": "driving_wheel"
+   },
+   {
+    "name": "trailing_wheel",
+    "description": "Trailing axle wheels under the cab, a pair of small wheels",
+    "size": {
+     "width": 0.1,
+     "depth": 1,
+     "height": 1
+    },
+    "count": 2,
+    "material": "steel tyre, black centre",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "outside_cylinder",
+    "description": "Two outside steam cylinders at the front of the frame, connected to the leading driving axle",
+    "size": {
+     "width": 0.45,
+     "depth": 0.7,
+     "height": 0.5
+    },
+    "count": 2,
+    "material": "satin black paint",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "cab",
+    "description": "Enclosed cab with flat roof, side windows and cab door, in apple green",
+    "size": {
+     "width": 2.6,
+     "depth": 3,
+     "height": 2.6
+    },
+    "count": 1,
+    "material": "green paint",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "cab_window",
+    "description": "Glazed side window on each side of the cab with black frame",
+    "size": {
+     "width": 0.05,
+     "depth": 0.8,
+     "height": 0.8
+    },
+    "count": 4,
+    "material": "glass with black frame",
+    "attaches_to": "cab"
+   },
+   {
+    "name": "cab_roof",
+    "description": "Flat roof over the cab with a slight overhang",
+    "size": {
+     "width": 2.8,
+     "depth": 3.2,
+     "height": 0.12
+    },
+    "count": 1,
+    "material": "green paint",
+    "attaches_to": "cab"
+   },
+   {
+    "name": "cab_number",
+    "description": "Cab side number plate in brass or painted numerals",
+    "size": {
+     "width": 0.5,
+     "depth": 0.01,
+     "height": 0.25
+    },
+    "count": 2,
+    "material": "brass or cream paint",
+    "attaches_to": "cab"
+   },
+   {
+    "name": "tender_body",
+    "description": "Rectangular coal tender body in apple green with pinstripe lining",
+    "size": {
+     "width": 2.6,
+     "depth": 6,
+     "height": 2.2
+    },
+    "count": 1,
+    "material": "green paint",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "tender_coal",
+    "description": "Coal heaped on top of the tender",
+    "size": {
+     "width": 2.4,
+     "depth": 5.6,
+     "height": 0.6
+    },
+    "count": 1,
+    "material": "matte black coal",
+    "attaches_to": "tender_body"
+   },
+   {
+    "name": "tender_wheel",
+    "description": "Six tender wheels in three axles per side, black tyre and green or black centre",
+    "size": {
+     "width": 0.12,
+     "depth": 1.1,
+     "height": 1.1
+    },
+    "count": 6,
+    "material": "satin black tyre",
+    "attaches_to": "tender_body"
+   },
+   {
+    "name": "buffer",
+    "description": "Round buffers on the front and rear buffer beams",
+    "size": {
+     "width": 0.15,
+     "depth": 0.15,
+     "height": 0.15
+    },
+    "count": 4,
+    "material": "steel with red beam",
+    "attaches_to": "buffer_beam"
+   },
+   {
+    "name": "buffer_beam",
+    "description": "Front and rear buffer beams painted signal red, carrying the buffers and coupling hook",
+    "size": {
+     "width": 2.6,
+     "depth": 0.3,
+     "height": 0.4
+    },
+    "count": 2,
+    "material": "signal red paint #B22222",
+    "attaches_to": "frame"
+   },
+   {
+    "name": "coupling_hook",
+    "description": "Coupling hook on the buffer beam at each end",
+    "size": {
+     "width": 0.1,
+     "depth": 0.2,
+     "height": 0.1
+    },
+    "count": 2,
+    "material": "steel",
+    "attaches_to": "buffer_beam"
+   },
+   {
+    "name": "lamp_iron",
+    "description": "Small lamp brackets on the smokebox and tender",
+    "size": {
+     "width": 0.1,
+     "depth": 0.1,
+     "height": 0.1
+    },
+    "count": 3,
+    "material": "brass or black paint",
+    "attaches_to": "smokebox"
+   }
+  ],
+  "notes": "Interpreted 'old British train' as an LNER A3 Flying Scotsman style steam locomotive with coal tender, as the requester confirmed with 'yes'. No carriages. Keep hard-surface and clean geometry; rods and wheels must align with axle centres. Three-quarter hero render with neutral studio lighting. Painted parts semi-gloss with slight wear. Realistic real-world scale: overall about 21 m long, 2.7 m wide, 4 m tall from rail head."
+ }
+}

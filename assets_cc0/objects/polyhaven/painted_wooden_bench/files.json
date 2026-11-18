@@ -1,0 +1,12 @@
+{
+ "files": [
+  "painted_wooden_bench.bin",
+  "painted_wooden_bench.gltf",
+  "textures/painted_wooden_bench_arm_1k.jpg",
+  "textures/painted_wooden_bench_diff_1k.jpg",
+  "textures/painted_wooden_bench_nor_gl_1k.jpg"
+ ],
+ "bytes": 1989639,
+ "source": "https://api.polyhaven.com/files/painted_wooden_bench",
+ "license": "CC0, https://polyhaven.com/license"
+}

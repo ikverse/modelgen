@@ -1,0 +1,2806 @@
+[
+ {
+  "name": "grab3d/1950s-pickup-truck",
+  "file": "grab3d/1950s-pickup-truck.glb",
+  "type": "pickup",
+  "era": "1950s",
+  "library": "grab3d",
+  "length": 5.295,
+  "width": 2.264,
+  "height": 1.94,
+  "wheelbase": 3.2,
+  "track": 1.64,
+  "front_overhang": 0.911,
+  "rear_overhang": 1.184,
+  "body_half_width": 1.132,
+  "wheel_radius": 0.37,
+  "wheels": 4,
+  "belt": 1.248,
+  "ground": 0.0,
+  "triangles": 16872,
+  "wheel_centres": [
+   [
+    0.82,
+    -1.736,
+    0.37
+   ],
+   [
+    -0.82,
+    -1.736,
+    0.37
+   ],
+   [
+    0.81,
+    1.464,
+    0.37
+   ],
+   [
+    -0.81,
+    1.464,
+    0.37
+   ]
+  ],
+  "wheel_top_gap": -0.16,
+  "paint": [
+   0.229,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/1950s-roadster",
+  "file": "grab3d/1950s-roadster.glb",
+  "type": "convertible",
+  "era": "1950s",
+  "library": "grab3d",
+  "length": 4.358,
+  "width": 1.762,
+  "height": 1.114,
+  "wheelbase": 2.46,
+  "track": 1.5,
+  "front_overhang": 0.906,
+  "rear_overhang": 0.992,
+  "body_half_width": 0.881,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.857,
+  "ground": 0.0,
+  "triangles": 15801,
+  "wheel_centres": [
+   [
+    0.75,
+    -1.273,
+    0.33
+   ],
+   [
+    -0.75,
+    -1.273,
+    0.33
+   ],
+   [
+    0.75,
+    1.187,
+    0.33
+   ],
+   [
+    -0.75,
+    1.187,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.06,
+  "paint": [
+   0.825,
+   0.417,
+   0.463
+  ]
+ },
+ {
+  "name": "grab3d/1950s-sedan",
+  "file": "grab3d/1950s-sedan.glb",
+  "type": "sedan",
+  "era": "1950s",
+  "library": "grab3d",
+  "length": 5.527,
+  "width": 2.02,
+  "height": 1.56,
+  "wheelbase": 3.12,
+  "track": 1.7,
+  "front_overhang": 1.179,
+  "rear_overhang": 1.229,
+  "body_half_width": 1.01,
+  "wheel_radius": 0.36,
+  "wheels": 4,
+  "belt": 1.022,
+  "ground": 0.0,
+  "triangles": 19584,
+  "wheel_centres": [
+   [
+    0.85,
+    -1.585,
+    0.36
+   ],
+   [
+    -0.85,
+    -1.585,
+    0.36
+   ],
+   [
+    0.85,
+    1.535,
+    0.36
+   ],
+   [
+    -0.85,
+    1.535,
+    0.36
+   ]
+  ],
+  "wheel_top_gap": 0.057,
+  "paint": [
+   0.229,
+   0.234,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/1950s-station-wagon",
+  "file": "grab3d/1950s-station-wagon.glb",
+  "type": "wagon",
+  "era": "1950s",
+  "library": "grab3d",
+  "length": 5.427,
+  "width": 2.0,
+  "height": 1.652,
+  "wheelbase": 3.1,
+  "track": 1.68,
+  "front_overhang": 1.159,
+  "rear_overhang": 1.169,
+  "body_half_width": 1.0,
+  "wheel_radius": 0.36,
+  "wheels": 4,
+  "belt": 1.029,
+  "ground": 0.0,
+  "triangles": 19896,
+  "wheel_centres": [
+   [
+    0.84,
+    -1.555,
+    0.36
+   ],
+   [
+    -0.84,
+    -1.555,
+    0.36
+   ],
+   [
+    0.84,
+    1.545,
+    0.36
+   ],
+   [
+    -0.84,
+    1.545,
+    0.36
+   ]
+  ],
+  "wheel_top_gap": 0.06,
+  "paint": [
+   0.229,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1960s-compact-car",
+  "file": "grab3d/1960s-compact-car.glb",
+  "type": "compact",
+  "era": "1960s",
+  "library": "grab3d",
+  "length": 3.752,
+  "width": 1.56,
+  "height": 1.5,
+  "wheelbase": 2.22,
+  "track": 1.32,
+  "front_overhang": 0.748,
+  "rear_overhang": 0.784,
+  "body_half_width": 0.78,
+  "wheel_radius": 0.29,
+  "wheels": 4,
+  "belt": 0.905,
+  "ground": 0.0,
+  "triangles": 16797,
+  "wheel_centres": [
+   [
+    0.66,
+    -1.128,
+    0.29
+   ],
+   [
+    -0.66,
+    -1.128,
+    0.29
+   ],
+   [
+    0.66,
+    1.092,
+    0.29
+   ],
+   [
+    -0.66,
+    1.092,
+    0.29
+   ]
+  ],
+  "wheel_top_gap": 0.046,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/1960s-convertible",
+  "file": "grab3d/1960s-convertible.glb",
+  "type": "convertible",
+  "era": "1960s",
+  "library": "grab3d",
+  "length": 4.828,
+  "width": 1.84,
+  "height": 1.174,
+  "wheelbase": 2.78,
+  "track": 1.54,
+  "front_overhang": 0.996,
+  "rear_overhang": 1.052,
+  "body_half_width": 0.92,
+  "wheel_radius": 0.32,
+  "wheels": 4,
+  "belt": 0.859,
+  "ground": 0.0,
+  "triangles": 16001,
+  "wheel_centres": [
+   [
+    0.77,
+    -1.418,
+    0.32
+   ],
+   [
+    -0.77,
+    -1.418,
+    0.32
+   ],
+   [
+    0.77,
+    1.362,
+    0.32
+   ],
+   [
+    -0.77,
+    1.362,
+    0.32
+   ]
+  ],
+  "wheel_top_gap": 0.055,
+  "paint": [
+   0.228,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1960s-microbus",
+  "file": "grab3d/1960s-microbus.glb",
+  "type": "van",
+  "era": "1960s",
+  "library": "grab3d",
+  "length": 4.504,
+  "width": 2.134,
+  "height": 1.98,
+  "wheelbase": 2.52,
+  "track": 1.5,
+  "front_overhang": 0.952,
+  "rear_overhang": 1.032,
+  "body_half_width": 1.067,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 1.158,
+  "ground": 0.0,
+  "triangles": 17349,
+  "wheel_centres": [
+   [
+    0.75,
+    -1.3,
+    0.33
+   ],
+   [
+    -0.75,
+    -1.3,
+    0.33
+   ],
+   [
+    0.75,
+    1.22,
+    0.33
+   ],
+   [
+    -0.75,
+    1.22,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.059,
+  "paint": [
+   0.23,
+   0.236,
+   0.283
+  ]
+ },
+ {
+  "name": "grab3d/1960s-sports-car",
+  "file": "grab3d/1960s-sports-car.glb",
+  "type": "sports",
+  "era": "1960s",
+  "library": "grab3d",
+  "length": 4.417,
+  "width": 1.732,
+  "height": 1.3,
+  "wheelbase": 2.54,
+  "track": 1.46,
+  "front_overhang": 0.917,
+  "rear_overhang": 0.96,
+  "body_half_width": 0.866,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 0.834,
+  "ground": 0.0,
+  "triangles": 18555,
+  "wheel_centres": [
+   [
+    0.73,
+    -1.291,
+    0.31
+   ],
+   [
+    -0.73,
+    -1.291,
+    0.31
+   ],
+   [
+    0.73,
+    1.249,
+    0.31
+   ],
+   [
+    -0.73,
+    1.249,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.051,
+  "paint": [
+   0.228,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1970s-coupe",
+  "file": "grab3d/1970s-coupe.glb",
+  "type": "coupe",
+  "era": "1970s",
+  "library": "grab3d",
+  "length": 5.224,
+  "width": 1.935,
+  "height": 1.341,
+  "wheelbase": 2.92,
+  "track": 1.6,
+  "front_overhang": 1.024,
+  "rear_overhang": 1.28,
+  "body_half_width": 0.967,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.907,
+  "ground": 0.0,
+  "triangles": 18978,
+  "wheel_centres": [
+   [
+    0.8,
+    -1.588,
+    0.33
+   ],
+   [
+    -0.8,
+    -1.588,
+    0.33
+   ],
+   [
+    0.8,
+    1.332,
+    0.33
+   ],
+   [
+    -0.8,
+    1.332,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.07,
+  "paint": [
+   0.228,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1970s-hatchback",
+  "file": "grab3d/1970s-hatchback.glb",
+  "type": "hatchback",
+  "era": "1970s",
+  "library": "grab3d",
+  "length": 4.06,
+  "width": 1.7,
+  "height": 1.44,
+  "wheelbase": 2.38,
+  "track": 1.4,
+  "front_overhang": 0.82,
+  "rear_overhang": 0.86,
+  "body_half_width": 0.85,
+  "wheel_radius": 0.29,
+  "wheels": 4,
+  "belt": 0.945,
+  "ground": 0.0,
+  "triangles": 16438,
+  "wheel_centres": [
+   [
+    0.7,
+    -1.21,
+    0.29
+   ],
+   [
+    -0.7,
+    -1.21,
+    0.29
+   ],
+   [
+    0.7,
+    1.17,
+    0.29
+   ],
+   [
+    -0.7,
+    1.17,
+    0.29
+   ]
+  ],
+  "wheel_top_gap": 0.056,
+  "paint": [
+   0.823,
+   0.416,
+   0.462
+  ]
+ },
+ {
+  "name": "grab3d/1970s-pickup-truck",
+  "file": "grab3d/1970s-pickup-truck.glb",
+  "type": "pickup",
+  "era": "1970s",
+  "library": "grab3d",
+  "length": 5.418,
+  "width": 2.344,
+  "height": 1.87,
+  "wheelbase": 3.35,
+  "track": 1.68,
+  "front_overhang": 0.864,
+  "rear_overhang": 1.204,
+  "body_half_width": 1.172,
+  "wheel_radius": 0.297,
+  "wheels": 6,
+  "belt": 1.256,
+  "ground": 0.0,
+  "triangles": 18247,
+  "wheel_centres": [
+   [
+    0.77,
+    1.505,
+    0.84
+   ],
+   [
+    -0.77,
+    1.505,
+    0.84
+   ],
+   [
+    0.84,
+    -1.845,
+    0.37
+   ],
+   [
+    -0.84,
+    -1.845,
+    0.37
+   ],
+   [
+    0.84,
+    1.505,
+    0.37
+   ],
+   [
+    -0.84,
+    1.505,
+    0.37
+   ]
+  ],
+  "wheel_top_gap": 0.0,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/1970s-sedan",
+  "file": "grab3d/1970s-sedan.glb",
+  "type": "sedan",
+  "era": "1970s",
+  "library": "grab3d",
+  "length": 5.454,
+  "width": 1.995,
+  "height": 1.42,
+  "wheelbase": 3.08,
+  "track": 1.64,
+  "front_overhang": 1.014,
+  "rear_overhang": 1.36,
+  "body_half_width": 0.997,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.926,
+  "ground": 0.0,
+  "triangles": 19716,
+  "wheel_centres": [
+   [
+    0.82,
+    -1.713,
+    0.33
+   ],
+   [
+    -0.82,
+    -1.713,
+    0.33
+   ],
+   [
+    0.82,
+    1.367,
+    0.33
+   ],
+   [
+    -0.82,
+    1.367,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.07,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/1980s-hatchback",
+  "file": "grab3d/1980s-hatchback.glb",
+  "type": "hatchback",
+  "era": "1980s",
+  "library": "grab3d",
+  "length": 3.973,
+  "width": 1.726,
+  "height": 1.445,
+  "wheelbase": 2.38,
+  "track": 1.36,
+  "front_overhang": 0.793,
+  "rear_overhang": 0.8,
+  "body_half_width": 0.863,
+  "wheel_radius": 0.29,
+  "wheels": 4,
+  "belt": 0.878,
+  "ground": 0.0,
+  "triangles": 15612,
+  "wheel_centres": [
+   [
+    0.68,
+    -1.194,
+    0.29
+   ],
+   [
+    -0.68,
+    -1.194,
+    0.29
+   ],
+   [
+    0.68,
+    1.186,
+    0.29
+   ],
+   [
+    -0.68,
+    1.186,
+    0.29
+   ]
+  ],
+  "wheel_top_gap": 0.051,
+  "paint": [
+   0.228,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1980s-sedan",
+  "file": "grab3d/1980s-sedan.glb",
+  "type": "sedan",
+  "era": "1980s",
+  "library": "grab3d",
+  "length": 4.599,
+  "width": 1.786,
+  "height": 1.41,
+  "wheelbase": 2.65,
+  "track": 1.44,
+  "front_overhang": 0.919,
+  "rear_overhang": 1.03,
+  "body_half_width": 0.893,
+  "wheel_radius": 0.3,
+  "wheels": 4,
+  "belt": 0.893,
+  "ground": 0.0,
+  "triangles": 17287,
+  "wheel_centres": [
+   [
+    0.72,
+    -1.38,
+    0.3
+   ],
+   [
+    -0.72,
+    -1.38,
+    0.3
+   ],
+   [
+    0.72,
+    1.27,
+    0.3
+   ],
+   [
+    -0.72,
+    1.27,
+    0.3
+   ]
+  ],
+  "wheel_top_gap": 0.051,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/1980s-sports-car",
+  "file": "grab3d/1980s-sports-car.glb",
+  "type": "sports",
+  "era": "1980s",
+  "library": "grab3d",
+  "length": 4.416,
+  "width": 1.826,
+  "height": 1.23,
+  "wheelbase": 2.52,
+  "track": 1.46,
+  "front_overhang": 0.916,
+  "rear_overhang": 0.98,
+  "body_half_width": 0.913,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 0.808,
+  "ground": 0.0,
+  "triangles": 18905,
+  "wheel_centres": [
+   [
+    0.73,
+    -1.292,
+    0.31
+   ],
+   [
+    -0.73,
+    -1.292,
+    0.31
+   ],
+   [
+    0.73,
+    1.228,
+    0.31
+   ],
+   [
+    -0.73,
+    1.228,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.031,
+  "paint": [
+   0.822,
+   0.415,
+   0.461
+  ]
+ },
+ {
+  "name": "grab3d/1980s-station-wagon",
+  "file": "grab3d/1980s-station-wagon.glb",
+  "type": "wagon",
+  "era": "1980s",
+  "library": "grab3d",
+  "length": 4.883,
+  "width": 1.846,
+  "height": 1.53,
+  "wheelbase": 2.85,
+  "track": 1.5,
+  "front_overhang": 0.953,
+  "rear_overhang": 1.08,
+  "body_half_width": 0.923,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 0.913,
+  "ground": 0.0,
+  "triangles": 19644,
+  "wheel_centres": [
+   [
+    0.75,
+    -1.489,
+    0.31
+   ],
+   [
+    -0.75,
+    -1.489,
+    0.31
+   ],
+   [
+    0.75,
+    1.361,
+    0.31
+   ],
+   [
+    -0.75,
+    1.361,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.05,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/1980s-van",
+  "file": "grab3d/1980s-van.glb",
+  "type": "van",
+  "era": "1980s",
+  "library": "grab3d",
+  "length": 4.928,
+  "width": 2.053,
+  "height": 1.93,
+  "wheelbase": 3.0,
+  "track": 1.58,
+  "front_overhang": 0.898,
+  "rear_overhang": 1.03,
+  "body_half_width": 1.026,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 1.145,
+  "ground": 0.0,
+  "triangles": 19749,
+  "wheel_centres": [
+   [
+    0.79,
+    -1.566,
+    0.33
+   ],
+   [
+    -0.79,
+    -1.566,
+    0.33
+   ],
+   [
+    0.79,
+    1.434,
+    0.33
+   ],
+   [
+    -0.79,
+    1.434,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.05,
+  "paint": [
+   0.23,
+   0.236,
+   0.283
+  ]
+ },
+ {
+  "name": "grab3d/1990s-compact-car",
+  "file": "grab3d/1990s-compact-car.glb",
+  "type": "compact",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 3.724,
+  "width": 1.776,
+  "height": 1.53,
+  "wheelbase": 2.2,
+  "track": 1.36,
+  "front_overhang": 0.781,
+  "rear_overhang": 0.743,
+  "body_half_width": 0.888,
+  "wheel_radius": 0.29,
+  "wheels": 4,
+  "belt": 0.905,
+  "ground": 0.0,
+  "triangles": 15217,
+  "wheel_centres": [
+   [
+    0.68,
+    -1.081,
+    0.29
+   ],
+   [
+    -0.68,
+    -1.081,
+    0.29
+   ],
+   [
+    0.68,
+    1.119,
+    0.29
+   ],
+   [
+    -0.68,
+    1.119,
+    0.29
+   ]
+  ],
+  "wheel_top_gap": 0.051,
+  "paint": [
+   0.228,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1990s-delivery-van",
+  "file": "grab3d/1990s-delivery-van.glb",
+  "type": "van",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.865,
+  "width": 2.074,
+  "height": 2.11,
+  "wheelbase": 3.04,
+  "track": 1.62,
+  "front_overhang": 0.904,
+  "rear_overhang": 0.921,
+  "body_half_width": 1.037,
+  "wheel_radius": 0.32,
+  "wheels": 4,
+  "belt": 1.145,
+  "ground": 0.0,
+  "triangles": 18096,
+  "wheel_centres": [
+   [
+    0.81,
+    -1.528,
+    0.32
+   ],
+   [
+    -0.81,
+    -1.528,
+    0.32
+   ],
+   [
+    0.81,
+    1.512,
+    0.32
+   ],
+   [
+    -0.81,
+    1.512,
+    0.32
+   ]
+  ],
+  "wheel_top_gap": 0.05,
+  "paint": [
+   0.23,
+   0.236,
+   0.283
+  ]
+ },
+ {
+  "name": "grab3d/1990s-hatchback",
+  "file": "grab3d/1990s-hatchback.glb",
+  "type": "hatchback",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.064,
+  "width": 1.856,
+  "height": 1.534,
+  "wheelbase": 2.42,
+  "track": 1.44,
+  "front_overhang": 0.821,
+  "rear_overhang": 0.823,
+  "body_half_width": 0.928,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 0.925,
+  "ground": 0.0,
+  "triangles": 18484,
+  "wheel_centres": [
+   [
+    0.72,
+    -1.211,
+    0.31
+   ],
+   [
+    -0.72,
+    -1.211,
+    0.31
+   ],
+   [
+    0.72,
+    1.209,
+    0.31
+   ],
+   [
+    -0.72,
+    1.209,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.055,
+  "paint": [
+   0.228,
+   0.233,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1990s-minivan",
+  "file": "grab3d/1990s-minivan.glb",
+  "type": "minivan",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.574,
+  "width": 1.987,
+  "height": 1.88,
+  "wheelbase": 2.85,
+  "track": 1.56,
+  "front_overhang": 0.881,
+  "rear_overhang": 0.843,
+  "body_half_width": 0.993,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.995,
+  "ground": 0.0,
+  "triangles": 17494,
+  "wheel_centres": [
+   [
+    0.78,
+    -1.406,
+    0.33
+   ],
+   [
+    -0.78,
+    -1.406,
+    0.33
+   ],
+   [
+    0.78,
+    1.444,
+    0.33
+   ],
+   [
+    -0.78,
+    1.444,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.064,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/1990s-off-roader",
+  "file": "grab3d/1990s-off-roader.glb",
+  "type": "offroad",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.324,
+  "width": 1.955,
+  "height": 1.87,
+  "wheelbase": 2.48,
+  "track": 1.52,
+  "front_overhang": 0.91,
+  "rear_overhang": 0.934,
+  "body_half_width": 0.977,
+  "wheel_radius": 0.38,
+  "wheels": 4,
+  "belt": 1.175,
+  "ground": 0.0,
+  "triangles": 19817,
+  "wheel_centres": [
+   [
+    0.76,
+    -1.252,
+    0.38
+   ],
+   [
+    -0.76,
+    -1.252,
+    0.38
+   ],
+   [
+    0.76,
+    1.228,
+    0.38
+   ],
+   [
+    -0.76,
+    1.228,
+    0.38
+   ]
+  ],
+  "wheel_top_gap": 0.064,
+  "paint": [
+   0.23,
+   0.237,
+   0.284
+  ]
+ },
+ {
+  "name": "grab3d/1990s-pickup-truck",
+  "file": "grab3d/1990s-pickup-truck.glb",
+  "type": "pickup",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 5.32,
+  "width": 2.027,
+  "height": 1.9,
+  "wheelbase": 3.24,
+  "track": 1.62,
+  "front_overhang": 1.0,
+  "rear_overhang": 1.08,
+  "body_half_width": 1.013,
+  "wheel_radius": 0.37,
+  "wheels": 4,
+  "belt": 1.134,
+  "ground": 0.0,
+  "triangles": 18384,
+  "wheel_centres": [
+   [
+    0.81,
+    -1.66,
+    0.37
+   ],
+   [
+    -0.81,
+    -1.66,
+    0.37
+   ],
+   [
+    0.81,
+    1.58,
+    0.37
+   ],
+   [
+    -0.81,
+    1.58,
+    0.37
+   ]
+  ],
+  "wheel_top_gap": 0.065,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/1990s-police-car",
+  "file": "grab3d/1990s-police-car.glb",
+  "type": "police",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 5.085,
+  "width": 1.956,
+  "height": 1.819,
+  "wheelbase": 2.96,
+  "track": 1.54,
+  "front_overhang": 1.073,
+  "rear_overhang": 1.053,
+  "body_half_width": 0.978,
+  "wheel_radius": 0.34,
+  "wheels": 4,
+  "belt": 0.945,
+  "ground": 0.0,
+  "triangles": 19930,
+  "wheel_centres": [
+   [
+    0.77,
+    -1.47,
+    0.34
+   ],
+   [
+    -0.77,
+    -1.47,
+    0.34
+   ],
+   [
+    0.77,
+    1.49,
+    0.34
+   ],
+   [
+    -0.77,
+    1.49,
+    0.34
+   ]
+  ],
+  "wheel_top_gap": 0.065,
+  "paint": [
+   0.944,
+   0.927,
+   0.917
+  ]
+ },
+ {
+  "name": "grab3d/1990s-sedan",
+  "file": "grab3d/1990s-sedan.glb",
+  "type": "sedan",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.674,
+  "width": 1.896,
+  "height": 1.5,
+  "wheelbase": 2.78,
+  "track": 1.48,
+  "front_overhang": 0.921,
+  "rear_overhang": 0.973,
+  "body_half_width": 0.948,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.935,
+  "ground": 0.0,
+  "triangles": 19368,
+  "wheel_centres": [
+   [
+    0.74,
+    -1.416,
+    0.33
+   ],
+   [
+    -0.74,
+    -1.416,
+    0.33
+   ],
+   [
+    0.74,
+    1.364,
+    0.33
+   ],
+   [
+    -0.74,
+    1.364,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.055,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/1990s-sports-car",
+  "file": "grab3d/1990s-sports-car.glb",
+  "type": "sports",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.418,
+  "width": 1.875,
+  "height": 1.23,
+  "wheelbase": 2.54,
+  "track": 1.54,
+  "front_overhang": 0.898,
+  "rear_overhang": 0.98,
+  "body_half_width": 0.938,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 0.826,
+  "ground": 0.0,
+  "triangles": 16983,
+  "wheel_centres": [
+   [
+    0.77,
+    -1.311,
+    0.31
+   ],
+   [
+    -0.77,
+    -1.311,
+    0.31
+   ],
+   [
+    0.77,
+    1.229,
+    0.31
+   ],
+   [
+    -0.77,
+    1.229,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.06,
+  "paint": [
+   0.228,
+   0.232,
+   0.28
+  ]
+ },
+ {
+  "name": "grab3d/1990s-station-wagon",
+  "file": "grab3d/1990s-station-wagon.glb",
+  "type": "wagon",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.804,
+  "width": 1.916,
+  "height": 1.623,
+  "wheelbase": 2.88,
+  "track": 1.5,
+  "front_overhang": 0.921,
+  "rear_overhang": 1.003,
+  "body_half_width": 0.958,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.945,
+  "ground": 0.0,
+  "triangles": 19859,
+  "wheel_centres": [
+   [
+    0.75,
+    -1.481,
+    0.33
+   ],
+   [
+    -0.75,
+    -1.481,
+    0.33
+   ],
+   [
+    0.75,
+    1.399,
+    0.33
+   ],
+   [
+    -0.75,
+    1.399,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.062,
+  "paint": [
+   0.229,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/1990s-suv",
+  "file": "grab3d/1990s-suv.glb",
+  "type": "suv",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.69,
+  "width": 1.947,
+  "height": 1.908,
+  "wheelbase": 2.6,
+  "track": 1.54,
+  "front_overhang": 0.93,
+  "rear_overhang": 1.16,
+  "body_half_width": 0.973,
+  "wheel_radius": 0.37,
+  "wheels": 4,
+  "belt": 1.104,
+  "ground": 0.0,
+  "triangles": 19885,
+  "wheel_centres": [
+   [
+    0.77,
+    -1.415,
+    0.37
+   ],
+   [
+    -0.77,
+    -1.415,
+    0.37
+   ],
+   [
+    0.77,
+    1.185,
+    0.37
+   ],
+   [
+    -0.77,
+    1.185,
+    0.37
+   ]
+  ],
+  "wheel_top_gap": 0.065,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/1990s-taxi",
+  "file": "grab3d/1990s-taxi.glb",
+  "type": "taxi",
+  "era": "1990s",
+  "library": "grab3d",
+  "length": 4.834,
+  "width": 1.936,
+  "height": 1.745,
+  "wheelbase": 2.9,
+  "track": 1.52,
+  "front_overhang": 0.921,
+  "rear_overhang": 1.013,
+  "body_half_width": 0.968,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.945,
+  "ground": 0.0,
+  "triangles": 19010,
+  "wheel_centres": [
+   [
+    0.76,
+    -1.496,
+    0.33
+   ],
+   [
+    -0.76,
+    -1.496,
+    0.33
+   ],
+   [
+    0.76,
+    1.404,
+    0.33
+   ],
+   [
+    -0.76,
+    1.404,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.063,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/atomic-age-car",
+  "file": "grab3d/atomic-age-car.glb",
+  "type": "classic",
+  "era": "classic",
+  "library": "grab3d",
+  "length": 4.411,
+  "width": 1.859,
+  "height": 1.44,
+  "wheelbase": 2.5,
+  "track": 1.367,
+  "front_overhang": 0.867,
+  "rear_overhang": 1.043,
+  "body_half_width": 0.929,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.977,
+  "ground": 0.0,
+  "triangles": 15482,
+  "wheel_centres": [
+   [
+    0.684,
+    -1.338,
+    0.33
+   ],
+   [
+    -0.684,
+    -1.338,
+    0.33
+   ],
+   [
+    0.671,
+    1.162,
+    0.33
+   ],
+   [
+    -0.671,
+    1.162,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.06,
+  "paint": [
+   0.228,
+   0.232,
+   0.279
+  ]
+ },
+ {
+  "name": "grab3d/classic-car",
+  "file": "grab3d/classic-car.glb",
+  "type": "classic",
+  "era": "classic",
+  "library": "grab3d",
+  "length": 4.837,
+  "width": 1.86,
+  "height": 1.44,
+  "wheelbase": 2.9,
+  "track": 1.527,
+  "front_overhang": 0.929,
+  "rear_overhang": 1.009,
+  "body_half_width": 0.93,
+  "wheel_radius": 0.335,
+  "wheels": 4,
+  "belt": 0.952,
+  "ground": 0.0,
+  "triangles": 35089,
+  "wheel_centres": [
+   [
+    0.764,
+    -1.49,
+    0.335
+   ],
+   [
+    -0.764,
+    -1.49,
+    0.335
+   ],
+   [
+    0.764,
+    1.41,
+    0.335
+   ],
+   [
+    -0.764,
+    1.41,
+    0.335
+   ]
+  ],
+  "wheel_top_gap": 0.046,
+  "paint": [
+   0.955,
+   0.65,
+   0.753
+  ]
+ },
+ {
+  "name": "grab3d/compact-car",
+  "file": "grab3d/compact-car.glb",
+  "type": "compact",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 3.724,
+  "width": 1.755,
+  "height": 1.483,
+  "wheelbase": 2.18,
+  "track": 1.36,
+  "front_overhang": 0.824,
+  "rear_overhang": 0.72,
+  "body_half_width": 0.878,
+  "wheel_radius": 0.3,
+  "wheels": 4,
+  "belt": 0.905,
+  "ground": 0.0,
+  "triangles": 17338,
+  "wheel_centres": [
+   [
+    0.68,
+    -1.038,
+    0.3
+   ],
+   [
+    -0.68,
+    -1.038,
+    0.3
+   ],
+   [
+    0.68,
+    1.142,
+    0.3
+   ],
+   [
+    -0.68,
+    1.142,
+    0.3
+   ]
+  ],
+  "wheel_top_gap": 0.051,
+  "paint": [
+   0.228,
+   0.232,
+   0.279
+  ]
+ },
+ {
+  "name": "grab3d/convertible",
+  "file": "grab3d/convertible.glb",
+  "type": "convertible",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.35,
+  "width": 1.755,
+  "height": 1.334,
+  "wheelbase": 2.167,
+  "track": 1.44,
+  "front_overhang": 1.238,
+  "rear_overhang": 0.945,
+  "body_half_width": 0.878,
+  "wheel_radius": 0.299,
+  "wheels": 5,
+  "belt": 0.887,
+  "ground": 0.0,
+  "triangles": 18325,
+  "wheel_centres": [
+   [
+    0.31,
+    -0.25,
+    0.97
+   ],
+   [
+    0.72,
+    -1.28,
+    0.33
+   ],
+   [
+    -0.72,
+    -1.28,
+    0.33
+   ],
+   [
+    0.72,
+    1.23,
+    0.33
+   ],
+   [
+    -0.72,
+    1.23,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": -0.171,
+  "paint": [
+   0.228,
+   0.232,
+   0.279
+  ]
+ },
+ {
+  "name": "grab3d/coupe",
+  "file": "grab3d/coupe.glb",
+  "type": "coupe",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.697,
+  "width": 1.815,
+  "height": 1.37,
+  "wheelbase": 2.62,
+  "track": 1.4,
+  "front_overhang": 0.997,
+  "rear_overhang": 1.08,
+  "body_half_width": 0.907,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 0.866,
+  "ground": 0.0,
+  "triangles": 16856,
+  "wheel_centres": [
+   [
+    0.7,
+    -1.351,
+    0.31
+   ],
+   [
+    -0.7,
+    -1.351,
+    0.31
+   ],
+   [
+    0.7,
+    1.269,
+    0.31
+   ],
+   [
+    -0.7,
+    1.269,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.05,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/dune-buggy",
+  "file": "grab3d/dune-buggy.glb",
+  "type": "buggy",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 3.276,
+  "width": 2.02,
+  "height": 1.51,
+  "wheelbase": 1.753,
+  "track": 1.6,
+  "front_overhang": 0.82,
+  "rear_overhang": 0.702,
+  "body_half_width": 1.01,
+  "wheel_radius": 0.294,
+  "wheels": 5,
+  "belt": 0.73,
+  "ground": 0.0,
+  "triangles": 13945,
+  "wheel_centres": [
+   [
+    0.26,
+    -0.244,
+    0.84
+   ],
+   [
+    0.76,
+    -1.104,
+    0.3
+   ],
+   [
+    -0.76,
+    -1.104,
+    0.3
+   ],
+   [
+    0.8,
+    0.936,
+    0.36
+   ],
+   [
+    -0.8,
+    0.936,
+    0.36
+   ]
+  ],
+  "wheel_top_gap": -0.345,
+  "paint": [
+   0.951,
+   0.696,
+   0.55
+  ]
+ },
+ {
+  "name": "grab3d/electric-car",
+  "file": "grab3d/electric-car.glb",
+  "type": "electric",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.532,
+  "width": 1.915,
+  "height": 1.45,
+  "wheelbase": 2.78,
+  "track": 1.54,
+  "front_overhang": 0.884,
+  "rear_overhang": 0.868,
+  "body_half_width": 0.958,
+  "wheel_radius": 0.35,
+  "wheels": 4,
+  "belt": 0.972,
+  "ground": 0.0,
+  "triangles": 17770,
+  "wheel_centres": [
+   [
+    0.77,
+    -1.382,
+    0.35
+   ],
+   [
+    -0.77,
+    -1.382,
+    0.35
+   ],
+   [
+    0.77,
+    1.398,
+    0.35
+   ],
+   [
+    -0.77,
+    1.398,
+    0.35
+   ]
+  ],
+  "wheel_top_gap": 0.04,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/hatchback",
+  "file": "grab3d/hatchback.glb",
+  "type": "hatchback",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 3.996,
+  "width": 1.846,
+  "height": 1.544,
+  "wheelbase": 2.52,
+  "track": 1.43,
+  "front_overhang": 0.803,
+  "rear_overhang": 0.673,
+  "body_half_width": 0.923,
+  "wheel_radius": 0.31,
+  "wheels": 4,
+  "belt": 1.006,
+  "ground": 0.0,
+  "triangles": 33636,
+  "wheel_centres": [
+   [
+    0.715,
+    -1.195,
+    0.31
+   ],
+   [
+    -0.715,
+    -1.195,
+    0.31
+   ],
+   [
+    0.715,
+    1.325,
+    0.31
+   ],
+   [
+    -0.715,
+    1.325,
+    0.31
+   ]
+  ],
+  "wheel_top_gap": 0.055,
+  "paint": [
+   0.56,
+   0.818,
+   0.709
+  ]
+ },
+ {
+  "name": "grab3d/limousine",
+  "file": "grab3d/limousine.glb",
+  "type": "limousine",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 7.384,
+  "width": 1.976,
+  "height": 1.55,
+  "wheelbase": 5.2,
+  "track": 1.58,
+  "front_overhang": 1.084,
+  "rear_overhang": 1.1,
+  "body_half_width": 0.988,
+  "wheel_radius": 0.36,
+  "wheels": 4,
+  "belt": 0.995,
+  "ground": 0.0,
+  "triangles": 21262,
+  "wheel_centres": [
+   [
+    0.79,
+    -2.608,
+    0.36
+   ],
+   [
+    -0.79,
+    -2.608,
+    0.36
+   ],
+   [
+    0.79,
+    2.592,
+    0.36
+   ],
+   [
+    -0.79,
+    2.592,
+    0.36
+   ]
+  ],
+  "wheel_top_gap": 0.057,
+  "paint": [
+   0.23,
+   0.236,
+   0.283
+  ]
+ },
+ {
+  "name": "grab3d/lowrider",
+  "file": "grab3d/lowrider.glb",
+  "type": "lowrider",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 5.69,
+  "width": 2.02,
+  "height": 1.3,
+  "wheelbase": 3.02,
+  "track": 1.746,
+  "front_overhang": 1.224,
+  "rear_overhang": 1.446,
+  "body_half_width": 1.01,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.845,
+  "ground": 0.0,
+  "triangles": 19739,
+  "wheel_centres": [
+   [
+    0.873,
+    -1.621,
+    0.33
+   ],
+   [
+    -0.873,
+    -1.621,
+    0.33
+   ],
+   [
+    0.873,
+    1.399,
+    0.33
+   ],
+   [
+    -0.873,
+    1.399,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.03,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/microcar",
+  "file": "grab3d/microcar.glb",
+  "type": "microcar",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 2.354,
+  "width": 1.417,
+  "height": 1.35,
+  "wheelbase": 1.08,
+  "track": 1.2,
+  "front_overhang": 0.787,
+  "rear_overhang": 0.487,
+  "body_half_width": 0.708,
+  "wheel_radius": 0.26,
+  "wheels": 4,
+  "belt": 0.779,
+  "ground": 0.0,
+  "triangles": 13792,
+  "wheel_centres": [
+   [
+    0.6,
+    -0.39,
+    0.26
+   ],
+   [
+    -0.6,
+    -0.39,
+    0.26
+   ],
+   [
+    0.17,
+    0.69,
+    0.26
+   ],
+   [
+    -0.17,
+    0.69,
+    0.26
+   ]
+  ],
+  "wheel_top_gap": -0.251,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/minivan",
+  "file": "grab3d/minivan.glb",
+  "type": "minivan",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.814,
+  "width": 2.087,
+  "height": 1.891,
+  "wheelbase": 3.08,
+  "track": 1.58,
+  "front_overhang": 0.824,
+  "rear_overhang": 0.91,
+  "body_half_width": 1.043,
+  "wheel_radius": 0.35,
+  "wheels": 4,
+  "belt": 1.006,
+  "ground": 0.0,
+  "triangles": 19947,
+  "wheel_centres": [
+   [
+    0.79,
+    -1.583,
+    0.35
+   ],
+   [
+    -0.79,
+    -1.583,
+    0.35
+   ],
+   [
+    0.79,
+    1.497,
+    0.35
+   ],
+   [
+    -0.79,
+    1.497,
+    0.35
+   ]
+  ],
+  "wheel_top_gap": 0.057,
+  "paint": [
+   0.23,
+   0.236,
+   0.283
+  ]
+ },
+ {
+  "name": "grab3d/muscle-car",
+  "file": "grab3d/muscle-car.glb",
+  "type": "muscle",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.683,
+  "width": 1.915,
+  "height": 1.395,
+  "wheelbase": 2.86,
+  "track": 1.52,
+  "front_overhang": 0.823,
+  "rear_overhang": 1.0,
+  "body_half_width": 0.958,
+  "wheel_radius": 0.343,
+  "wheels": 4,
+  "belt": 0.926,
+  "ground": 0.0,
+  "triangles": 19806,
+  "wheel_centres": [
+   [
+    0.74,
+    -1.518,
+    0.33
+   ],
+   [
+    -0.74,
+    -1.518,
+    0.33
+   ],
+   [
+    0.76,
+    1.342,
+    0.355
+   ],
+   [
+    -0.76,
+    1.342,
+    0.355
+   ]
+  ],
+  "wheel_top_gap": 0.06,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/police-car",
+  "file": "grab3d/police-car.glb",
+  "type": "police",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.985,
+  "width": 1.896,
+  "height": 1.66,
+  "wheelbase": 2.95,
+  "track": 1.53,
+  "front_overhang": 1.052,
+  "rear_overhang": 0.983,
+  "body_half_width": 0.948,
+  "wheel_radius": 0.34,
+  "wheels": 4,
+  "belt": 1.011,
+  "ground": 0.0,
+  "triangles": 34797,
+  "wheel_centres": [
+   [
+    0.765,
+    -1.44,
+    0.34
+   ],
+   [
+    -0.765,
+    -1.44,
+    0.34
+   ],
+   [
+    0.765,
+    1.51,
+    0.34
+   ],
+   [
+    -0.765,
+    1.51,
+    0.34
+   ]
+  ],
+  "wheel_top_gap": 0.057,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/race-car",
+  "file": "grab3d/race-car.glb",
+  "type": "race",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 5.28,
+  "width": 1.92,
+  "height": 1.018,
+  "wheelbase": 2.803,
+  "track": 1.6,
+  "front_overhang": 1.527,
+  "rear_overhang": 0.95,
+  "body_half_width": 0.955,
+  "wheel_radius": 0.315,
+  "wheels": 5,
+  "belt": 0.911,
+  "ground": 0.0,
+  "triangles": 19440,
+  "wheel_centres": [
+   [
+    0.006,
+    -0.66,
+    0.66
+   ],
+   [
+    0.8,
+    -1.34,
+    0.34
+   ],
+   [
+    -0.8,
+    -1.34,
+    0.34
+   ],
+   [
+    0.76,
+    1.69,
+    0.36
+   ],
+   [
+    -0.76,
+    1.69,
+    0.36
+   ]
+  ],
+  "wheel_top_gap": -0.169,
+  "paint": [
+   0.229,
+   0.234,
+   0.281
+  ]
+ },
+ {
+  "name": "grab3d/rally-car",
+  "file": "grab3d/rally-car.glb",
+  "type": "rally",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.393,
+  "width": 1.896,
+  "height": 1.69,
+  "wheelbase": 2.52,
+  "track": 1.52,
+  "front_overhang": 0.913,
+  "rear_overhang": 0.96,
+  "body_half_width": 0.948,
+  "wheel_radius": 0.34,
+  "wheels": 4,
+  "belt": 1.017,
+  "ground": 0.0,
+  "triangles": 19726,
+  "wheel_centres": [
+   [
+    0.76,
+    -1.283,
+    0.34
+   ],
+   [
+    -0.76,
+    -1.283,
+    0.34
+   ],
+   [
+    0.76,
+    1.237,
+    0.34
+   ],
+   [
+    -0.76,
+    1.237,
+    0.34
+   ]
+  ],
+  "wheel_top_gap": 0.065,
+  "paint": [
+   0.23,
+   0.235,
+   0.282
+  ]
+ },
+ {
+  "name": "grab3d/sedan",
+  "file": "grab3d/sedan.glb",
+  "type": "sedan",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.696,
+  "width": 1.856,
+  "height": 1.49,
+  "wheelbase": 2.78,
+  "track": 1.49,
+  "front_overhang": 0.953,
+  "rear_overhang": 0.963,
+  "body_half_width": 0.928,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 0.996,
+  "ground": 0.0,
+  "triangles": 31011,
+  "wheel_centres": [
+   [
+    0.745,
+    -1.395,
+    0.33
+   ],
+   [
+    -0.745,
+    -1.395,
+    0.33
+   ],
+   [
+    0.745,
+    1.385,
+    0.33
+   ],
+   [
+    -0.745,
+    1.385,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.056,
+  "paint": [
+   0.486,
+   0.723,
+   0.907
+  ]
+ },
+ {
+  "name": "grab3d/sports-car",
+  "file": "grab3d/sports-car.glb",
+  "type": "sports",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.378,
+  "width": 1.968,
+  "height": 1.219,
+  "wheelbase": 2.66,
+  "track": 1.62,
+  "front_overhang": 0.79,
+  "rear_overhang": 0.928,
+  "body_half_width": 0.984,
+  "wheel_radius": 0.345,
+  "wheels": 4,
+  "belt": 0.896,
+  "ground": 0.0,
+  "triangles": 34763,
+  "wheel_centres": [
+   [
+    0.785,
+    -1.399,
+    0.345
+   ],
+   [
+    -0.785,
+    -1.399,
+    0.345
+   ],
+   [
+    0.81,
+    1.261,
+    0.345
+   ],
+   [
+    -0.81,
+    1.261,
+    0.345
+   ]
+  ],
+  "wheel_top_gap": 0.037,
+  "paint": [
+   0.932,
+   0.478,
+   0.421
+  ]
+ },
+ {
+  "name": "grab3d/station-wagon",
+  "file": "grab3d/station-wagon.glb",
+  "type": "wagon",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.664,
+  "width": 1.896,
+  "height": 1.647,
+  "wheelbase": 2.85,
+  "track": 1.48,
+  "front_overhang": 0.904,
+  "rear_overhang": 0.91,
+  "body_half_width": 0.948,
+  "wheel_radius": 0.34,
+  "wheels": 4,
+  "belt": 0.991,
+  "ground": 0.0,
+  "triangles": 19308,
+  "wheel_centres": [
+   [
+    0.74,
+    -1.428,
+    0.34
+   ],
+   [
+    -0.74,
+    -1.428,
+    0.34
+   ],
+   [
+    0.74,
+    1.422,
+    0.34
+   ],
+   [
+    -0.74,
+    1.422,
+    0.34
+   ]
+  ],
+  "wheel_top_gap": 0.05,
+  "paint": [
+   0.23,
+   0.235,
+   0.283
+  ]
+ },
+ {
+  "name": "grab3d/suv",
+  "file": "grab3d/suv.glb",
+  "type": "suv",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.648,
+  "width": 2.176,
+  "height": 1.819,
+  "wheelbase": 2.76,
+  "track": 1.56,
+  "front_overhang": 0.87,
+  "rear_overhang": 1.018,
+  "body_half_width": 1.088,
+  "wheel_radius": 0.385,
+  "wheels": 4,
+  "belt": 1.132,
+  "ground": 0.0,
+  "triangles": 35368,
+  "wheel_centres": [
+   [
+    0.78,
+    -1.454,
+    0.385
+   ],
+   [
+    -0.78,
+    -1.454,
+    0.385
+   ],
+   [
+    0.78,
+    1.306,
+    0.385
+   ],
+   [
+    -0.78,
+    1.306,
+    0.385
+   ]
+  ],
+  "wheel_top_gap": 0.064,
+  "paint": [
+   0.486,
+   0.724,
+   0.908
+  ]
+ },
+ {
+  "name": "grab3d/taxi",
+  "file": "grab3d/taxi.glb",
+  "type": "taxi",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 4.786,
+  "width": 1.896,
+  "height": 1.74,
+  "wheelbase": 2.89,
+  "track": 1.51,
+  "front_overhang": 0.933,
+  "rear_overhang": 0.963,
+  "body_half_width": 0.948,
+  "wheel_radius": 0.33,
+  "wheels": 4,
+  "belt": 1.006,
+  "ground": 0.0,
+  "triangles": 33009,
+  "wheel_centres": [
+   [
+    0.755,
+    -1.46,
+    0.33
+   ],
+   [
+    -0.755,
+    -1.46,
+    0.33
+   ],
+   [
+    0.755,
+    1.43,
+    0.33
+   ],
+   [
+    -0.755,
+    1.43,
+    0.33
+   ]
+  ],
+  "wheel_top_gap": 0.059,
+  "paint": [
+   0.958,
+   0.817,
+   0.443
+  ]
+ },
+ {
+  "name": "grab3d/tuk-tuk",
+  "file": "grab3d/tuk-tuk.glb",
+  "type": "tuktuk",
+  "era": "modern",
+  "library": "grab3d",
+  "length": 2.761,
+  "width": 1.46,
+  "height": 1.94,
+  "wheelbase": 1.82,
+  "track": 1.2,
+  "front_overhang": 0.351,
+  "rear_overhang": 0.59,
+  "body_half_width": 0.73,
+  "wheel_radius": 0.27,
+  "wheels": 3,
+  "belt": 1.009,
+  "ground": 0.0,
+  "triangles": 11899,
+  "wheel_centres": [
+   [
+    0.0,
+    -1.03,
+    0.27
+   ],
+   [
+    0.6,
+    0.79,
+    0.27
+   ],
+   [
+    -0.6,
+    0.79,
+    0.27
+   ]
+  ],
+  "wheel_top_gap": -0.27,
+  "paint": [
+   0.623,
+   0.849,
+   0.765
+  ]
+ },
+ {
+  "name": "quaternius/car_1",
+  "file": "quaternius/car_1.glb",
+  "type": "sedan",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 4.221,
+  "width": 1.807,
+  "height": 1.177,
+  "wheelbase": 2.439,
+  "track": 1.381,
+  "front_overhang": 0.918,
+  "rear_overhang": 0.864,
+  "body_half_width": 0.904,
+  "wheel_radius": 0.262,
+  "wheels": 4,
+  "belt": 0.794,
+  "ground": 0.0,
+  "triangles": 2954,
+  "wheel_centres": [
+   [
+    0.689,
+    1.243,
+    0.262
+   ],
+   [
+    -0.687,
+    1.243,
+    0.262
+   ],
+   [
+    0.691,
+    -1.196,
+    0.262
+   ],
+   [
+    -0.689,
+    -1.196,
+    0.262
+   ]
+  ],
+  "wheel_top_gap": 0.015,
+  "paint": [
+   0.564,
+   0.688,
+   0.821
+  ]
+ },
+ {
+  "name": "quaternius/car_2",
+  "file": "quaternius/car_2.glb",
+  "type": "sedan",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 3.31,
+  "width": 1.638,
+  "height": 1.146,
+  "wheelbase": 1.996,
+  "track": 1.317,
+  "front_overhang": 0.62,
+  "rear_overhang": 0.694,
+  "body_half_width": 0.819,
+  "wheel_radius": 0.248,
+  "wheels": 4,
+  "belt": 0.807,
+  "ground": 0.0,
+  "triangles": 3124,
+  "wheel_centres": [
+   [
+    0.659,
+    0.955,
+    0.248
+   ],
+   [
+    -0.658,
+    0.955,
+    0.248
+   ],
+   [
+    0.659,
+    -1.04,
+    0.248
+   ],
+   [
+    -0.658,
+    -1.04,
+    0.248
+   ]
+  ],
+  "wheel_top_gap": 0.019,
+  "paint": [
+   0.821,
+   0.821,
+   0.821
+  ]
+ },
+ {
+  "name": "quaternius/police_car",
+  "file": "quaternius/police_car.glb",
+  "type": "police",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 3.73,
+  "width": 1.778,
+  "height": 1.239,
+  "wheelbase": 2.296,
+  "track": 1.424,
+  "front_overhang": 0.722,
+  "rear_overhang": 0.712,
+  "body_half_width": 0.889,
+  "wheel_radius": 0.275,
+  "wheels": 4,
+  "belt": 0.786,
+  "ground": 0.0,
+  "triangles": 3232,
+  "wheel_centres": [
+   [
+    0.689,
+    1.155,
+    0.275
+   ],
+   [
+    -0.688,
+    1.155,
+    0.275
+   ],
+   [
+    0.712,
+    -1.141,
+    0.275
+   ],
+   [
+    -0.712,
+    -1.141,
+    0.275
+   ]
+  ],
+  "wheel_top_gap": -0.053,
+  "paint": [
+   0.767,
+   0.767,
+   0.767
+  ]
+ },
+ {
+  "name": "quaternius/sports_car_1",
+  "file": "quaternius/sports_car_1.glb",
+  "type": "sports",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 3.927,
+  "width": 1.872,
+  "height": 1.203,
+  "wheelbase": 2.507,
+  "track": 1.452,
+  "front_overhang": 0.712,
+  "rear_overhang": 0.708,
+  "body_half_width": 0.936,
+  "wheel_radius": 0.28,
+  "wheels": 4,
+  "belt": 0.86,
+  "ground": 0.0,
+  "triangles": 3148,
+  "wheel_centres": [
+   [
+    0.702,
+    1.321,
+    0.28
+   ],
+   [
+    -0.7,
+    1.321,
+    0.28
+   ],
+   [
+    0.726,
+    -1.186,
+    0.28
+   ],
+   [
+    -0.724,
+    -1.186,
+    0.28
+   ]
+  ],
+  "wheel_top_gap": 0.006,
+  "paint": [
+   0.767,
+   0.767,
+   0.767
+  ]
+ },
+ {
+  "name": "quaternius/sports_car_2",
+  "file": "quaternius/sports_car_2.glb",
+  "type": "sports",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 3.969,
+  "width": 1.805,
+  "height": 1.155,
+  "wheelbase": 2.443,
+  "track": 1.44,
+  "front_overhang": 0.796,
+  "rear_overhang": 0.73,
+  "body_half_width": 0.903,
+  "wheel_radius": 0.26,
+  "wheels": 4,
+  "belt": 0.817,
+  "ground": 0.0,
+  "triangles": 3066,
+  "wheel_centres": [
+   [
+    0.692,
+    1.255,
+    0.26
+   ],
+   [
+    -0.687,
+    1.255,
+    0.26
+   ],
+   [
+    0.72,
+    -1.188,
+    0.26
+   ],
+   [
+    -0.714,
+    -1.188,
+    0.26
+   ]
+  ],
+  "wheel_top_gap": 0.016,
+  "paint": [
+   0.821,
+   0.553,
+   0.324
+  ]
+ },
+ {
+  "name": "quaternius/suv",
+  "file": "quaternius/suv.glb",
+  "type": "suv",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 4.209,
+  "width": 2.111,
+  "height": 1.528,
+  "wheelbase": 2.568,
+  "track": 1.599,
+  "front_overhang": 0.788,
+  "rear_overhang": 0.854,
+  "body_half_width": 1.056,
+  "wheel_radius": 0.327,
+  "wheels": 4,
+  "belt": 1.065,
+  "ground": 0.0,
+  "triangles": 3294,
+  "wheel_centres": [
+   [
+    0.8,
+    1.251,
+    0.327
+   ],
+   [
+    -0.789,
+    1.251,
+    0.327
+   ],
+   [
+    0.773,
+    -1.317,
+    0.327
+   ],
+   [
+    -0.762,
+    -1.317,
+    0.327
+   ]
+  ],
+  "wheel_top_gap": 0.049,
+  "paint": [
+   0.773,
+   0.773,
+   0.773
+  ]
+ },
+ {
+  "name": "quaternius/taxi",
+  "file": "quaternius/taxi.glb",
+  "type": "taxi",
+  "era": "modern",
+  "library": "quaternius",
+  "length": 4.221,
+  "width": 1.807,
+  "height": 1.31,
+  "wheelbase": 2.439,
+  "track": 1.38,
+  "front_overhang": 0.918,
+  "rear_overhang": 0.864,
+  "body_half_width": 0.904,
+  "wheel_radius": 0.262,
+  "wheels": 4,
+  "belt": 0.794,
+  "ground": 0.0,
+  "triangles": 3278,
+  "wheel_centres": [
+   [
+    0.688,
+    1.143,
+    0.262
+   ],
+   [
+    -0.688,
+    1.143,
+    0.262
+   ],
+   [
+    0.689,
+    -1.296,
+    0.262
+   ],
+   [
+    -0.69,
+    -1.296,
+    0.262
+   ]
+  ],
+  "wheel_top_gap": 0.015,
+  "paint": [
+   0.821,
+   0.712,
+   0.236
+  ]
+ }
+]

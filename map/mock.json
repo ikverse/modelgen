@@ -1,0 +1,146 @@
+{
+  "models_by_role": {
+    "director": "claude-opus-5-5", "brief": "claude-sonnet-5-5", "architect": "claude-opus-5-5", "builder": "claude-sonnet-5-5",
+    "assembler": "claude-sonnet-5-5", "materials": "claude-sonnet-5-5", "animator": "claude-sonnet-5-5", "critic": "claude-opus-5-5", "librarian": "claude-haiku-5-5"
+  },
+  "chat_replies": {
+    "critic": "v2 lost most points on the rails and the seat joint. If v3 fixes both I expect a score above 8.",
+    "animator": "The chair rocks through a two-second loop, back where it started at the end, so nothing jumps."
+  },
+  "data": {
+    "spend": "$0.42 this model",
+    "budget": "Today $1.10 of $5.00",
+    "blender": "Blender 4.5 · ready",
+    "model": {
+      "name": "Rocking chair", "kind": "chair", "selected": "v2",
+      "versions": [
+        { "id": "v3", "number": 3, "state": "building", "meta": "Building · started 10:40", "progress": 35, "path": "team" },
+        { "id": "v2", "number": 2, "state": "scored", "score": 6.8, "meta": "10:31 · $0.18", "path": "team", "downloads": { "glb": "#", "fbx": "#", "obj": "#", "stl": "#", "blend": "#" },
+          "game": { "files": { "game": "#", "lod1": "#", "lod2": "#", "collision": "#" }, "triangles": { "game": 4620, "LOD1": 2310, "LOD2": 924 }, "budget": 15000, "reduced": false, "size": [0.6, 0.9, 1.05] } },
+        { "id": "v1", "number": 1, "state": "scored", "score": 5.2, "meta": "10:12 · $0.13", "path": "team", "downloads": { "glb": "#", "fbx": "#", "obj": "#", "stl": "#", "blend": "#" } }
+      ],
+      "brief": {
+        "request": "A wooden rocking chair with curved rails and a tall slatted back. Simple armrests.",
+        "size": { "width": 60, "depth": 90, "height": 105, "unit": "cm" }, "budget": 1.5, "references": [], "found": [], "path": "team",
+        "spec": { "object": "rocking chair", "family": "furniture", "style": "plain, Shaker-like", "use": "render",
+          "dimensions": { "width": 0.6, "depth": 0.9, "height": 1.05 }, "parts": 6, "motion": true,
+          "summary": "An oak rocking chair with two curved rails, a tall back of five slats, a flat seat and plain armrests.",
+          "materials": ["Oak, satin finish", "Linen seat cushion"] },
+        "research": { "dimensions": { "width": 0.6, "depth": 0.9, "height": 1.05 },
+          "proportions": ["Seat 43 cm above the floor at rest [published: furniture standard]", "Rails about 90 cm long, curved on a 1.1 m radius [measured from a photo]", "Back leans 12 degrees from upright [measured from a photo]"],
+          "features": ["Two curved rails joined by the four legs", "Tall back of five vertical slats under a curved top rail", "Flat armrests on turned posts"],
+          "colours": ["Oak: #B5824E", "Linen: #D9CFBD"],
+          "unverified": ["Slat width (guess: 5 cm)", "Armrest height above the seat (guess: 22 cm)"] }
+      },
+      "review": {
+        "version": "v2", "score": 6.8,
+        "criteria": [{ "name": "Silhouette", "score": 8 }, { "name": "Proportions", "score": 6 }, { "name": "Joins", "score": 5 }, { "name": "Materials", "score": 7 }],
+        "changes": ["Rails 40 → 45 mm thick", "Close the 3 mm gap at the seat"],
+        "renders": ["Front", "Side", "Top", "Close-up"]
+      },
+      "next": { "from": 2, "building": 3, "comments": "", "items": [
+        { "target": "rail_curved", "role": "builder", "text": "thickness: Rails 40 → 45 mm thick", "auto": false },
+        { "target": "assembly", "role": "assembler", "text": "seat joint: Close the 3 mm gap at the seat", "auto": false }
+      ] }
+    },
+    "chat": [
+      { "from": "you", "text": "A wooden rocking chair with curved rails and a tall slatted back" },
+      { "from": "hange", "time": "10:08", "text": "Oak, five back slats, rails about 90 cm long. Do you want armrests?" },
+      { "from": "you", "text": "Yes, but keep them simple." },
+      { "from": "hange", "time": "10:31", "text": "v2 is ready. Annie scored it 6.8: the rails look thin and there's a 3 mm gap at the seat.", "version": { "title": "Rocking chair v2", "meta": "6.8 / 10 · 2 changes · $0.18", "kind": "chair" } },
+      { "from": "you", "text": "Fix both and go again." }
+    ],
+    "models": [
+      { "name": "Rocking chair", "kind": "chair", "status": "working", "meta": "v3 building · best 6.8" },
+      { "name": "Desk lamp", "kind": "lamp", "status": "done", "meta": "v4 accepted · 8.2" },
+      { "name": "Coffee mug", "kind": "mug", "status": "idle", "meta": "v1 · 7.5" },
+      { "name": "Bookshelf", "kind": "shelf", "status": "idle", "meta": "v2 · 7.1" },
+      { "name": "Side table", "kind": "table", "status": "failed", "meta": "v1 failed · leg joint" }
+    ],
+    "parts": [
+      { "name": "rail_curved", "kind": "chair", "from": "Rocking chair v2", "uses": 2, "saved": "today 10:33" },
+      { "name": "hinge_arm", "kind": "lamp", "from": "Desk lamp v4", "uses": 1, "saved": "yesterday" },
+      { "name": "shade_cone", "kind": "lamp", "from": "Desk lamp v3", "uses": 3, "saved": "yesterday" },
+      { "name": "handle_loop", "kind": "mug", "from": "Coffee mug v1", "uses": 1, "saved": "Oct 23" },
+      { "name": "shelf_board", "kind": "shelf", "from": "Bookshelf v2", "uses": 4, "saved": "Oct 22" },
+      { "name": "leg_tapered", "kind": "table", "from": "Side table v1", "uses": 0, "saved": "Oct 21" }
+    ],
+    "activity": [
+      { "at": "2026-10-25T10:31:00", "cast": "annie", "tool": "score_render", "text": "v2 scored 6.8, 2 changes" },
+      { "at": "2026-10-25T10:29:00", "cast": "annie", "tool": "render_views", "text": "v2 front, side, top" },
+      { "at": "2026-10-25T10:24:00", "cast": "reiner", "tool": "make_material", "text": "oak, satin finish" },
+      { "at": "2026-10-25T10:20:00", "cast": "mikasa", "tool": "check_fit", "text": "3 mm gap at the seat" },
+      { "at": "2026-10-25T10:15:00", "cast": "eren", "tool": "run_blender", "text": "rail_left, rail_right, seat" },
+      { "at": "2026-10-25T10:13:00", "cast": "pieck", "tool": "plan_parts", "text": "6 parts, 2 builders" },
+      { "at": "2026-10-25T10:12:00", "cast": "armin", "tool": "write_spec", "text": "spec v2, 12 lines" }
+    ]
+  },
+  "model_v3": {
+    "name": "Rocking chair", "kind": "chair", "selected": "v3",
+    "versions": [
+      { "id": "v3", "number": 3, "state": "scored", "score": 8.1, "meta": "just now · $0.21", "path": "team", "downloads": { "glb": "#", "fbx": "#", "obj": "#", "stl": "#", "blend": "#" },
+        "game": { "files": { "game": "#", "lod1": "#", "lod2": "#", "collision": "#" }, "triangles": { "game": 4820, "LOD1": 2410, "LOD2": 964 }, "budget": 15000, "reduced": false, "size": [0.6, 0.9, 1.05] } },
+      { "id": "v2", "number": 2, "state": "scored", "score": 6.8, "meta": "10:31 · $0.18", "path": "team", "downloads": { "glb": "#", "fbx": "#", "obj": "#", "stl": "#", "blend": "#" },
+        "game": { "files": { "game": "#", "lod1": "#", "lod2": "#", "collision": "#" }, "triangles": { "game": 4620, "LOD1": 2310, "LOD2": 924 }, "budget": 15000, "reduced": false, "size": [0.6, 0.9, 1.05] } },
+      { "id": "v1", "number": 1, "state": "scored", "score": 5.2, "meta": "10:12 · $0.13", "path": "team", "downloads": { "glb": "#", "fbx": "#", "obj": "#", "stl": "#", "blend": "#" } }
+    ],
+    "brief": {
+      "request": "A wooden rocking chair with curved rails and a tall slatted back. Simple armrests.",
+      "size": { "width": 60, "depth": 90, "height": 105, "unit": "cm" }, "budget": 1.5, "references": [], "found": [], "path": "team",
+      "spec": { "object": "rocking chair", "family": "furniture", "style": "plain, Shaker-like", "use": "render",
+        "dimensions": { "width": 0.6, "depth": 0.9, "height": 1.05 }, "parts": 6, "motion": true,
+        "summary": "An oak rocking chair with two curved rails, a tall back of five slats, a flat seat and plain armrests.",
+        "materials": ["Oak, satin finish", "Linen seat cushion"] },
+      "research": { "dimensions": { "width": 0.6, "depth": 0.9, "height": 1.05 },
+        "proportions": ["Seat 43 cm above the floor at rest [published: furniture standard]", "Rails about 90 cm long, curved on a 1.1 m radius [measured from a photo]", "Back leans 12 degrees from upright [measured from a photo]"],
+        "features": ["Two curved rails joined by the four legs", "Tall back of five vertical slats under a curved top rail", "Flat armrests on turned posts"],
+        "colours": ["Oak: #B5824E", "Linen: #D9CFBD"],
+        "unverified": ["Slat width (guess: 5 cm)", "Armrest height above the seat (guess: 22 cm)"] }
+    },
+    "review": {
+      "version": "v3", "score": 8.1,
+      "criteria": [{ "name": "Silhouette", "score": 8 }, { "name": "Proportions", "score": 8 }, { "name": "Joins", "score": 8 }, { "name": "Materials", "score": 8 }],
+      "changes": ["None asked for. Ready to accept."],
+      "renders": ["Front", "Side", "Top", "Close-up"]
+    },
+    "next": { "from": 3, "building": null, "comments": "", "items": [] }
+  },
+  "script": [
+    { "reset": true, "wait": 5000 },
+    { "run": { "title": "Rocking chair v3", "round": "Round 3 of 5", "steps": [
+        { "agent": ["director", "brief", "architect"], "label": "Kickoff" }, { "agent": "brief", "label": "Research" }, { "agent": "brief", "label": "Spec v3" }, { "agent": "architect", "label": "Part plan" },
+        { "agent": ["builder-1", "builder-2"], "label": "Build" }, { "agent": "assembler", "label": "Assemble" }, { "agent": "materials", "label": "Materials" },
+        { "agent": "animator", "label": "Motion" }, { "agent": "critic", "label": "Review" }, { "agent": "librarian", "label": "Save parts" } ], "mark": { "0": "active" }, "notes": { "0": "Review room" } },
+      "meeting": { "kind": "kickoff", "agents": ["director", "brief", "architect"] },
+      "set": { "director": { "state": "working", "doing": "kickoff: plain armrests, thicker rails", "tool": "start_run" } }, "wait": 12000 },
+    { "set": { "director": { "state": "idle" }, "brief": { "state": "working", "doing": "looking up real rocking chairs: sizes and photos", "tool": "web_search" } }, "run": { "mark": { "0": "done", "1": "active" } }, "wait": 7000 },
+    { "set": { "brief": { "state": "working", "doing": "write_spec: sizes, oak, 5 slats", "tool": "write_spec" } }, "run": { "mark": { "1": "done", "2": "active" }, "notes": { "1": "Seat 43 cm high, rails 90 cm" } }, "wait": 6000 },
+    { "set": { "brief": { "state": "working", "doing": "pinning the size notes", "tool": "pin_note" } }, "wait": 6000 },
+    { "set": { "brief": { "state": "done", "doing": "spec v3 written, 14 lines" } }, "handoff": [{ "from": "brief", "to": "architect", "label": "spec v3" }], "run": { "mark": { "2": "done", "3": "active" }, "notes": { "2": "Plain armrests, rails 45 mm" } }, "wait": 8000 },
+    { "set": { "brief": { "state": "idle" }, "architect": { "state": "working", "doing": "plan_parts: 6 parts, 2 builders", "tool": "plan_parts" } }, "wait": 6000 },
+    { "set": { "architect": { "state": "working", "doing": "printing the part plan", "tool": "print_plan" } }, "wait": 7000 },
+    { "set": { "architect": { "state": "done", "doing": "part plan ready: 6 parts" } }, "handoff": [{ "from": "architect", "to": "builder-1", "label": "part list: 6 parts" }], "run": { "mark": { "3": "done", "4": "active" }, "notes": { "3": "6 parts across 2 builders" } }, "wait": 9000 },
+    { "set": { "architect": { "state": "idle" }, "builder-1": { "state": "working", "doing": "read_parts: rails, seat, back", "tool": "read_parts" }, "builder-2": { "state": "working", "doing": "read_parts: armrests, legs", "tool": "read_parts" } }, "wait": 5000 },
+    { "set": { "builder-1": { "state": "working", "doing": "run_blender: rail_left", "tool": "run_blender" }, "builder-2": { "state": "working", "doing": "run_blender: armrest_left", "tool": "run_blender" }, "librarian": { "state": "working", "doing": "search_library: curved rails, 3 matches", "tool": "search_library" } }, "wait": 10000 },
+    { "set": { "builder-2": { "state": "waiting", "doing": "rail_right: thickness unclear", "tool": "ask_human", "question": { "text": "Rails at 40 mm or 45 mm thick? The spec says 40, Annie's notes say 45.", "options": ["40 mm", "45 mm"] } }, "librarian": { "state": "idle" }, "builder-1": { "state": "working", "doing": "write_part: rail_left", "tool": "write_part" } }, "run": { "mark": { "4": "waiting" }, "notes": { "4": "rail_left done · rail_right needs you" } }, "wait": 16000 },
+    { "set": { "builder-2": { "state": "working", "doing": "run_blender: rail_right at 45 mm", "tool": "run_blender" } }, "run": { "mark": { "4": "active" } }, "wait": 7000 },
+    { "set": { "builder-1": { "state": "done", "doing": "rail_left built, 1,240 tris" }, "builder-2": { "state": "done", "doing": "rail_right built" } }, "handoff": [{ "from": "builder-1", "to": "assembler", "label": "6 built parts" }], "run": { "mark": { "4": "done", "5": "active" } }, "wait": 9000 },
+    { "set": { "builder-1": { "state": "idle" }, "builder-2": { "state": "idle" }, "assembler": { "state": "working", "doing": "check_fit: seat meets legs", "tool": "check_fit" } }, "wait": 6000 },
+    { "set": { "assembler": { "state": "failed", "doing": "legs float 12 mm above the rails", "tool": "check_fit" } }, "run": { "mark": { "5": "failed" } }, "wait": 7000 },
+    { "set": { "assembler": { "state": "working", "doing": "assemble: legs lowered 12 mm", "tool": "assemble" } }, "run": { "mark": { "5": "active" } }, "wait": 6000 },
+    { "set": { "assembler": { "state": "done", "doing": "assembled: no gaps or overlaps" }, "critic": { "state": "waiting", "doing": "waiting for the model", "tool": "ask_human", "question": { "text": "Review v3 as soon as it lands, or wait for materials too?", "options": ["Review now", "Wait for materials"] } } }, "handoff": [{ "from": "assembler", "to": "materials", "label": "assembled model" }], "run": { "mark": { "5": "done", "6": "active" } }, "wait": 9000 },
+    { "set": { "assembler": { "state": "idle" }, "materials": { "state": "working", "doing": "make_material: oak, satin finish", "tool": "make_material" } }, "wait": 7000 },
+    { "set": { "materials": { "state": "done", "doing": "oak frame, linen cushion" } }, "handoff": [{ "from": "materials", "to": "animator", "label": "model with materials" }], "run": { "mark": { "6": "done", "7": "active" } }, "wait": 8000 },
+    { "set": { "materials": { "state": "idle" }, "animator": { "state": "working", "doing": "write_motion: rockers, 2 s loop", "tool": "motion_desk" } }, "wait": 7000 },
+    { "set": { "animator": { "state": "working", "doing": "preview_frames: 6 frames of the rock", "tool": "preview_frames" } }, "wait": 8000 },
+    { "set": { "animator": { "state": "done", "doing": "the chair rocks, back where it started" } }, "handoff": [{ "from": "animator", "to": "critic", "label": "model with motion" }], "run": { "mark": { "7": "done", "8": "active" }, "notes": { "7": "rocks through a 2 s loop" } }, "wait": 8000 },
+    { "set": { "animator": { "state": "idle" }, "critic": { "state": "working", "doing": "render_views: v3 front, side, top", "tool": "render_views" } }, "wait": 9000 },
+    { "meeting": { "kind": "review", "agents": ["director", "critic", "assembler", "materials"] }, "set": { "critic": { "state": "working", "doing": "score_render: v3", "tool": "score_render" } }, "wait": 12000 },
+    { "set": { "critic": { "state": "done", "doing": "scored v3: 8.1 / 10" } }, "handoff": [{ "from": "critic", "to": "director", "label": "scores and change list" }], "run": { "mark": { "8": "done", "9": "active" } }, "model": "model_v3",
+      "say": "v3 is ready. Annie scored it 8.1: the rails are thicker and the seat gap is closed.", "version": { "title": "Rocking chair v3", "meta": "8.1 / 10 · no changes · $0.21", "kind": "chair" }, "wait": 8000 },
+    { "set": { "critic": { "state": "idle" }, "librarian": { "state": "working", "doing": "save_part: rail_curved", "tool": "save_part" }, "director": { "state": "working", "doing": "telling you about v3", "tool": "reply" } }, "wait": 8000 },
+    { "set": { "librarian": { "state": "done", "doing": "saved rail_curved to the library" }, "director": { "state": "done", "doing": "v3 delivered" } }, "run": { "mark": { "9": "done" } }, "wait": 7000 },
+    { "set": { "librarian": { "state": "idle" }, "director": { "state": "waiting", "doing": "v3 is ready", "tool": "ask_human",
+        "question": { "id": "accept-demo-3", "kind": "accept", "version": 3, "text": "v3 is ready with 8.1 / 10. Accept it, or add your comments for a next version?", "options": ["Accept v3", "Add my comments"] } } }, "wait": 30000 }
+  ]
+}

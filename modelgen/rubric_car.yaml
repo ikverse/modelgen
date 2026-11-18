@@ -1,0 +1,86 @@
+# How the critic scores a car (a shell model built from a car sheet). Same scale and rules as
+# rubric.yaml: each criterion 0-10 from the renders, the weighted mean times ten is the score out of
+# 100, and a version passes at loop.pass_score with every hard gate passing.
+
+criteria:
+  - id: silhouette
+    name: Silhouette and stance
+    weight: 3
+    guide: >
+      From every angle the outline reads instantly as the car in the spec, in its style: roofline,
+      hood and deck lengths, how the wheels fill the arches, ride height. 10: unmistakable and
+      planted. 5: clearly a car, but the wrong kind or clumsy. 0: not a car.
+  - id: continuity
+    name: One continuous body
+    weight: 2
+    guide: >
+      The body reads as one skin, as a real car's does: fenders, bumpers, pillars and roof flow into
+      each other with no pieces butted together, sunk into each other or floating, and no seams
+      except the panel lines a real car has. 10: one clean skin. 5: one or two places look glued on.
+      0: obviously a pile of separate parts.
+  - id: reference
+    name: Match to the reference
+    weight: 2
+    guide: >
+      With reference images: each paired view matches its reference in proportions, glass shapes,
+      lamp and grille layout, wheel style and colour. Without: the car matches the spec's
+      description of the model and its era. 10: the same car. 5: the same kind of car, details
+      differ. 0: a different car.
+  - id: proportions
+    name: Proportions
+    weight: 2
+    guide: >
+      Wheelbase, overhangs, glass height against body height, wheel size, track against width look
+      like a real, well-designed car. 10: a designer would sign off. 5: one or two things clearly off.
+      0: badly distorted.
+  - id: details
+    name: Details
+    weight: 1
+    guide: >
+      Lamps, grille, intakes, glass frames, door lines, mirrors, wing and exhaust are there, crisp,
+      in the right places and the right size. 10: nothing missing or crude. 5: present but crude or
+      misplaced. 0: missing.
+  - id: materials
+    name: Materials and colour
+    weight: 1
+    guide: >
+      Paint colour and finish, glass, lamps, trim, tyres and rims are right for the style (a soft
+      stylised render or a realistic one) and read clearly. 10: reads like the reference or a
+      product shot. 5: right materials, off in colour or finish. 0: wrong or missing.
+  - id: surface
+    name: Surface quality
+    weight: 1
+    guide: >
+      Clean shading with no faceting, pinching or boolean artefacts round the cut details; crisp
+      creases where the car has them. 10: flawless. 5: artefacts in places. 0: broken surfaces.
+
+# The areas of a car, scored 0-10 on their own beside the criteria (they do not enter the score).
+# Every review aims at least one change at one of the two weakest areas, so the next version works on
+# what looks worst instead of polishing what already looks right.
+areas:
+  - id: nose
+    guide: The front end's shape from the side, the top and the front; bumper, grille and intakes.
+  - id: lamps
+    guide: Headlights and tail lamps sit where the real car has them, with real depth and inner shapes.
+  - id: glasshouse
+    guide: Windshield, side glass and rear glass; pillars, the black trim round the glass, the cabin's taper.
+  - id: doors_panels
+    guide: Door, hood, boot and bumper shut lines, handles; whether the panels read as a real car's.
+  - id: arches_wheels
+    guide: Wheel openings, flares, how the wheels fill the arches, the wheels themselves.
+  - id: tail
+    guide: The rear end's shape from every side, lamps, bumper, diffuser, exhaust, wing.
+
+gates:
+  - id: watertight
+    name: Watertight
+    guide: Every part is a closed solid with no open (non-manifold) edges.
+  - id: no_floaters
+    name: No floating pieces
+    guide: Every piece connects to the floor through touching parts (the body through its wheels).
+  - id: correct_size
+    name: Correct size
+    guide: The overall bounding box matches the car's size (mirrors, wing and exhaust included) within the tolerance.
+  - id: on_floor
+    name: On the floor
+    guide: The lowest point of the model is at Z = 0.

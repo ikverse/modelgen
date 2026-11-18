@@ -1,0 +1,12 @@
+{
+ "files": [
+  "WoodenChair_01.bin",
+  "WoodenChair_01.gltf",
+  "textures/WoodenChair_01_arm_1k.jpg",
+  "textures/WoodenChair_01_diff_1k.jpg",
+  "textures/WoodenChair_01_nor_gl_1k.jpg"
+ ],
+ "bytes": 1079531,
+ "source": "https://api.polyhaven.com/files/WoodenChair_01",
+ "license": "CC0, https://polyhaven.com/license"
+}

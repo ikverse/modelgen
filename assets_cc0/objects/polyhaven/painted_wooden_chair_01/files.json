@@ -1,0 +1,12 @@
+{
+ "files": [
+  "painted_wooden_chair_01.bin",
+  "painted_wooden_chair_01.gltf",
+  "textures/painted_wooden_chair_01_arm_1k.jpg",
+  "textures/painted_wooden_chair_01_diff_1k.jpg",
+  "textures/painted_wooden_chair_01_nor_gl_1k.jpg"
+ ],
+ "bytes": 492550,
+ "source": "https://api.polyhaven.com/files/painted_wooden_chair_01",
+ "license": "CC0, https://polyhaven.com/license"
+}

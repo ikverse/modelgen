@@ -1,0 +1,12 @@
+{
+ "files": [
+  "Barrel_01.bin",
+  "Barrel_01.gltf",
+  "textures/Barrel_01_explosive_arm_1k.jpg",
+  "textures/Barrel_01_explosive_diff_1k.jpg",
+  "textures/Barrel_01_explosive_nor_gl_1k.jpg"
+ ],
+ "bytes": 692947,
+ "source": "https://api.polyhaven.com/files/Barrel_01",
+ "license": "CC0, https://polyhaven.com/license"
+}

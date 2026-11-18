@@ -1,0 +1,54 @@
+# How the critic scores a version. Each criterion is scored 0-10 from the renders; the weighted
+# mean times ten is the version's score out of 100. A version passes when its score reaches
+# loop.pass_score in config.yaml AND every hard gate passes. Gates are measured, not judged.
+
+criteria:
+  - id: silhouette
+    name: Silhouette match
+    weight: 3
+    guide: >
+      From every turntable angle, does the outline read instantly as the object in the spec, in the
+      right style? 10: unmistakable and elegant. 5: recognisable but generic or clumsy. 0: wrong object.
+  - id: parts
+    name: Parts present and correct
+    weight: 2
+    guide: >
+      Every part in the spec is there, shaped like the real thing, attached the way it would be in
+      reality, with the small details that sell it. 10: nothing missing, nothing primitive. 5: all
+      main parts, details missing or crude. 0: major parts missing.
+  - id: proportions
+    name: Proportions
+    weight: 2
+    guide: >
+      Relative sizes, thicknesses and spacing look like a real well-made example (wall and board
+      thickness, leg spacing, handle size against the hand). 10: a designer would sign off. 5: one
+      or two things clearly off. 0: badly distorted.
+  - id: materials
+    name: Material plausibility
+    weight: 2
+    guide: >
+      Each part's material is right for the object and believable: colour, roughness, pattern
+      scale, metal versus non-metal. 10: reads like a product photo. 5: right materials, obviously
+      CG. 0: wrong or missing.
+  - id: surface
+    name: Surface quality
+    weight: 1
+    guide: >
+      Clean shading with no faceting on curves, no pinching, no artefacts from booleans, bevelled
+      edges that catch the light, sensible topology in the wireframe, and no visible joints where
+      the real object is one continuous surface (pieces butted or pushed into each other read as
+      glued-on). 10: flawless. 5: visible faceting, artefacts or joints in places. 0: broken surfaces.
+
+gates:
+  - id: watertight
+    name: Watertight
+    guide: Every part is a closed solid with no open (non-manifold) edges.
+  - id: no_floaters
+    name: No floating pieces
+    guide: Every piece connects to the floor through touching parts.
+  - id: correct_size
+    name: Correct size
+    guide: The overall bounding box matches the spec's dimensions within the tolerance.
+  - id: on_floor
+    name: On the floor
+    guide: The lowest point of the model is at Z = 0.

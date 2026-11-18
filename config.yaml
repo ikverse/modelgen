@@ -1,0 +1,103 @@
+# ModelGen settings. Paths are relative to this folder unless absolute.
+
+blender:
+  # Leave empty to find Blender automatically (Program Files\Blender Foundation, then PATH).
+  path: ""
+  timeout_s: 600          # one headless Blender run is stopped after this long
+  concurrent: 2           # Blender processes allowed at once (8 GB GPU: keep this small)
+
+render:
+  engine: CYCLES          # CYCLES gives the critic honest materials; EEVEE is faster
+  device: auto            # auto tries OPTIX, then CUDA, then CPU
+  size: 768               # final renders, square, in pixels
+  samples: 96
+  preview_size: 384       # quick renders a builder sees after each attempt
+  preview_samples: 24
+  turntable_angles: 8
+  closeups: 5             # close-ups of the most detailed parts
+
+model:
+  bevel_width_m: 0.0015   # the small bevel every edge gets (1.5 mm)
+  size_tolerance: 0.05    # the model's bounding box may differ from the spec by this fraction
+  part_size_tolerance: 0.03   # a part's size may differ from its plan entry by this fraction
+  floor_tolerance_m: 0.002
+  contact_tolerance_m: 0.0015
+
+loop:
+  pass_score: 80          # weighted rubric score out of 100 needed to stop early
+  max_rounds: 1           # versions one build makes; then it stops and asks you before the next
+  parallel_builders: 4    # builder agents running at once
+  # The model's main part (its largest; none in a scene) is written by the builder on this model
+  # instead of the builder's own: the body decides how the whole model looks. "" turns this off.
+  lead_builder_model: claude-opus-5-5
+
+# How a request for an ordinary object is made. library: when the catalogue of free ready-made
+# models (assets_cc0\objects, public domain) has the object asked for, the asset is made from it in
+# about a minute with no build team; anything else goes to the agent team. agents: the team builds
+# everything. Refresh the catalogue with: .venv\Scripts\python.exe -m modelgen.tools.asset_catalog --build
+objects:
+  generator: library
+
+# Before the spec is written, a research agent looks up the real object's size, proportions and
+# features on the web and keeps reference photos (about $0.10-0.30 a model). false: skip it.
+research:
+  enabled: true
+
+# The game-ready files every finished model gets (in its game folder and in the zip download): the
+# asset within its family's triangle limit, lower-detail versions, a collision box.
+game:
+  enabled: true
+  lods: [0.5, 0.2]        # each lower-detail version's share of the asset's triangles
+
+# How a request for a car is built. remix: the car generator makes it in under a minute from a free
+# ready-made base car (assets_cc0), with no agents. agents: the agent team builds it, as before.
+cars:
+  generator: remix
+
+# The motion a moving model loops through (wheels turning, a bounce; smoke and steam are drawn by
+# the page at the animator's markers). The loop plays in the viewer and is carried in the GLB and FBX.
+motion:
+  seconds: 2              # one loop of the motion
+  fps: 24
+
+# Spending limits (the Settings page can change them; its values are kept in data\settings.json).
+# Before an agent run that could go over either limit, the run waits and the director asks you.
+budget:
+  daily_usd: 25           # every agent run started today, all models
+  per_model_usd: 6        # one model, all its versions (a model's own Budget overrides this)
+
+questions:
+  timeout_s: 540          # an agent's question waits this long for you, then the agent decides itself
+                          # (under ClaudeIn's 10-minute limit for one tool answer)
+  done_s: 25              # how long the map shows an agent as done before it goes back to free
+  failed_s: 90            # how long a failed run shows as failed
+
+# Turn and dollar caps for one run of one agent. "default" applies unless the agent has its own line.
+caps:
+  default:   {max_turns: 12, max_budget_usd: 1.00}
+  director:  {max_turns: 6,  max_budget_usd: 0.60}
+  brief:     {max_turns: 4,  max_budget_usd: 0.20}
+  architect: {max_turns: 8,  max_budget_usd: 1.20}
+  builder:   {max_turns: 16, max_budget_usd: 1.20}
+  lead_builder: {max_turns: 20, max_budget_usd: 2.50}   # the builder writing the model's main part
+  assembler: {max_turns: 12, max_budget_usd: 1.00}
+  materials: {max_turns: 10, max_budget_usd: 0.80}
+  animator:  {max_turns: 10, max_budget_usd: 0.80}   # only runs when the spec asks for motion
+  critic:    {max_turns: 12, max_budget_usd: 1.20}   # room to measure parts before the review
+  librarian: {max_turns: 8,  max_budget_usd: 0.20}
+  researcher: {max_turns: 14, max_budget_usd: 0.60}  # web searches for the real object's size and features
+  caster:    {max_turns: 3,  max_budget_usd: 0.05}   # picks a ready-made model for the request, or none
+  shell_architect: {max_turns: 8, max_budget_usd: 1.20}   # plans a car (or other shell) as a sheet
+  shell_builder:   {max_turns: 24, max_budget_usd: 2.50}  # shapes the one continuous body, on Opus
+  talk:      {max_turns: 4,  max_budget_usd: 0.15}   # you messaging one agent directly
+
+updates:
+  # An installed copy checks this GitHub repository's latest release (only its version is read).
+  # A source folder like this one never updates itself.
+  repo: ikverse/modelgen
+  auto_check: true        # the default; the Settings page can switch it off
+  check_hours: 6
+
+server:
+  host: 127.0.0.1
+  port: 8770              # 8765 is the Village server's

@@ -1,0 +1,223 @@
+{
+ "id": "suv",
+ "title": "boxy green SUV",
+ "source": "boxy-green-suv-4",
+ "request": "Create a simple car with fewer curves: a modern boxy five-door SUV, green, about 4.6 m long, with a realistic studio render. The person said to start right away with defaults and no questions. Defaults: about 4.6 m long, 1.85 m wide, 1.70 m tall, 2.70 m wheelbase. Flat roof with roof rails, upright windows, short squared hood (about 1.1 m) with its top level with the belt line, not a low ledge below it. Bumpers flush with the body and slatted grille. Mirrors, black trim, dark tinted glass, silver multi-spoke wheels on all-season tyres. Lessons from earlier attempts, please follow them: (1) Paint: dark forest green, base colour about (0.020, 0.080, 0.032), metallic 0.5, roughness 0.45, clearcoat 0.5. Make sure every body face, especially the roof and hood top faces, carries the paint material and not a default white one. Keep the overhead studio light soft (about 40% strength or tilted 30 degrees) so the roof and hood never wash out to near-white; the hood should measure darker than #3A6A45 from every angle. (2) Glass: every window, including the tailgate glass, is a flat closed glass panel set slightly behind its trim frame, with closed shell behind it so no white holes show through. The windscreen must sit firmly in its frame. (3) Wheel arches: squared black cladding bands about 0.07 m wide that follow the arch opening, with chamfered corners, slightly proud of the paint and ending on the side skirt. Not big flat rectangles, and green paint should show around them. (4) Front and rear faces built from clean quads, not triangle fans. (5) Headlamps and tail lamps use emissive materials so they visibly glow. The mesh should be watertight.",
+ "spec": {
+  "object": "Modern boxy green five-door SUV",
+  "summary": "A simple, boxy five-door SUV with a flat roof, roof rails, upright windows and a short squared hood. Dark forest green metallic paint contrasts with black trim, dark tinted glass and silver multi-spoke wheels. Built for a realistic studio render with soft overhead light.",
+  "dimensions": {
+   "width": 1.85,
+   "depth": 4.6,
+   "height": 1.7
+  },
+  "style": "modern boxy, minimal, realistic",
+  "use": "render",
+  "materials": [
+   "dark forest green metallic paint (base colour about 0.020, 0.080, 0.032, metallic 0.5, roughness 0.45, clearcoat 0.5)",
+   "dark tinted glass",
+   "black plastic trim and cladding",
+   "silver aluminium alloy wheels",
+   "all-season black rubber tyres",
+   "emissive white headlamps",
+   "emissive red tail lamps",
+   "black slatted grille"
+  ],
+  "parts": [
+   {
+    "name": "body_shell",
+    "description": "Continuous closed boxy body with flat roof, squared short hood (about 1.1 m long, top level with the belt line), vertical front and rear faces, and a side skirt along the bottom. Front and rear faces built from clean quads.",
+    "size": {
+     "width": 1.85,
+     "depth": 4.6,
+     "height": 1.2
+    },
+    "count": 1,
+    "material": "dark forest green metallic paint on every face, including roof and hood top",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "roof",
+    "description": "Flat roof panel with the same paint as the body, integrated into the body shell.",
+    "size": {
+     "width": 1.85,
+     "depth": 3,
+     "height": 0.05
+    },
+    "count": 1,
+    "material": "dark forest green metallic paint",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "roof_rail",
+    "description": "Black longitudinal roof rail along each side of the roof.",
+    "size": {
+     "width": 0.04,
+     "depth": 2.6,
+     "height": 0.03
+    },
+    "count": 2,
+    "material": "black plastic trim",
+    "attaches_to": "roof"
+   },
+   {
+    "name": "windscreen",
+    "description": "Flat closed dark tinted glass panel set slightly behind its trim frame, sitting firmly in the frame, with a closed shell behind it.",
+    "size": {
+     "width": 1.7,
+     "depth": 0.01,
+     "height": 0.75
+    },
+    "count": 1,
+    "material": "dark tinted glass",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "side_window",
+    "description": "Upright flat closed dark tinted glass panel for each door window, set slightly behind a black trim frame, with a closed shell behind it.",
+    "size": {
+     "width": 0.01,
+     "depth": 0.9,
+     "height": 0.55
+    },
+    "count": 10,
+    "material": "dark tinted glass",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "tailgate_glass",
+    "description": "Flat closed dark tinted glass panel for the rear window, set slightly behind its trim frame, with a closed shell behind it.",
+    "size": {
+     "width": 1.5,
+     "depth": 0.01,
+     "height": 0.65
+    },
+    "count": 1,
+    "material": "dark tinted glass",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "door",
+    "description": "Five-door body panels: two front doors, two rear doors and a tailgate, separated by thin seams and paint-matched.",
+    "size": {
+     "width": 0.04,
+     "depth": 1,
+     "height": 1
+    },
+    "count": 5,
+    "material": "dark forest green metallic paint",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "wheel_arch_cladding",
+    "description": "Squared black cladding band following each wheel arch opening, about 0.07 m wide, with chamfered corners, slightly proud of the paint and ending on the side skirt. Not a large flat rectangle; green paint shows around it.",
+    "size": {
+     "width": 0.07,
+     "depth": 0.8,
+     "height": 0.8
+    },
+    "count": 4,
+    "material": "black plastic trim",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "side_skirt",
+    "description": "Lower body side trim running between the wheel arches, flush with the body.",
+    "size": {
+     "width": 0.05,
+     "depth": 3,
+     "height": 0.12
+    },
+    "count": 2,
+    "material": "black plastic trim",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "bumper_front",
+    "description": "Front bumper flush with the body, with a slatted grille insert and a black lower lip.",
+    "size": {
+     "width": 1.8,
+     "depth": 0.1,
+     "height": 0.45
+    },
+    "count": 1,
+    "material": "dark forest green metallic paint with black lower lip",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "grille",
+    "description": "Slatted black grille set into the front bumper, with horizontal slats.",
+    "size": {
+     "width": 1.1,
+     "depth": 0.02,
+     "height": 0.3
+    },
+    "count": 1,
+    "material": "black plastic trim",
+    "attaches_to": "bumper_front"
+   },
+   {
+    "name": "bumper_rear",
+    "description": "Rear bumper flush with the body, with a black lower lip.",
+    "size": {
+     "width": 1.8,
+     "depth": 0.1,
+     "height": 0.45
+    },
+    "count": 1,
+    "material": "dark forest green metallic paint with black lower lip",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "headlamp",
+    "description": "Squared headlamp unit set into the front face, using an emissive white material so it glows.",
+    "size": {
+     "width": 0.35,
+     "depth": 0.04,
+     "height": 0.12
+    },
+    "count": 2,
+    "material": "emissive white",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "tail_lamp",
+    "description": "Squared tail lamp unit set into the rear face, using an emissive red material so it glows.",
+    "size": {
+     "width": 0.3,
+     "depth": 0.04,
+     "height": 0.2
+    },
+    "count": 2,
+    "material": "emissive red",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "side_mirror",
+    "description": "Black door mirror housing on a short stalk at the front of each front door, with a flat glass face.",
+    "size": {
+     "width": 0.12,
+     "depth": 0.2,
+     "height": 0.1
+    },
+    "count": 2,
+    "material": "black plastic trim",
+    "attaches_to": "body_shell"
+   },
+   {
+    "name": "wheel",
+    "description": "Silver multi-spoke alloy wheel with an all-season black rubber tyre.",
+    "size": {
+     "width": 0.22,
+     "depth": 0.7,
+     "height": 0.7
+    },
+    "count": 4,
+    "material": "silver aluminium alloy and black rubber tyre",
+    "attaches_to": "floor"
+   }
+  ],
+  "notes": "Use defaults: wheelbase 2.70 m, short squared hood about 1.1 m. Paint on every body face including roof and hood top, never default white. Soft overhead studio light (about 40% strength or tilted 30 degrees) so the roof and hood never wash out; hood must read darker than #3A6A45 from every angle. Glass is flat, closed and set slightly behind its trim frame, with a closed shell behind it so no white holes show. Wheel arch cladding is squared with chamfered corners. Front and rear faces use clean quads, no triangle fans. Headlamps and tail lamps are emissive. Mesh must be watertight. No questions asked; defaults used throughout.",
+  "category": "shell:car"
+ }
+}

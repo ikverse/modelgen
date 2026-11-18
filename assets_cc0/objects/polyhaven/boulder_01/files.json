@@ -1,0 +1,12 @@
+{
+ "files": [
+  "boulder_01.bin",
+  "boulder_01.gltf",
+  "textures/boulder_01_arm_1k.jpg",
+  "textures/boulder_01_diff_1k.jpg",
+  "textures/boulder_01_nor_gl_1k.jpg"
+ ],
+ "bytes": 5771986,
+ "source": "https://api.polyhaven.com/files/boulder_01",
+ "license": "CC0, https://polyhaven.com/license"
+}

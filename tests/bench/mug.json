@@ -1,0 +1,97 @@
+{
+ "id": "mug",
+ "title": "ceramic coffee mug",
+ "source": "ceramic-coffee-mug",
+ "request": "A ceramic coffee mug with a thick, chunky handle. Outside glaze: dark blue (deep navy, e.g. around #1F2E5A), glossy ceramic. Inside glaze: white (#F4F2EE), glossy ceramic. Purpose: render. Size: 10 cm tall (set on the page). Defaults chosen: classic straight-sided cylindrical mug, outer diameter about 8.5 cm, wall thickness about 4-5 mm, slightly rounded lip, a small unglazed or slightly recessed foot ring at the base, about 330 ml capacity. Thick C-shaped handle (cross-section roughly 1.4 x 1.0 cm with rounded edges), large enough for 2-3 fingers, attached smoothly to the side with soft fillets where it meets the body. The white inside glaze should wrap over the lip and meet the blue just below the rim edge on the outside with a clean line. No logos or text. Realistic product render on a plain light neutral background, soft studio lighting, three-quarter view showing the handle and a little of the white interior. Budget set on page: 4 USD. Note from earlier projects: verify the exported file reflects the latest scene edits (check material colours and object names after re-export).",
+ "spec": {
+  "object": "Ceramic coffee mug with a thick chunky C-shaped handle",
+  "summary": "A straight-sided cylindrical ceramic mug, 10 cm tall, with a dark navy glossy outside and a white glossy inside that wraps over a slightly rounded lip. A thick C-shaped handle with soft fillets sits on one side, large enough for two or three fingers. A small recessed foot ring sits at the base. Shown as a realistic product render on a plain light neutral background.",
+  "dimensions": {
+   "width": 0.12,
+   "depth": 0.085,
+   "height": 0.1
+  },
+  "style": "Modern minimal, realistic ceramic product shot",
+  "use": "render",
+  "materials": [
+   "glossy dark navy ceramic glaze (outside, approx. #1F2E5A)",
+   "glossy white ceramic glaze (inside, approx. #F4F2EE)",
+   "unglazed or slightly recessed foot ring in the same ceramic body"
+  ],
+  "parts": [
+   {
+    "name": "body",
+    "description": "Straight-sided cylindrical mug wall, about 330 ml capacity, wall thickness about 4-5 mm. Outside surface glazed dark navy, glossy.",
+    "size": {
+     "width": 0.085,
+     "depth": 0.085,
+     "height": 0.095
+    },
+    "count": 1,
+    "material": "dark navy glossy ceramic glaze",
+    "attaches_to": "foot_ring"
+   },
+   {
+    "name": "interior",
+    "description": "Inner cavity surface glazed white, glossy. Wraps over the lip and meets the navy outer glaze just below the rim with a clean line.",
+    "size": {
+     "width": 0.077,
+     "depth": 0.077,
+     "height": 0.09
+    },
+    "count": 1,
+    "material": "glossy white ceramic glaze",
+    "attaches_to": "body"
+   },
+   {
+    "name": "lip",
+    "description": "Slightly rounded top rim of the mug, with the white glaze wrapping over it.",
+    "size": {
+     "width": 0.085,
+     "depth": 0.085,
+     "height": 0.004
+    },
+    "count": 1,
+    "material": "white glossy ceramic glaze over the rim, navy on the outside",
+    "attaches_to": "body"
+   },
+   {
+    "name": "foot_ring",
+    "description": "Small recessed ring at the base of the mug, slightly inset from the outer wall, unglazed or lightly recessed.",
+    "size": {
+     "width": 0.07,
+     "depth": 0.07,
+     "height": 0.004
+    },
+    "count": 1,
+    "material": "unglazed ceramic",
+    "attaches_to": "floor"
+   },
+   {
+    "name": "handle",
+    "description": "Thick C-shaped handle, cross-section roughly 1.4 x 1.0 cm with rounded edges, large enough for two to three fingers. Projects outward from the side of the body. Navy glaze to match the outside.",
+    "size": {
+     "width": 0.035,
+     "depth": 0.014,
+     "height": 0.07
+    },
+    "count": 1,
+    "material": "dark navy glossy ceramic glaze",
+    "attaches_to": "body"
+   },
+   {
+    "name": "handle_fillets",
+    "description": "Soft rounded blends where the handle meets the body at its top and bottom attachment points.",
+    "size": {
+     "width": 0.01,
+     "depth": 0.014,
+     "height": 0.02
+    },
+    "count": 2,
+    "material": "dark navy glossy ceramic glaze",
+    "attaches_to": "body"
+   }
+  ],
+  "notes": "Total height is exactly 10.0 cm as requested by the person. Width of 12 cm includes the handle projection; body diameter is about 8.5 cm. No logos, text or markings. Plain light neutral background with soft studio lighting, three-quarter view showing the handle and a little of the white interior. Budget is 4 USD. Before finishing, verify the exported file reflects the latest scene edits: check that material colours (navy outside, white inside) and object names match the parts list after re-export."
+ }
+}

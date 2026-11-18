@@ -1,0 +1,65 @@
+# How the critic scores a version that is a game asset (the spec's `use` is game). The criteria
+# keep the ids of rubric.yaml, so scores compare across versions, but each is judged as a game
+# asset is judged: by its shape, its accuracy and how cleanly it is built, not as a product photo.
+# The weighted mean times ten is the score out of 100; a version passes at loop.pass_score in
+# config.yaml when every hard gate passes too.
+
+criteria:
+  - id: silhouette
+    name: Silhouette
+    weight: 3
+    guide: >
+      From every turntable angle the outline reads instantly as the object, in the style asked for,
+      with the curves and breaks the real thing has. 10: unmistakable from any side and ready to
+      drop into a good-looking game. 7: clearly right, one view generic or clumsy. 5: recognisable
+      but blocky or generic. 0: wrong object.
+  - id: proportions
+    name: Proportions and accuracy
+    weight: 3
+    guide: >
+      Sizes, thicknesses and spacing match the real object: the person's own sizes, then the
+      research's dimensions and proportions (measure them), then the reference photos. 10: every
+      listed proportion within about 3 percent. 7: one or two off by up to a tenth. 5: several
+      visibly off. 0: badly distorted. An overall size the person gave that is missed caps this at 6.
+  - id: parts
+    name: Parts and details
+    weight: 2
+    guide: >
+      Every part and feature of the spec and the research is there, shaped like the real thing and
+      joined the way it is really joined, on every side including the back. Details that carry
+      the look are modelled (recesses, rims, handles, lamps, frames), not left out. 10: nothing
+      missing, nothing primitive. 5: main parts right, details missing or crude. 0: major parts
+      missing.
+  - id: surface
+    name: Clean build
+    weight: 2
+    guide: >
+      Smooth shading with no faceting on the silhouette, no pinches, no boolean scars, no gaps or
+      pieces pushed through each other where the real thing is one surface, sensible triangles in
+      the wireframe (spent on the outline, not on flat faces), and within the triangle limit. 10:
+      a clean mesh an artist would hand over. 5: visible faceting, scars or joints in places. 0:
+      broken surfaces. Over the triangle limit caps this at 6.
+  - id: materials
+    name: Colours and finish
+    weight: 1
+    guide: >
+      Each part has the right colour (the research's or the person's hex within a small step), the
+      right roughness and the right metal-or-not, and parts are told apart by material where the
+      real thing is. A game file carries plain colour, roughness and metal per material and
+      nothing else: never judge or ask for patterns, glaze effects, wear, reflections or lighting.
+      10: every colour and finish right. 5: right hues, wrong finish or parts that blur together.
+      0: wrong or missing.
+
+gates:
+  - id: watertight
+    name: Watertight
+    guide: Every part is a closed solid with no open (non-manifold) edges.
+  - id: no_floaters
+    name: No floating pieces
+    guide: Every piece connects to the floor through touching parts.
+  - id: correct_size
+    name: Correct size
+    guide: The overall bounding box matches the spec's dimensions within the tolerance.
+  - id: on_floor
+    name: On the floor
+    guide: The lowest point of the model is at Z = 0.

@@ -1,0 +1,233 @@
+{
+ "id": "console",
+ "title": "retro handheld console",
+ "source": "retro-handheld-console",
+ "request": "The person asked: \"make a handheld console that looks like a game boy\". Build a retro handheld game console in the style of the original 1989 Game Boy (DMG-01), for a still render only (not a game asset, not a 3D print).\n\nDefaults chosen by the director (person gave no further details):\n- Size: about 90 mm wide, 148 mm tall, 32 mm deep, portrait orientation, matching the original proportions.\n- Body: light warm grey plastic shell with slightly rounded edges, and the characteristic larger rounded radius at the bottom-right corner. Subtle seam line between the front and back shell halves.\n- Screen area: darker grey bezel taking up the upper part of the front, with a slightly rounded bottom-right corner, a small red power LED dot on the left side of the bezel, and a recessed screen with a pale olive-green LCD color. The screen glass/LCD must sit flush in the bezel and be properly attached, with no floating parts.\n- Controls: a black plus-shaped D-pad on the lower left, two round magenta/maroon A and B buttons set at a diagonal on the lower right, and two small slanted grey pill-shaped Start and Select buttons at the bottom center. All buttons sit in shallow recesses and are slightly raised from the shell, attached to it.\n- Speaker: a set of six diagonal slanted slots near the bottom-right corner.\n- Small details: a short groove line under the top edge, a volume wheel on the right side, a contrast wheel on the left side, a link port on the side, and a headphone jack on the bottom edge. The cartridge slot is on the top back, optionally with a grey cartridge partly inserted.\n- No real brand logos or trademarked text. Use generic placeholder text such as \"POCKET\" or leave the bezel lettering blank.\n- Look: clean, realistic product render with soft studio lighting and slightly matte plastic materials. Not cel-shaded.\n- Render: front three-quarter view, slightly from above, on a plain light background. The device stands upright or rests at a slight angle, sitting exactly on the floor with no gap or intersection.\n- Quality checks: every part is attached to the body, with nothing floating, and the exported file must match the latest edits. Earlier projects had problems with fixes not reaching the export.",
+ "spec": {
+  "object": "Retro handheld game console in the style of the original 1989 Game Boy (DMG-01), no brand logos",
+  "dimensions": {
+   "width": 0.09,
+   "depth": 0.032,
+   "height": 0.148
+  },
+  "style": "Retro 1980s handheld, clean realistic product render",
+  "use": "render",
+  "summary": "A portrait-oriented handheld console with a light warm grey two-piece plastic shell, a darker grey bezel framing a pale olive-green LCD in the upper front, and a control layout of a black D-pad on the lower left, two maroon A/B buttons at a diagonal on the lower right, and small grey Start/Select pills at bottom center. Six slanted speaker slots sit near the bottom-right corner, with a volume wheel and contrast wheel on the sides and a cartridge slot on the top back. It is shown as a front three-quarter product render, standing upright on a plain light background.",
+  "materials": [
+   "light warm grey ABS plastic (shell, slightly matte)",
+   "dark grey plastic (screen bezel, Start/Select buttons)",
+   "black plastic (D-pad)",
+   "maroon/magenta translucent-look plastic (A and B buttons)",
+   "pale olive-green LCD glass (screen)",
+   "red plastic or LED dot (power indicator)",
+   "grey plastic (cartridge)"
+  ],
+  "parts": [
+   {
+    "name": "body_back_shell",
+    "description": "Rear half of the shell, slightly rounded edges, larger rounded radius at the bottom-right corner, contains the cartridge slot opening on the top back edge. Its base sits on the floor.",
+    "material": "light warm grey plastic",
+    "size": {
+     "width": 0.09,
+     "depth": 0.016,
+     "height": 0.148
+    },
+    "count": 1,
+    "attaches_to": "floor"
+   },
+   {
+    "name": "body_front_shell",
+    "description": "Front half of the shell with slightly rounded edges and the larger bottom-right radius; holds the bezel, button recesses, and speaker slots. Joins the back shell along a subtle seam.",
+    "material": "light warm grey plastic",
+    "size": {
+     "width": 0.09,
+     "depth": 0.016,
+     "height": 0.148
+    },
+    "count": 1,
+    "attaches_to": "body_back_shell"
+   },
+   {
+    "name": "shell_seam",
+    "description": "Subtle shallow seam line running around the perimeter where front and back shells meet.",
+    "material": "light warm grey plastic",
+    "size": {
+     "width": 0.09,
+     "depth": 0.001,
+     "height": 0.148
+    },
+    "count": 1,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "top_groove",
+    "description": "Short shallow groove line under the top edge of the front shell.",
+    "material": "light warm grey plastic",
+    "size": {
+     "width": 0.03,
+     "depth": 0.001,
+     "height": 0.002
+    },
+    "count": 1,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "screen_bezel",
+    "description": "Darker grey bezel covering the upper part of the front, with a slightly rounded bottom-right corner, sitting in a shallow recess in the front shell.",
+    "material": "dark grey plastic",
+    "size": {
+     "width": 0.078,
+     "depth": 0.002,
+     "height": 0.07
+    },
+    "count": 1,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "lcd_screen",
+    "description": "Recessed LCD glass with pale olive-green color, flush inside the bezel opening and fully attached to the bezel, no gap or floating.",
+    "material": "pale olive-green LCD glass",
+    "size": {
+     "width": 0.064,
+     "depth": 0.0015,
+     "height": 0.058
+    },
+    "count": 1,
+    "attaches_to": "screen_bezel"
+   },
+   {
+    "name": "power_led",
+    "description": "Small red dot LED on the left side of the bezel, flush or slightly raised.",
+    "material": "red plastic",
+    "size": {
+     "width": 0.003,
+     "depth": 0.001,
+     "height": 0.003
+    },
+    "count": 1,
+    "attaches_to": "screen_bezel"
+   },
+   {
+    "name": "dpad",
+    "description": "Black plus-shaped directional pad on the lower left, raised slightly from a shallow recess in the front shell.",
+    "material": "black plastic",
+    "size": {
+     "width": 0.03,
+     "depth": 0.006,
+     "height": 0.03
+    },
+    "count": 1,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "ab_button",
+    "description": "Round A and B action buttons set at a diagonal on the lower right, in shallow circular recesses, slightly raised from the shell.",
+    "material": "maroon/magenta plastic",
+    "size": {
+     "width": 0.012,
+     "depth": 0.004,
+     "height": 0.012
+    },
+    "count": 2,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "start_select_button",
+    "description": "Two small slanted pill-shaped Start and Select buttons at the bottom center, set in shallow recesses, slightly raised.",
+    "material": "grey plastic",
+    "size": {
+     "width": 0.008,
+     "depth": 0.003,
+     "height": 0.003
+    },
+    "count": 2,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "speaker_slot",
+    "description": "Six diagonal slanted slots arranged in a grid near the bottom-right corner of the front shell, cut into the shell surface.",
+    "material": "light warm grey plastic (recessed dark slot)",
+    "size": {
+     "width": 0.018,
+     "depth": 0.002,
+     "height": 0.003
+    },
+    "count": 6,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "volume_wheel",
+    "description": "Small knurled wheel on the right side of the shell.",
+    "material": "grey plastic",
+    "size": {
+     "width": 0.004,
+     "depth": 0.008,
+     "height": 0.008
+    },
+    "count": 1,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "contrast_wheel",
+    "description": "Small knurled wheel on the left side of the shell.",
+    "material": "grey plastic",
+    "size": {
+     "width": 0.004,
+     "depth": 0.008,
+     "height": 0.008
+    },
+    "count": 1,
+    "attaches_to": "body_front_shell"
+   },
+   {
+    "name": "link_port",
+    "description": "Rectangular link cable port on the side of the shell, with a dark opening.",
+    "material": "dark grey plastic",
+    "size": {
+     "width": 0.012,
+     "depth": 0.01,
+     "height": 0.01
+    },
+    "count": 1,
+    "attaches_to": "body_back_shell"
+   },
+   {
+    "name": "headphone_jack",
+    "description": "Small round headphone jack opening on the bottom edge of the shell.",
+    "material": "dark grey plastic",
+    "size": {
+     "width": 0.006,
+     "depth": 0.006,
+     "height": 0.006
+    },
+    "count": 1,
+    "attaches_to": "body_back_shell"
+   },
+   {
+    "name": "cartridge_slot",
+    "description": "Rectangular cartridge opening on the top back edge of the shell.",
+    "material": "dark grey plastic",
+    "size": {
+     "width": 0.05,
+     "depth": 0.012,
+     "height": 0.01
+    },
+    "count": 1,
+    "attaches_to": "body_back_shell"
+   },
+   {
+    "name": "cartridge",
+    "description": "Optional grey game cartridge partly inserted into the cartridge slot, protruding from the top.",
+    "material": "grey plastic",
+    "size": {
+     "width": 0.06,
+     "depth": 0.01,
+     "height": 0.054
+    },
+    "count": 1,
+    "attaches_to": "cartridge_slot"
+   }
+  ],
+  "notes": "Use generic placeholder text only: the bezel lettering may be blank or read \"POCKET\". No real brand logos or trademarked text. Clean, realistic product render with soft studio lighting and slightly matte plastic materials, not cel-shaded. Camera: front three-quarter view, slightly from above, plain light background. The device stands upright (or at a slight angle) resting exactly on the floor with no gap or intersection. Every part must be attached to the body with nothing floating. The exported file must reflect the latest edits, so re-export after every fix and verify the output matches the current scene."
+ }
+}
