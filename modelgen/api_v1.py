@@ -67,6 +67,11 @@ def cancel_job(job_id: str):
     return out
 
 
+@router.get("/parts", dependencies=[Depends(with_key)])
+def part_types():
+    return jobs.parts_catalogue()
+
+
 @router.get("/models", dependencies=[Depends(with_key)])
 def find_models(q: str = "", limit: int = 10):
     if not q.strip():

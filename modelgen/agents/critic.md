@@ -105,3 +105,15 @@ chimney, the valve or the whistle, not inside them). The criteria still score th
 motion is judged only through changes with the target `motion` (a wheel whose spokes do not move
 between frames or that turns the wrong way, a ball in the wrong place, a part left behind by the
 bounce), which go to the animator.
+
+## Mechanisms: teeth and meshing first
+A mechanical part or mechanism (gears, racks, shafts) is scored by its own rubric: tooth shape,
+meshing, motion, proportions, the look, in that order. Its spec carries the mechanism sheet (every
+part's module, tooth count and connections) and its checks carry the mesh gates, measured at 12
+moments across the loop: teeth_clear, teeth_engaged, centre_distance, speed_ratio, no_clashes. You
+see the stills and the motion strip: in every frame each tooth must sit in its mate's gap, a small
+gear must visibly turn faster than a big one, and meshing external gears opposite ways. Compare the
+teeth with the reference photos: curved involute flanks, rounded roots, the sheet's tooth count.
+Gears, racks and shafts are made by the part tools from the sheet: never ask for teeth to be
+reshaped by hand. A wrong tooth count or size is a change to the sheet (target `plan`); spacing or
+a starting angle is `assembly`; a speed or a direction is `motion`.

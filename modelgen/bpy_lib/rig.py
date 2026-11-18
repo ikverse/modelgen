@@ -761,10 +761,130 @@ def _shadow_catcher(lo, hi):
     return obj
 
 
-def render_asset_views(out_dir, camera_mode="persp", style="realistic", shadows=True, turntable=0, only=None):
+PALETTE = ["#e4572e", "#2e86ab", "#f2c14e", "#4cb944", "#8e5bd6", "#f28c28", "#17bebb", "#e84a8a"]
+EXPLAINER_LIGHT = 0.42  # how much of the explainer look is lit shading; the rest is the part's own flat colour
+
+
+def _linear(hex_colour):
+    """A #rrggbb colour as Blender's linear RGB."""
+    text = hex_colour.lstrip("#")
+    out = []
+    for i in (0, 2, 4):
+        c = int(text[i:i + 2], 16) / 255.0
+        out.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
+    return tuple(out)
+
+
+def part_colours(objs, colours=None):
+    """Each part's explainer colour: the one asked for, else the palette in the parts' order."""
+    names = []
+    for o in objs:
+        n = o.get(helpers.PART_KEY) or o.name
+        if n not in names:
+            names.append(n)
+    given = dict(colours or {})
+    out, i = {}, 0
+    for n in sorted(names):
+        if given.get(n):
+            out[n] = given[n]
+        else:
+            while PALETTE[i % len(PALETTE)] in given.values() and i < 64:
+                i += 1
+            out[n] = PALETTE[i % len(PALETTE)]
+            i += 1
+    return out
+
+
+def _fast_engine(samples=16):
+    """EEVEE for the explainer look: flat colours and an outline need no path tracing."""
+    scene = bpy.context.scene
+    for name in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
+        try:
+            scene.render.engine = name
+            break
+        except TypeError:
+            continue
+    eevee = getattr(scene, "eevee", None)
+    if eevee is not None and hasattr(eevee, "taa_render_samples"):
+        eevee.taa_render_samples = samples
+
+
+def _outline(width_px):
+    scene = bpy.context.scene
+    scene.render.use_freestyle = True
+    scene.render.line_thickness_mode = "ABSOLUTE"
+    scene.render.line_thickness = width_px
+    layer = bpy.context.view_layer
+    layer.use_freestyle = True
+    for lineset in layer.freestyle_settings.linesets:
+        lineset.linestyle.color = (0.05, 0.05, 0.06)
+
+
+def _explainer_style(objs, colours=None):
+    """The explainer look for learning videos: each part one clean saturated colour (from a palette
+    of eight that stay distinct, or the colour asked for), soft even light with a little shading for
+    its form, no gloss or grime, and a crisp dark outline. Returns {part: "#rrggbb"}."""
+    chosen = part_colours(objs, colours)
+    made = {}
+    for obj in objs:
+        name = obj.get(helpers.PART_KEY) or obj.name
+        mat = made.get(name)
+        if mat is None:
+            mat = bpy.data.materials.new(f"_mg_explainer_{name}")
+            mat.use_nodes = True
+            nt = mat.node_tree
+            nt.nodes.clear()
+            rgb = (*_linear(chosen[name]), 1.0)
+            out = nt.nodes.new("ShaderNodeOutputMaterial")
+            emit = nt.nodes.new("ShaderNodeEmission")
+            lit = nt.nodes.new("ShaderNodeBsdfDiffuse")
+            mix = nt.nodes.new("ShaderNodeMixShader")
+            emit.inputs["Color"].default_value = rgb
+            emit.inputs["Strength"].default_value = 1.0
+            lit.inputs["Color"].default_value = rgb
+            mix.inputs["Fac"].default_value = EXPLAINER_LIGHT
+            nt.links.new(emit.outputs[0], mix.inputs[1])
+            nt.links.new(lit.outputs[0], mix.inputs[2])
+            nt.links.new(mix.outputs[0], out.inputs["Surface"])
+            mat.diffuse_color = rgb
+            made[name] = mat
+        if not obj.data.materials:
+            obj.data.materials.append(mat)
+        for i in range(len(obj.data.materials)):
+            obj.data.materials[i] = mat
+    _outline(max(1.5, bpy.context.scene.render.resolution_x / 420))
+    scene = bpy.context.scene
+    try:
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.look = "None"
+    except TypeError:
+        pass
+    scene.view_settings.exposure = 0.0
+    world = scene.world
+    bg = next((n for n in world.node_tree.nodes if n.type == "BACKGROUND"), None) if world and world.node_tree else None
+    if bg is not None and not bg.inputs["Color"].links:
+        bg.inputs["Color"].default_value = (0.8, 0.8, 0.8, 1.0)
+        bg.inputs["Strength"].default_value = 0.8
+    return chosen
+
+
+def _apply_style(objs, style, colours=None):
+    """Put the model in a picture style; returns the explainer colours (or None)."""
+    if style == "flat":
+        _flat_style(objs)
+    elif style == "explainer":
+        chosen = _explainer_style(objs, colours)
+        _fast_engine()
+        return chosen
+    return None
+
+
+def render_asset_views(out_dir, camera_mode="persp", style="realistic", shadows=True, turntable=0, only=None,
+                       colours=None):
     """The angle pictures: front, front34, side, back34, back and top as <view>.png, each but top with
     <view>_shadow.png, and turntable frames turntable_00.png ... if asked. only: render just these
     sets ("views", "shadows", "turntable"), so a long render can be split over several Blender runs.
+    style: "realistic", "flat" or "explainer" (colours: {part: "#rrggbb"} for it).
     Returns {"views": {...}, "files": [...]} for views.json."""
     os.makedirs(out_dir, exist_ok=True)
     objs = model_objects()
@@ -782,8 +902,7 @@ def render_asset_views(out_dir, camera_mode="persp", style="realistic", shadows=
     cam.data.type = "ORTHO" if camera_mode == "ortho" else "PERSP"
     _, radius, lo, hi = frame(objs)
     elevation = ASSET_ELEVATION.get(camera_mode, 15)
-    if style == "flat":
-        _flat_style(objs)
+    chosen = _apply_style(objs, style, colours)
     sets = set(only or ("views", "shadows", "turntable"))
     files, views = [], {}
 
@@ -827,9 +946,91 @@ def render_asset_views(out_dir, camera_mode="persp", style="realistic", shadows=
                 obj.visible_camera = True
             bpy.data.objects.remove(catcher, do_unlink=True)
     cam.data.type = "PERSP"
-    return {"views": views, "files": files, "size_px": size,
-            "size_m": {"width": round(hi.x - lo.x, 4), "depth": round(hi.y - lo.y, 4),
-                       "height": round(hi.z - lo.z, 4)}}
+    out = {"views": views, "files": files, "size_px": size,
+           "size_m": {"width": round(hi.x - lo.x, 4), "depth": round(hi.y - lo.y, 4),
+                      "height": round(hi.z - lo.z, 4)}}
+    if chosen:
+        out["colours"] = chosen
+    return out
+
+
+def _loop_bounds(objs, samples=8):
+    """The box the model fills over its whole loop (a rack slides, a crank swings), so every frame
+    of a motion sequence is framed the same."""
+    scene = bpy.context.scene
+    first, last = scene.frame_start, scene.frame_end
+    lo = hi = None
+    for k in range(samples):
+        scene.frame_set(first + round((last - first) * k / max(samples - 1, 1)))
+        a, b = helpers.bounds(objs)
+        lo = a if lo is None else Vector(map(min, lo, a))
+        hi = b if hi is None else Vector(map(max, hi, b))
+    scene.frame_set(first)
+    return lo, hi
+
+
+def _project(cam, point, size):
+    from bpy_extras.object_utils import world_to_camera_view
+    p = world_to_camera_view(bpy.context.scene, cam, point)
+    return [round(p.x * size, 1), round((1 - p.y) * size, 1)]
+
+
+def render_motion(out_dir, camera_mode="persp", style="explainer", angle="front34", first=None, last=None,
+                  colours=None):
+    """The model moving through its loop as transparent pictures frame_000.png ... from one angle
+    ("front", "front34" or "side"), frames first..last of the loop (0-based, all when left out), so
+    a long loop can be split over two Blender runs. Every frame is framed the same (the box the model
+    fills over the whole loop). Returns the files and, for each frame, where each part is: its colour,
+    its box in the picture and its centre (a gear's axis), for labels and arrows (parts.json)."""
+    os.makedirs(out_dir, exist_ok=True)
+    objs = model_objects()
+    if not objs:
+        raise RuntimeError("there is no model in the scene to render")
+    stage()
+    scene = bpy.context.scene
+    backdrop = bpy.data.objects.get(BACKDROP)
+    if backdrop is not None:
+        backdrop.hide_render = True
+    scene.render.film_transparent = True
+    scene.render.image_settings.color_mode = "RGBA"
+    size = scene.render.resolution_x
+    cam = camera()
+    cam.data.type = "ORTHO" if camera_mode == "ortho" else "PERSP"
+    if style == "realistic" and scene.render.engine == "CYCLES":
+        scene.cycles.samples = min(scene.cycles.samples, 48)
+    chosen = _apply_style(objs, style, colours) or {}
+    lo, hi = _loop_bounds(objs)
+    az = ASSET_VIEWS.get(angle)
+    if az is None:
+        raise ValueError(f"angle must be one of front, front34, side (not {angle})")
+    el = ASSET_ELEVATION.get(camera_mode, 15)
+    aim_box(cam, lo, hi, az, el)
+    view = {"azimuth_deg": az, "elevation_deg": el, "camera": camera_mode, "angle": angle}
+    if cam.data.type == "ORTHO":
+        view["pixels_per_metre"] = round(size / cam.data.ortho_scale, 2)
+    else:
+        view["lens_mm"], view["distance_m"] = LENS_MM, round((cam.location - (lo + hi) / 2).length, 4)
+    frames = scene.frame_end - scene.frame_start + 1
+    start = 0 if first is None else max(0, int(first))
+    stop = frames - 1 if last is None else min(frames - 1, int(last))
+    groups = {}
+    for o in objs:
+        groups.setdefault(o.get(helpers.PART_KEY) or o.name, []).append(o)
+    files, where = [], {}
+    for i in range(start, stop + 1):
+        scene.frame_set(scene.frame_start + i)
+        rows = []
+        for name in sorted(groups):
+            box = _picture_box(cam, groups[name], size)
+            origin = groups[name][0].matrix_world.translation
+            rows.append({"name": name, "colour": chosen.get(name), "box_px": box,
+                         "centre_px": _project(cam, origin, size)})
+        where[i] = rows
+        files.append(_render(os.path.join(out_dir, f"frame_{i:03d}.png")))
+    scene.frame_set(scene.frame_start)
+    cam.data.type = "PERSP"
+    return {"files": files, "parts": where, "size_px": size, "view": view, "frames": frames, "fps": scene.render.fps,
+            "colours": chosen, "loop": scene.get("mg_mechanism_loop")}
 
 
 # --- export -------------------------------------------------------------------------

@@ -6,6 +6,7 @@ or come within the contact tolerance; anything not connected, through other isla
 lowest pieces on the floor is a floater.
 """
 
+import math
 import random
 
 import bpy
@@ -201,6 +202,169 @@ def part_report(part, contact_tolerance=0.0015, floor_tolerance=0.002):
         "attaches_to": sorted(attach),
         "gap_to_attached_m": {n: round(d, 4) for d, n in gaps if n in attach},
     }
+
+
+# --- the mesh check: meshing parts measured while they move ---------------------------------
+
+RAYS = [Vector(v).normalized() for v in ((0.5773, 0.5774, 0.5775), (-0.31, 0.83, -0.46), (0.71, -0.42, -0.56))]
+
+
+def _crossings_odd(bvh, p, ray):
+    count, origin = 0, p.copy()
+    for _ in range(200):
+        hit = bvh.ray_cast(origin, ray)
+        if hit[0] is None:
+            break
+        count += 1
+        origin = hit[0] + ray * 1e-7
+    return count % 2 == 1
+
+
+def _inside(bvh, p):
+    """Whether a point is inside a closed solid: an odd number of crossings along a ray, by the
+    vote of three rays (one ray can graze an edge or run along two nearly touching faces)."""
+    return sum(_crossings_odd(bvh, p, ray) for ray in RAYS) >= 2
+
+
+def _solid(obj, dg):
+    """One part as a solid to test against: its world vertices and a BVH of its real triangles
+    (Blender's own triangulation: a concave many-sided face split as a fan would reach outside it)."""
+    ev = obj.evaluated_get(dg)
+    me = ev.to_mesh()
+    mw = ev.matrix_world
+    verts = [mw @ v.co for v in me.vertices]
+    me.calc_loop_triangles()
+    tris = [tuple(t.vertices) for t in me.loop_triangles]
+    ev.to_mesh_clear()
+    bvh = BVHTree.FromPolygons(verts, tris, epsilon=0.0)
+    lo = Vector(map(min, *verts)) if len(verts) > 1 else verts[0]
+    hi = Vector(map(max, *verts)) if len(verts) > 1 else verts[0]
+    return {"verts": verts, "bvh": bvh, "lo": lo, "hi": hi}
+
+
+def _boxes_meet(a, b, pad):
+    return all(a["lo"][k] - pad <= b["hi"][k] and b["lo"][k] - pad <= a["hi"][k] for k in range(3))
+
+
+def _depth_and_gap(a, b, reach):
+    """How deep the two solids cut into each other (the deepest vertex of one inside the other) and
+    how close they come where they do not (the nearest vertex of one to the other's surface, looked
+    for within reach), in metres."""
+    depth, gap = 0.0, None
+    hits = a["bvh"].overlap(b["bvh"])
+    for one, other in ((a, b), (b, a)):
+        for p in one["verts"]:
+            if not all(other["lo"][k] - reach <= p[k] <= other["hi"][k] + reach for k in range(3)):
+                continue
+            found = other["bvh"].find_nearest(p, reach)
+            if found[0] is None:
+                continue
+            if hits and _inside(other["bvh"], p):
+                depth = max(depth, found[3])
+            elif gap is None or found[3] < gap:
+                gap = found[3]
+    return depth, gap
+
+
+def _angle_about(m0, m1, axis):
+    """How far an object turned about an axis between two of its world matrices, radians (-pi..pi)."""
+    q = (m1.to_3x3() @ m0.to_3x3().inverted()).to_quaternion()
+    return 2 * math.atan2(Vector((q.x, q.y, q.z)).dot(axis), q.w)
+
+
+def mesh_report(pairs, moments=12, reach=None):
+    """The mesh check, measured on the model as it moves. pairs: from the mechanism sheet, each
+    {"a", "b", "kind": "mesh" | "rack" | "shaft", "module_m", "centre_m", "ratio", "same_direction",
+    "metres_per_radian"}. At `moments` times spread over the loop: how deep meshing teeth cut into
+    each other and the gap between them; once: the centre distance; over every frame: the speed
+    ratio and direction. Any other two parts that come near each other are checked for passing
+    through each other ("clashes"); a gear and its shaft are fixed together and not."""
+    scene = bpy.context.scene
+    by = {}
+    for o in scene.objects:
+        if o.type == "MESH" and o.get(helpers.PART_KEY):
+            by[o[helpers.PART_KEY]] = o
+    first, last = scene.frame_start, scene.frame_end
+    span = last + 1 - first
+    joined = {frozenset((p["a"], p["b"])) for p in pairs}
+    tracked = {n: [] for n in by}
+    samples = max(span, 24)
+    for k in range(samples + 1):  # every frame (and more on a short loop): the matrices only
+        t = first + span * k / samples
+        scene.frame_set(int(math.floor(t)), subframe=t - math.floor(t))
+        for n, o in by.items():
+            tracked[n].append(o.matrix_world.copy())
+    out = {"moments": moments, "pairs": [], "clashes": []}
+    worst = {}
+    clashes = {}
+    for k in range(moments):
+        t = first + span * k / moments
+        scene.frame_set(int(math.floor(t)), subframe=t - math.floor(t))
+        bpy.context.view_layer.update()
+        dg = bpy.context.evaluated_depsgraph_get()
+        solids = {n: _solid(o, dg) for n, o in by.items()}
+        for p in pairs:
+            if p["kind"] == "shaft" or p["a"] not in solids or p["b"] not in solids:
+                continue
+            m = p.get("module_m") or 0.002
+            depth, gap = _depth_and_gap(solids[p["a"]], solids[p["b"]], reach or 2.5 * m)
+            w = worst.setdefault((p["a"], p["b"]), {"depth": 0.0, "gap": 0.0, "at_depth": None, "at_gap": None})
+            if depth > w["depth"]:
+                w["depth"], w["at_depth"] = depth, k
+            g = gap if gap is not None else 2.5 * m
+            if depth <= 0 and g > w["gap"]:
+                w["gap"], w["at_gap"] = g, k
+        names = sorted(solids)
+        for i, na in enumerate(names):
+            for nb in names[i + 1:]:
+                if frozenset((na, nb)) in joined:
+                    continue
+                sa, sb = solids[na], solids[nb]
+                if not _boxes_meet(sa, sb, 0.0) or not sa["bvh"].overlap(sb["bvh"]):
+                    continue
+                depth, _ = _depth_and_gap(sa, sb, 1e-4)
+                if depth > clashes.get((na, nb), (0.0, None))[0] or (na, nb) not in clashes:
+                    clashes[(na, nb)] = (max(depth, clashes.get((na, nb), (0.0, None))[0]), k)
+    scene.frame_set(first)
+    bpy.context.view_layer.update()
+    for p in pairs:
+        if p["a"] not in by or p["b"] not in by:
+            out["pairs"].append({**p, "found": False})
+            continue
+        oa, ob = by[p["a"]], by[p["b"]]
+        axis_a = (tracked[p["a"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        axis_b = (tracked[p["b"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        row = {"a": p["a"], "b": p["b"], "kind": p["kind"], "found": True}
+        da = [_angle_about(tracked[p["a"]][i], tracked[p["a"]][i + 1], axis_a) for i in range(samples)]
+        if p["kind"] == "rack":
+            along = (tracked[p["b"]][0].to_3x3() @ Vector((1.0, 0.0, 0.0))).normalized()
+            db = [(tracked[p["b"]][i + 1].translation - tracked[p["b"]][i].translation).dot(along)
+                  for i in range(samples)]
+        else:
+            db = [_angle_about(tracked[p["b"]][i], tracked[p["b"]][i + 1], axis_b) for i in range(samples)]
+        moved = sum(x * x for x in da)
+        row["ratio"] = round(sum(x * y for x, y in zip(da, db)) / moved, 6) if moved > 1e-12 else None
+        ca, cb = tracked[p["a"]][0].translation, tracked[p["b"]][0].translation
+        if p["kind"] == "rack":
+            up = (tracked[p["b"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+            row["centre_m"] = round(abs((ca - cb).dot(up)), 6)
+            row["metres_per_radian_expected"] = p.get("metres_per_radian")
+        elif p["kind"] == "mesh":
+            d = (cb - ca) - axis_a * (cb - ca).dot(axis_a)
+            row["centre_m"] = round(d.length, 6)
+            row["ratio_expected"] = p.get("ratio")
+            row["same_direction_expected"] = p.get("same_direction")
+        if p["kind"] != "shaft":
+            row["centre_expected_m"] = p.get("centre_m")
+            w = worst.get((p["a"], p["b"]), {})
+            row["max_depth_m"] = round(w.get("depth", 0.0), 6)
+            row["max_gap_m"] = round(w.get("gap", 0.0), 6)
+            row["module_m"] = p.get("module_m")
+            row["worst_moment"] = w.get("at_depth") if w.get("depth") else w.get("at_gap")
+        out["pairs"].append(row)
+    out["clashes"] = [{"a": a, "b": b, "max_depth_m": round(d, 6), "moment": k}
+                      for (a, b), (d, k) in sorted(clashes.items())]
+    return out
 
 
 def _measure(dg, objs, floor_tolerance, contact_tolerance):

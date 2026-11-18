@@ -1,0 +1,72 @@
+# How the critic scores a mechanical part or mechanism (the spec's family is mechanical): the
+# models are for animated learning videos, so the teeth and the meshing come first, then whether the
+# motion reads clearly, then proportions and the look. The weighted mean times ten is the score out
+# of 100; a version passes at loop.pass_score in config.yaml when every hard gate passes too. The
+# mesh check (bpy_lib.measure.mesh_report) measures the meshing; the critic judges it by eye as well.
+
+criteria:
+  - id: teeth
+    name: Tooth shape
+    weight: 3
+    guide: >
+      Compare the teeth with the reference photos: curved involute flanks (not straight wedges or
+      boxes), the tooth count of the sheet, the right depth (about 2.25 modules from tip to root),
+      rounded roots, tip chamfers, gaps as wide as the teeth at the pitch circle. 10: indistinguishable
+      from a machined gear at video distance. 7: right shape, one detail off. 5: gear-like but crude.
+      0: not recognisable as gear teeth.
+  - id: meshing
+    name: Meshing
+    weight: 3
+    guide: >
+      In every frame of the motion strip each tooth sits in its mate's gap, the pitch circles touch,
+      no tooth passes through another and none floats clear; shafts run through their bores; parts on
+      one shaft turn together. The geometric checks' mesh gates measure this at 12 moments: a failed
+      one caps this at 4. 10: meshes like a real gearbox all through the loop.
+  - id: motion
+    name: Motion reads clearly
+    weight: 2
+    guide: >
+      The speeds and directions are the sheet's (a small gear visibly faster, meshing external gears
+      turning opposite ways, a gear inside a ring the same way) and the loop is seamless. The motion is
+      easy to follow for a learner: slow enough to see the teeth engage. 10: a viewer understands the
+      mechanism from the strip alone.
+  - id: proportions
+    name: Proportions
+    weight: 2
+    guide: >
+      Face widths, rims, hubs, bores, shafts and any housing are in real proportion to the module and
+      the sheet's numbers (face width 6 to 12 modules, a hub 1.6 to 2 times the bore, a rim at least
+      two modules under the roots). 10: an engineer would find nothing to correct.
+  - id: look
+    name: The look
+    weight: 1
+    guide: >
+      Clean machined surfaces, smooth shading with crisp edges, parts told apart by material or
+      colour, no faceting on round parts, no grime unless asked. 10: eye-catching and clear in a
+      video.
+
+gates:
+  - id: watertight
+    name: Watertight
+    guide: Every part is a closed solid with no open (non-manifold) edges.
+  - id: correct_size
+    name: Correct size
+    guide: The overall bounding box matches the spec's dimensions within the tolerance.
+  - id: on_floor
+    name: On the floor
+    guide: The lowest point of the model is at Z = 0.
+  - id: teeth_clear
+    name: Teeth clear
+    guide: Meshing teeth never cut into each other at any of the 12 moments across the loop.
+  - id: teeth_engaged
+    name: Teeth engaged
+    guide: Meshing teeth never float apart (at their closest, under a third of a module).
+  - id: centre_distance
+    name: Centre distance
+    guide: Every meshing pair is at the sheet's centre distance.
+  - id: speed_ratio
+    name: Speed ratio
+    guide: Every part turns at the sheet's ratio and the right way round.
+  - id: no_clashes
+    name: No clashes
+    guide: No other parts pass through each other while moving.

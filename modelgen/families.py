@@ -236,6 +236,38 @@ FAMILIES = {
         "materials": "- Matte, toy-like colours (`m.matte`, `m.plastic` at roughness 0.5 or more); no skin gloss.",
         "review": "- Judge the silhouette and the pose first; then that no gap or floating piece shows at a joint.",
     },
+    "mechanical": {
+        "what": "a mechanical part or mechanism shown working: gear, gear train, rack, shaft, bearing, pulley, "
+                "piston, crankshaft, camshaft, turbocharger, spring, bolt, valve, gearbox",
+        "words": r"gears?|gearing|gear ?trains?|gearbox(es)?|gear ?wheels?|cogs?|cogwheels?|sprockets?|pulleys?|"
+                 r"bearings?|shafts?|axles? shafts?|pistons?|crank ?shafts?|crankshafts?|cranks?|cam ?shafts?|"
+                 r"camshafts?|cams?|turbos?|turbochargers?|superchargers?|turbines?|impellers?|"
+                 r"compressor wheels?|springs?|bolts?|nuts?|washers?|screws?|valves?|differentials?|racks? and pinions?|"
+                 r"pinions?|ring gears?|planetary|worm gears?|worm wheels?|flywheels?|clutch(es)?|"
+                 r"connecting rods?|con ?rods?|rocker arms?|mechanisms?|transmissions?",
+        "budget": 30000,
+        "kit": ["spur_gear", "helical_gear", "ring_gear", "rack", "bevel_gear", "shaft", "gear_pair_layout"],
+        "views": ["front_flat", "side"],
+        "plan": (
+            "- Plan from the engineering numbers in the mechanism sheet, never by eye: module, tooth counts, face "
+            "widths, bores, centre distances. A part the part tools make (a gear, a rack, a shaft) is already "
+            "built from the sheet: keep its entry and its name, and plan only what no tool makes (a housing, a "
+            "bracket, a base), sized to the sheet's numbers (a housing clears the gears' tip circles by 2 to 5 mm).\n"
+            "- Real proportions: face width 6 to 12 modules, a rim at least 2 modules under the tooth roots, a hub "
+            "1.6 to 2 times the bore, keys and keyways to standard sizes."),
+        "build": (
+            "- Never hand-shape teeth: a gear is `k.spur_gear`, `k.helical_gear`, `k.ring_gear`, `k.rack` or "
+            "`k.bevel_gear` with the sheet's numbers in metres, a shaft `k.shaft`; place a meshing pair with "
+            "`k.gear_pair_layout`. Build only the part the plan gives you."),
+        "materials": (
+            "- Gears and shafts carry the slots `tooth_face`, `hub` and `bore` (a shaft `shaft`): fill each with "
+            "`m.assign_slot`. Machined steel is `m.brushed_metal` (roughness 0.3 to 0.45), brass a warm "
+            "`m.brushed_metal`, a cast housing `m.painted` or `m.matte`. No rust or grime unless asked."),
+        "review": (
+            "- Judge tooth shape and meshing first: involute flanks, the tooth count and depth of the sheet, teeth "
+            "sitting in each other's gaps all through the motion strip, never cutting into or floating off their "
+            "mate (the mesh check measures this). Then speeds and directions, then proportions, then the look."),
+    },
     "general": {"what": "anything else", "words": "", "budget": 12000, "kit": []},
 }
 
@@ -243,13 +275,28 @@ NAMES = list(FAMILIES)
 _GUESS = [(name, re.compile(rf"\b({f['words']})\b", re.IGNORECASE)) for name, f in FAMILIES.items() if f["words"]]
 # A scene names other families' things ("a park with benches"), so it is asked first; a vehicle
 # before a building ("a bus station" is a building, but "a school bus" is a bus: the last word wins below).
-_ORDER = ["scene", "vehicle", "building", "device", "furniture", "container", "character"]
+_ORDER = ["scene", "vehicle", "building", "device", "furniture", "container", "character", "mechanical"]
+# A part named by its own word is the part, not the machine it comes from: "a truck gearbox", "car engine
+# piston" and "bicycle sprocket" are mechanical parts, whichever word comes last.
+_MECHANICAL_FIRST = re.compile(r"\b(gears?|gearbox(es)?|cogs?|cogwheels?|sprockets?|pistons?|crank ?shafts?|"
+                               r"crankshafts?|cam ?shafts?|camshafts?|turbochargers?|superchargers?|turbos?|"
+                               r"differentials?|connecting rods?|flywheels?|pinions?|impellers?|"
+                               r"compressor wheels?|bearings?|transmissions?)\b", re.IGNORECASE)
+
+
+def mechanical_word(text):
+    """Whether the text names a mechanical part outright (a gear, a piston, a turbocharger...): such a
+    request is that part, never a car or a ready-made model."""
+    return bool(_MECHANICAL_FIRST.search(str(text or "")))
 
 
 def guess(text):
     """The family an object's name points to, or "general". The family whose word comes last in
-    the text wins ("school bus" is a vehicle, "bus station" a building), a scene word beats all."""
+    the text wins ("school bus" is a vehicle, "bus station" a building), a scene word beats all, and
+    a word that names a mechanical part outright beats every other family ("truck gearbox")."""
     text = str(text or "")
+    if mechanical_word(text):
+        return "mechanical"
     best, where = "general", -1
     for name in _ORDER:
         rx = dict(_GUESS)[name]

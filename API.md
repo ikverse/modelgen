@@ -39,6 +39,8 @@ Errors come back as `{"detail": "what is wrong"}` with status 400 (a bad request
 3. Otherwise a new model is made, the same way as from the page:
    - an object in the free ready-made catalogue is made from it in about a minute (`ready_made`);
    - a car is made by the car generator in under a minute (`car_generator`);
+   - a mechanical part the part tools make (gears, racks, shafts) is built from its numbers in 1 to 3
+     minutes with no agents (`part_tools`; see Mechanisms);
    - anything else is built by the agent team (`built`), roughly 20–60+ minutes per version.
 4. **Nobody is asked anything.** An agent that would ask a question decides itself. Reaching the
    job's `budget_usd`, or today's spending limit, stops the build instead of asking.
@@ -98,8 +100,11 @@ If this call fails, ModelGen is not running: fall back to something else. Do not
 | `references` | | up to 4 images: full file paths on this PC or http(s) links; they are copied in |
 | `request_key` | | your own id for this request; sending the same key again returns the same job |
 | `outputs` | `["game", "full"]` | which files you want (see Files) |
-| `style` | `realistic` | angle pictures: `realistic` (photo studio) or `flat` (flat colours, dark outline) |
-| `camera` | `persp` | angle pictures: `persp` (15° above) or `ortho` (flat, side-on, no shadows) |
+| `style` | `realistic` | pictures: `realistic` (photo studio), `flat` (flat colours, dark outline) or `explainer` (each part one clean saturated colour, soft light, crisp outline: for learning videos) |
+| `camera` | `persp` | pictures: `persp` (15° above) or `ortho` (flat, side-on, no shadows) |
+| `angle` | `front` | motion pictures: `front`, `front34` or `side` |
+| `colours` | the palette | explainer colour per part, `{"wheel": "#2e86ab"}` |
+| `mechanism` | | a mechanical part or mechanism by its numbers (see Mechanisms); `object` may then be left out |
 | `reuse` | `true` | use a model made before when one fits |
 | `max_versions` | `2` | 1 to 5 |
 | `min_score` | `70` | 0 to 100: the score `passed` needs (the page shows it divided by 10) |
@@ -150,6 +155,35 @@ each output.
   `score`, `passed`, `size_m`, `views` (the angle picture sets it has), `files` and `main`.
   `ready_made` are catalogue models not made yet; a job for that object makes one in a minute.
 - `GET /v1/models/{name}`: one accepted model with all its files.
+- `GET /v1/parts`: every part type the part tools build, with its fields, units, allowed ranges and
+  defaults; also the styles, angles and the explainer palette.
+
+## Mechanisms (gears and other mechanical parts)
+
+A job can carry `mechanism`: the parts by their engineering numbers. When every part has a tool
+(stage 1: `spur_gear`, `helical_gear`, `ring_gear`, `rack`, `bevel_gear`, `shaft`), ModelGen
+builds it straight from the tools with no agents, in about 1 to 3 minutes, and `source` is
+`part_tools`. The same numbers asked for again return the stored model at once (`existing`, no
+agent). A request in plain words that names a mechanical part ("two gears, the small one drives the
+big one") goes to the engineer agent first (one short call, about $0.05), then the same way.
+
+```json
+{"client": "village",
+ "mechanism": {"parts": [{"name": "pinion", "type": "spur_gear", "module": 2, "teeth": 12, "meshes_with": "wheel"},
+                         {"name": "wheel", "type": "spur_gear", "module": 2, "teeth": 24}],
+               "driver": "pinion", "rpm": 20, "direction": "clockwise"},
+ "outputs": ["motion", "game"], "style": "explainer", "angle": "front"}
+```
+
+Lengths in mm, angles in degrees. Links: `meshes_with` (a name or a list), `on_shaft` (a shaft
+part), `at` (direction from the gear it meshes with: 0 right, 90 up). A mechanism that cannot work
+is refused with 400 and the field named ("mechanism: gear wheel has no tooth count", "gears a and b
+cannot mesh: different module"). Every value ModelGen filled in is listed in the job's `assumed`;
+a finished job also has `mechanism: {key, sizes_mm, colours}`.
+
+The checks stand in for a critic: every part a closed solid, on the floor, and the mesh check
+measured at 12 moments across the loop (meshing teeth never cut into each other or float apart,
+centre distances and speed ratios as the sheet says, nothing else passes through anything).
 
 ## Files
 
@@ -160,6 +194,16 @@ Inside the version folder `projects\<model>\v<n>\`:
 | `game` | `game/<model>_game.glb` within the object family's triangle limit, `_LOD1.glb`, `_LOD2.glb` (lower detail), `_collision.glb`, `game.json` (triangles, size) |
 | `full` | `exports/<model>.glb`, `.fbx`, `.obj`, `.stl` at full detail, and `model.blend` |
 | `views` | `views/<style>-<camera>/`: transparent 1024 px PNGs `front`, `front34`, `side`, `back34`, `back`, `top`, a 24-frame turntable `turntable_00` … `turntable_23`, and (persp only) `<view>_shadow.png` for every view but top, plus `views.json` |
+| `motion` | `motion/<style>-<camera>/`: transparent 1024 px `frame_000.png` … one seamless loop at 24 frames a second, `motion.json` and `parts.json` |
+
+`motion.json`: `frames`, `fps`, `loop_seconds`, `angle`, `view` (where the camera stood), `repeat`
+(play the frames in order and start again: the frame after the last is the first), `mode` (`spin`,
+or `swing` when a rack goes back and forth), `driver`, `driver_rpm`, each part's `turns` per loop,
+`colours`. The loop is the shortest stretch after which every part looks as it started (a plain
+gear repeats after one tooth), so it can be short: repeat it as long as the scene needs. One motion
+set is kept per style and camera; asking for another angle renders it again in the same folder.
+`parts.json`: for every frame, each part's `name`, `colour`, `box_px` (x0, y0, x1, y1 from the top
+left) and `centre_px` (its axis): for labels and arrows.
 
 Angle pictures: azimuth 0 looks at the model's front, 90 at its side, 180 at its back; the
 turntable starts at the front and turns 15° a frame. The shadow pictures hold only the soft shadow

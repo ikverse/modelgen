@@ -11,6 +11,7 @@ every step is an event in the database so the page can follow along and history 
 import ast
 import asyncio
 import json
+import math
 import random
 import re
 import shutil
@@ -20,7 +21,7 @@ from pathlib import Path
 from . import budget, config, db, families, runner
 from .bpy_lib.shells import car_sheet
 from .tools import agent_tools as at
-from .tools import asset_catalog, blender, car_library, car_request, checks, render
+from .tools import asset_catalog, blender, car_library, car_request, checks, mechanism, render
 from .tools.files import ProjectFiles
 from .tools.library import Library
 
@@ -116,6 +117,8 @@ async def run(project, request=None, changes=None, on_done=None, next_version=Fa
         _report_remix(project, outcome)  # said plainly: no agent writes the report of a car made without agents
     elif outcome.get("library"):
         _report_library(project, outcome)
+    elif outcome.get("parts"):
+        _report_parts(project, outcome)
     elif on_done:
         try:
             await on_done(project, outcome)
@@ -153,6 +156,12 @@ async def _run(project, request, changes, next_version=False):
         return {"ok": False, "error": "blender_missing"}
     proj = db.get_project(project)
     existing = db.versions(project)
+    sheet = None  # a mechanism the team builds (a part has no tool): every agent gets its sheet
+    made = await _try_parts(project, request, changes, next_version)
+    if made is not None and made.get("team"):
+        sheet = made["sheet"]
+    elif made is not None:
+        return made
     if uses_remix(project, request, changes or next_version):
         return await _run_remix(project, request, changes, next_version)
     made = await _try_library(project, request, changes, next_version)
@@ -202,7 +211,7 @@ async def _run(project, request, changes, next_version=False):
         request = request or proj["request"]
         if changes:  # changes asked for before any version was built: they shape the first one
             request += f"\n\nThe person also asked for these changes: {changes}"
-        spec = await _brief(project, request)
+        spec = await _brief(project, request, sheet)
         db.update_project(project, spec=spec, status="planning")
         _handoff(project, "brief", "architect", f"spec: {spec.get('object', 'the model')}")
         if at.shell_template(spec=spec):
@@ -211,6 +220,8 @@ async def _run(project, request, changes, next_version=False):
         else:
             _phase(project, "Planning how each part is built", step="plan", object=spec.get("object"))
             plan = await _architect(project, spec, library)
+        if spec.get("mechanism"):
+            plan = with_tool_parts(plan, spec["mechanism"])
         rebuild, notes, prev_dir, last_review = set(at.plan_parts(plan)), {}, None, None
     _handoff(project, "architect", "builder", f"plan: {len(at.plan_parts(plan))} parts")
 
@@ -418,8 +429,9 @@ async def _try_library(project, request, changes, next_version):
         text = request or proj["request"]
         if changes:
             text += f" {changes}"
-        if not _library_on() or FROM_SCRATCH.search(text) or at.looks_like_car(text):
-            return None
+        if (not _library_on() or FROM_SCRATCH.search(text) or at.looks_like_car(text)
+                or families.guess(text) == "mechanical"):
+            return None  # a downloaded model cannot be animated part by part
         _phase(project, "Looking for a ready-made model", step="catalog")
         hits = asset_catalog.search(text, limit=6, entries=catalogue)
         if not hits:
@@ -492,6 +504,194 @@ def _report_library(project, outcome):
     text = (f"v{outcome['version']} is ready. {outcome['summary']} It is a free ready-made model, not one the team "
             f"built. {another}tell me a colour or a size to change it, or say \"build it from scratch\" for an "
             "original from the team.")
+    card = director.version_card(project, outcome["version"])
+    db.add_message("assistant", text, project, meta={"version": card} if card else None)
+
+
+# --- a mechanism built by the part tools (tools.mechanism): no build team ----------------------
+
+def parts_sheet(project, number):
+    """The mechanism sheet a version was built from by the part tools (its plan), or None."""
+    plan_file = version_dir(project, number) / "plan.json" if number else None
+    plan = json.loads(plan_file.read_text(encoding="utf-8")) if plan_file and plan_file.is_file() else {}
+    return plan.get("mechanism") if plan.get("kind") == "parts" else None
+
+
+def _engineer_caps():
+    """The engineer's turn and dollar caps: config.yaml's caps.engineer line, else these."""
+    table = (config.settings().get("caps") or {}).get("engineer") or {}
+    return {"max_turns": 6, "max_budget_usd": 0.30, **table}
+
+
+async def _engineer(project, text, before=None):
+    """The engineer turns a request in plain words (or changes to a mechanism) into a mechanism
+    sheet the part tools build: every part's numbers, how they connect, which drives and how fast.
+    Returns {"sheet", "assumed", "custom", "notes"}; custom lists parts no tool makes."""
+    sink = {}
+    prompt = [f"Work out the mechanism for this request.\n\n## Request\n{text}\n"]
+    if before:
+        prompt += ["## The mechanism as it is now (change only what the request asks)",
+                   _json({k: before[k] for k in ("parts", "driver", "rpm", "direction")}), ""]
+    prompt += ["## What the part tools build (field units: mm, degrees, rpm)", _json(mechanism.catalogue()), "",
+               _options_text(project)]
+    res = None
+    for attempt in range(2):
+        res = await runner.run_agent("engineer", "\n".join(prompt), at.engineer_tools(sink), project=project,
+                                     doing="working out the mechanism", step=True, caps=_engineer_caps())
+        if sink.get("mechanism"):
+            return {"sheet": sink["mechanism"], "assumed": sink.get("assumed") or [],
+                    "custom": sink.get("custom") or [], "notes": sink.get("notes") or ""}
+        if _out_of_usage(res):
+            break
+        prompt.append("\nYou must call submit_mechanism." + (f" Last error: {res.error}" if res and res.error else ""))
+    raise PipelineError("the engineer did not submit a mechanism" + _reason(res))
+
+
+async def _try_parts(project, request, changes, next_version):
+    """A mechanism the part tools build: from the numbers a program sent (the job's mechanism), from
+    the engineer's sheet for a request in plain words that names a mechanical part, or a change to a
+    mechanism built so. Returns the build's outcome; {"team": True, "sheet": ...} when a part has no
+    tool and the team builds it from the sheet; or None when this is not a mechanism."""
+    proj = db.get_project(project) or {}
+    options = proj.get("options") or {}
+    if (changes or next_version) and db.versions(project):
+        before = parts_sheet(project, base_number(project))
+        if before is None:
+            return None
+        if not changes:
+            return {"ok": False, "error": "this mechanism was built exactly from its numbers, so another version "
+                                          "would be the same: say what to change (\"make the big gear 30 teeth\")"}
+        _phase(project, "The engineer is changing the mechanism", step="spec")
+        found = await _engineer(project, changes, before)
+        if found["custom"]:
+            return {"team": True, **found}
+        return await _run_parts(project, found["sheet"], found["assumed"])
+    if options.get("mechanism"):
+        return await _run_parts(project, options["mechanism"], options.get("assumed") or [])
+    text = request or proj.get("request") or ""
+    if families.guess(text) != "mechanical" or FROM_SCRATCH.search(text):
+        return None
+    db.update_project(project, status="briefing")
+    _handoff(project, "director", "engineer", "your request")
+    _phase(project, "The engineer is working out the mechanism", step="spec")
+    found = await _engineer(project, text)
+    if found["custom"]:
+        db.add_event("warning", project=project, agent="engineer",
+                     data={"text": "no part tool makes " + ", ".join(c.get("name", "?") for c in found["custom"])
+                                   + ": the team builds those from the mechanism sheet"})
+        return {"team": True, **found}
+    return await _run_parts(project, found["sheet"], found["assumed"])
+
+
+def with_tool_parts(plan, sheet):
+    """The team's plan with every part a tool makes taken from the tools: its code is the tool call
+    with the sheet's numbers and no builder writes it. A sheet part the plan left out is added."""
+    lay = mechanism.layout(sheet)
+    entries = {p.get("name"): p for p in plan.get("parts", [])}
+    for p in sheet["parts"]:
+        entry = entries.get(p["name"])
+        if entry is None:
+            entry = {"name": p["name"], "description": f"{p['type'].replace('_', ' ')} from the mechanism sheet",
+                     "attaches_to": p.get("on_shaft") or ", ".join(p.get("meshes_with") or [])}
+            plan.setdefault("parts", []).append(entry)
+        entry["tool"] = p["type"]
+        entry["seed"] = mechanism.part_code(p, lay)
+    plan["reseed"] = sorted(set(plan.get("reseed") or []) | {p["name"] for p in sheet["parts"]})
+    return plan
+
+
+def tool_parts(plan):
+    """The names of the parts the part tools make: no builder writes them."""
+    return [p["name"] for p in (plan or {}).get("parts", []) if p.get("tool")]
+
+
+async def _run_parts(project, sheet, assumed, note=""):
+    """Build a mechanism straight from the part tools: the scripts are written from the sheet, one
+    Blender run builds, moves, measures and runs the mesh check, then the game files and the
+    renders. The measured checks stand in for the critic. No agent runs."""
+    proj = db.get_project(project) or {}
+    what = mechanism.describe(sheet)
+    files_code, lay = mechanism.scripts(sheet)
+    spec = {"object": what, "category": "parts", "family": "mechanical", "use": "game", "request": proj.get("request"),
+            "summary": what, "mechanism": sheet, "motion": {"mechanism": True}}
+    n = db.highest_version_number(project) + 1
+    folder = version_dir(project, n)
+    (folder / "exports").mkdir(parents=True, exist_ok=True)
+    files = ProjectFiles(folder)
+    for path, code in files_code.items():
+        files.write(path, code)
+    key = mechanism.key(sheet)
+    record = {"sheet": sheet, "assumed": list(assumed or []), "key": key, "sizes_mm": mechanism.size_mm(sheet),
+              "pairs": mechanism.check_pairs(lay), "colours": sheet.get("colours") or mechanism.colours(sheet)}
+    files.write("spec.json", _json(spec))
+    files.write("plan.json", _json({"kind": "parts", "parts": mechanism.plan_entries(sheet), "mechanism": sheet,
+                                    "key": key}))
+    files.write("mechanism.json", _json(record))
+    db.update_project(project, spec=spec, status="building")
+    db.add_version(project, n, note="built by the part tools")
+    db.add_event("version_started", project=project, data={"version": n, "round": 1})
+    _phase(project, f"Building {what} from its numbers", step="build", version=n)
+
+    def failed(error):
+        db.update_version(project, n, status="failed", note=error[:500])
+        db.add_event("version_failed", project=project, data={"version": n, "error": error[:2000]})
+        db.update_project(project, status="failed")
+        return {"ok": False, "error": error[:500]}
+
+    blend = folder / "model.blend"
+    steps = [blender.part_step(p["name"], files.path(f"parts/{p['name']}.py")) for p in sheet["parts"]]
+    steps += [blender.assembly_step(files.path("assembly.py")), blender.materials_step(files.path("materials.py"))]
+    if files.exists("motion.py"):
+        steps.append(blender.motion_step(files.path("motion.py")))
+    steps += [{"kind": "save", "path": str(blend), "label": "save the .blend"}, blender.measure_step(),
+              blender.mesh_check_step(record["pairs"]),
+              {"kind": "export", "dir": str(files.path("exports")), "basename": project, "label": "export"}]
+    with runner.acting("assembler", project, f"building {what} for v{n}", "full_build") as act:
+        result = await blender.run_job_async(steps)
+        act.ok = result.ok
+    if not result.ok:
+        info = result.summary()
+        return failed(info.get("traceback") or info.get("error") or "Blender failed")
+    measure = result.outputs.get("measure") or {}
+    mesh = result.outputs.get("mesh_check") or {}
+    found = checks.parts_checks(measure, mesh)
+    files.write("measure.json", _json(measure))
+    files.write("mesh_check.json", _json(mesh))
+    files.write("motion_report.json", _json(result.outputs.get("motion") or {}))
+    game = await _game_export(folder, project, spec)
+    if game:
+        found["game"] = game
+    files.write("checks.json", _json(found))
+    _phase(project, "Rendering the mechanism", step="render", version=n)
+    with runner.acting("critic", project, f"rendering v{n}", "render") as act:
+        rendered, _, sheets = await render.render_version(blend, folder / "renders", motion=files.exists("motion.py"),
+                                                          views=families.views("mechanical"))
+        act.ok = bool(rendered.ok and sheets.get("turntable"))
+    if not rendered.ok or not sheets.get("turntable"):
+        info = rendered.summary()
+        return failed("rendering failed: " + (info.get("traceback") or info.get("error") or "no images"))
+    loop = (result.outputs.get("motion") or {}).get("mechanism") or {}
+    failing = [k for k, g in found["gates"].items() if not g["pass"]]
+    summary = (f"{what[0].upper()}{what[1:]}, built from its numbers by the part tools: "
+               f"{found.get('triangles')} triangles"
+               + (f", a {loop.get('seconds')} s loop" if loop.get("seconds") else "")
+               + (". Every check passed." if not failing else f". Checks that failed: {', '.join(failing)}.")
+               + (f" {note}" if note else ""))
+    db.update_version(project, n, status="done", passed=int(found["passed"]), checks=found)
+    db.add_event("version_done", project=project,
+                 data={"version": n, "passed": found["passed"], "summary": summary, "changes": 0})
+    db.update_project(project, status="done" if found["passed"] else "needs_changes", base_version=n)
+    return {"ok": True, "parts": True, "version": n, "score": None, "passed": found["passed"], "summary": summary,
+            "changes": [], "gates": found["gates"], "assumed": list(assumed or [])}
+
+
+def _report_parts(project, outcome):
+    """The chat message for a mechanism the part tools built: what it is and what can be asked next."""
+    from . import director  # director imports this module
+    filled = outcome.get("assumed") or []
+    text = (f"v{outcome['version']} is ready. {outcome['summary']}"
+            + (f" Numbers I chose: {'; '.join(filled[:8])}." if filled else "")
+            + " Tell me what to change (a tooth count, a size, the speed) for the next version.")
     card = director.version_card(project, outcome["version"])
     db.add_message("assistant", text, project, meta={"version": card} if card else None)
 
@@ -961,11 +1161,15 @@ def _out_of_usage(res):
     return bool(res and runner.account_limit(res.error))
 
 
-async def _brief(project, request):
+async def _brief(project, request, sheet=None):
     sink = {}
     research = await _research(project, request)
     prompt = (f"Write the spec for this request.\n\n## Request\n{request}\n\n{_options_text(project)}\n"
               f"## Object families (choose `family`)\n{families.brief_list()}\n")
+    if sheet:
+        prompt += ("\n## The mechanism sheet (the engineer's; family `mechanical`)\nEvery part's numbers, how they "
+                   "connect and how each moves are settled here: keep them exactly; the parts a tool makes are built "
+                   f"from it.\n{_json(sheet)}\n")
     if research:
         prompt += ("\n## Research: the real object (looked up)\nIts `dimensions`, `proportions` (each says whether "
                    "it was published or measured on a kept photo) and `features` are to be used as they are, unless "
@@ -978,6 +1182,8 @@ async def _brief(project, request):
         if sink.get("spec"):
             spec = sink["spec"]
             spec["family"] = families.of(spec)
+            if sheet:
+                spec["family"], spec["mechanism"] = "mechanical", sheet
             if research:
                 spec["research"] = {k: research.get(k) for k in ("dimensions", "proportions", "unverified",
                                                                  "features", "colours", "notes", "reference_photos")
@@ -1213,6 +1419,40 @@ def _part_prompt(rnd, part, notes, library=None):
     return "\n".join(lines)
 
 
+def _mechanism_lines(rnd, role):
+    """The mechanism sheet for the assembler, the animator or the critic, with what it means for them."""
+    sheet = (rnd.spec or {}).get("mechanism")
+    if not sheet:
+        return []
+    lay = mechanism.layout(sheet)
+    places = {n: {"centre_m": [round(v, 5) for v in pl["centre"]],
+                  "axis": [round(pl["rotation"][r][2], 4) for r in range(3)],
+                  "start_angle_deg": round(math.degrees(pl["phase"]), 3)} for n, pl in lay["place"].items()}
+    head = ["## The mechanism sheet (the engineer's numbers; every agent works from these)", _json(sheet), "",
+            "## Where the sheet puts each part (centre in metres, its own axis, the angle it starts at about it)",
+            _json(places), ""]
+    tools = tool_parts(rnd.plan)
+    if role == "assembly":
+        return head + [f"The parts {', '.join(tools) or '(none)'} are made by the part tools with their axis on local Z "
+                       "and tooth 0 on local +X: place each exactly as above (matrix = translation @ the axis rotation "
+                       "@ a turn of start_angle about local Z) so its teeth sit in its mate's gaps, then put the whole "
+                       "mechanism on the floor together (h.drop_to_floor on every part at once). The mesh check measures "
+                       "meshing teeth through the loop and fails a pair set too close or too far apart.", ""]
+    if role == "motion":
+        return head + ["Take every speed from the sheet, do not choose them: spin the driver with "
+                       f"m.spin(parts['{sheet['driver']}'], rpm={sheet['rpm']}"
+                       f"{', reverse=True' if sheet['direction'] == 'clockwise' else ''}) (a positive turn is "
+                       "counterclockwise seen from the front), then m.mesh_drive(driver, driven) along every mesh and "
+                       "m.mesh_drive(gear, shaft, ratio=1, same_direction=True) for a part fixed to a shaft. The loop "
+                       "length is chosen by itself so every part ends where it began.", ""]
+    return head + ["## This is a mechanism: judge tooth shape and meshing first",
+                   "The geometric checks include the mesh check (teeth_clear, teeth_engaged, centre_distance, "
+                   "speed_ratio, no_clashes), measured at 12 moments across the loop. view_renders ends with the "
+                   "motion strip. Compare the teeth with the reference photos: involute flanks, the right tooth "
+                   "count and depth, rims and hubs in proportion. A pair that cuts into or floats off its mate goes "
+                   "to `assembly`; a wrong speed or direction to `motion`.", ""]
+
+
 def _lead_part(plan, spec):
     """The model's main part: the largest by its planned size among the parts a builder writes. It
     decides how the whole model looks, so it is written on the stronger model. None for a scene (its
@@ -1234,7 +1474,7 @@ def _lead_part(plan, spec):
 
 
 async def _build_parts(rnd, todo, notes, library, prev_dir):
-    ready = set(asset_parts(rnd.plan))
+    ready = set(asset_parts(rnd.plan)) | set(tool_parts(rnd.plan))  # no builder: catalogue models, part tools
     await _measure_asset_parts(rnd, [p for p in todo if p in ready])
     todo = [p for p in todo if p not in ready]
     lead_model = str(config.get("loop", "lead_builder_model", "") or "")
@@ -1290,9 +1530,10 @@ async def _build_parts(rnd, todo, notes, library, prev_dir):
 
 
 async def _assemble(rnd, notes):
-    lines = [f"Write the assembly for version {rnd.number}.", "", "## Plan", _json(rnd.plan), "",
+    lines = [f"Write the assembly for version {rnd.number}.", "", "## Plan", _json(_without_seeds(rnd.plan)), "",
              "## Spec dimensions (the finished bounding box)", _json(rnd.spec.get("dimensions")), "",
              "## Measured size of each part in its own frame", _json(rnd.part_reports), ""]
+    lines += _mechanism_lines(rnd, "assembly")
     if notes:
         lines += _notes_lines(rnd, notes)
     if rnd.files.exists("assembly.py"):
@@ -1378,6 +1619,7 @@ async def _animate(rnd, notes):
              "## What the spec asks for",
              _json({k: rnd.spec.get(k) for k in ("object", "summary", "dimensions", "use", "motion")}), "",
              "## Parts (the keys of `parts` in animate(parts)) and where the assembler put them", _json(parts), ""]
+    lines += _mechanism_lines(rnd, "motion")
     if notes:
         lines += _notes_lines(rnd, notes)
     if rnd.files.exists("motion.py"):
@@ -1392,8 +1634,10 @@ async def _final_build(rnd):
     if not steps:
         return {"ok": False, "error": "no part has working code", "failed_step": ""}
     blend = rnd.files.path("model.blend")
+    sheet = (rnd.spec or {}).get("mechanism")
+    pairs = mechanism.check_pairs(mechanism.layout(sheet)) if sheet else []
     steps += [{"kind": "save", "path": str(blend), "label": "save the .blend"},
-              blender.measure_step(),
+              blender.measure_step(), *([blender.mesh_check_step(pairs)] if pairs else []),
               {"kind": "export", "dir": str(rnd.files.path("exports")), "basename": rnd.project, "label": "export"}]
     with runner.acting("assembler", rnd.project, f"building and checking v{rnd.number}", "full_build") as act:
         result = await blender.run_job_async(steps)
@@ -1405,6 +1649,13 @@ async def _final_build(rnd):
     measure = result.outputs.get("measure") or {}
     rnd.files.write("measure.json", _json(measure))
     found = checks.evaluate(measure, at.check_spec(rnd))
+    if pairs:
+        mesh = result.outputs.get("mesh_check") or {}
+        rnd.files.write("mesh_check.json", _json(mesh))
+        found["gates"].pop("no_floaters", None)  # gears on shafts are shown running, not resting on anything
+        for name, g in checks.mesh_gates(mesh).items():
+            found["gates"][name] = {"pass": g["pass"], "detail": g["detail"]}
+        found["passed"] = all(g["pass"] for g in found["gates"].values())
     if missing:
         found["warnings"].append(f"parts missing from this version: {', '.join(missing)}")
     rnd.files.write("checks.json", _json(found))
@@ -1466,7 +1717,8 @@ async def _critic(rnd, outcome, last_review, prev_dir=None):
     if not at.shell_template(plan=rnd.plan):
         lines += ["Before any material change, call inspect_materials: it reads what every material really is. "
                   "Drop a change it shows is already set.", ""]
-    if at.has_motion(rnd.spec):
+    lines += _mechanism_lines(rnd, "review")
+    if at.has_motion(rnd.spec) and not rnd.spec.get("mechanism"):
         lines += ["## This model moves",
                   f"The spec's motion entry: {_json(rnd.spec.get('motion'))}. view_renders ends with the motion "
                   "strip: frames across one loop, from the side close up on the biggest spinning wheel, then a "

@@ -87,8 +87,24 @@ class ModelGen:
 
     def request(self, object, **options):
         """Queue a job; returns it at once. options: notes, size {w, d, h, unit}, references,
-        request_key, outputs, style, camera, reuse, max_versions, min_score, budget_usd."""
-        return self._call("POST", "/v1/jobs", {"object": object, "client": self.client, **options})
+        request_key, outputs, style, camera, angle, colours, mechanism, reuse, max_versions,
+        min_score, budget_usd. object may be None when a mechanism is given."""
+        body = {"client": self.client, **options}
+        if object:
+            body["object"] = object
+        return self._call("POST", "/v1/jobs", body)
+
+    def parts(self):
+        """Every part type ModelGen's part tools build, with its fields, units, ranges and defaults."""
+        return self._call("GET", "/v1/parts")
+
+    def mechanism(self, mechanism, timeout=1800, poll=5, **options):
+        """A mechanism built exactly from its numbers (no agents, a few minutes), waited for.
+        Example: mg.mechanism({"parts": [{"name": "pinion", "type": "spur_gear", "module": 2,
+        "teeth": 12, "meshes_with": "wheel"}, {"name": "wheel", "type": "spur_gear", "module": 2,
+        "teeth": 24}], "rpm": 20}, outputs=["motion", "game"], style="explainer")."""
+        job = self.request(None, mechanism=mechanism, **options)
+        return job if job["status"] in FINISHED else self.wait(job["id"], timeout, poll)
 
     def job(self, job_id):
         return self._call("GET", f"/v1/jobs/{job_id}")

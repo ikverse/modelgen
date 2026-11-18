@@ -66,7 +66,7 @@ def motion_reference():
 def has_motion(spec):
     """Whether the spec asks for motion: wheels to turn, a travel speed, or smoke and steam."""
     m = (spec or {}).get("motion") or {}
-    return bool(m.get("wheels") or m.get("effects") or m.get("speed_kmh"))
+    return bool(m.get("wheels") or m.get("effects") or m.get("speed_kmh") or (spec or {}).get("mechanism"))
 
 
 # --- shell objects (a car is one continuous skin built from a sheet) -----------------------
@@ -84,9 +84,11 @@ NOT_CAR_WORDS = re.compile(r"\b(trucks?|pickups?|lorr(y|ies)|motorbikes?|motorcy
 
 
 def looks_like_car(obj):
-    """Whether a spec's object names a car body (a car, coupe, SUV, van...), not a truck, a bike or a
-    car accessory such as a car seat."""
+    """Whether a spec's object names a car body (a car, coupe, SUV, van...), not a truck, a bike, a
+    car accessory such as a car seat, or a part of one ("car engine piston" is a mechanical part)."""
     text = str(obj or "")
+    if families.mechanical_word(text):
+        return False
     return bool(CAR_WORDS.search(text)) and not NOT_CAR_WORDS.search(text)
 
 
@@ -514,6 +516,36 @@ def architect_tools(sink, library=None, assets=False, features=None, budget=None
 
 
 # --- casting and research (before the spec) ---------------------------------------------
+
+MECHANISM_SCHEMA = {"type": OBJ, "properties": {
+    "mechanism": {"type": OBJ, "description": "{parts: [{name, type, ...numbers, meshes_with, on_shaft, at}], "
+                                              "driver, rpm, direction}"},
+    "custom_parts": {"type": "array", "items": {"type": OBJ, "properties": {
+        "name": {"type": "string"}, "description": {"type": "string"}}, "required": ["name", "description"]},
+        "description": "parts the request needs that no part tool makes (a housing, a bracket); [] when none"},
+    "notes": {"type": "string", "description": "what you chose and why, in a sentence or two"}},
+    "required": ["mechanism"]}
+
+
+def engineer_tools(sink):
+    """submit_mechanism: the sheet is checked by the same code the part tools use (tools.mechanism);
+    a sheet that cannot be built comes back with the field named, to fix and submit again."""
+    from . import mechanism
+
+    def submit(args):
+        try:
+            sheet, assumed = mechanism.clean(args.get("mechanism") or {})
+        except mechanism.MechanismError as exc:
+            return {"ok": False, "error": str(exc)}
+        custom = [c for c in (args.get("custom_parts") or []) if isinstance(c, dict) and c.get("name")]
+        sink.update(mechanism=sheet, assumed=assumed, custom=custom, notes=str(args.get("notes") or ""))
+        return {"ok": True, "parts": [p["name"] for p in sheet["parts"]], "filled_in": assumed,
+                "sizes_mm": mechanism.size_mm(sheet)}
+
+    return [AgentTool("submit_mechanism", "Submit the mechanism sheet. It is checked at once: a mistake comes back "
+                      "with the field named; fix it and submit again. Returns what was filled in by default.",
+                      MECHANISM_SCHEMA, submit)]
+
 
 def caster_tools(sink, ids):
     """choose: the caster names the ready-made model that is the object asked for, or "none"."""
@@ -1033,12 +1065,18 @@ def animator_tools(rnd):
 
 # --- critic and librarian ---------------------------------------------------------------
 
+MECHANICAL_RUBRIC_FILE = config.PACKAGE / "rubric_mechanical.yaml"
+
+
 def rubric_file(plan=None, spec=None):
-    """The rubric a version is scored by: a shell template's own (rubric_car.yaml); the game rubric
-    for a game asset (the spec's use is game); else rubric.yaml."""
+    """The rubric a version is scored by: a shell template's own (rubric_car.yaml); a mechanical
+    part's (rubric_mechanical.yaml: teeth, meshing, motion); the game rubric for a game asset (the
+    spec's use is game); else rubric.yaml."""
     shell = shell_template(plan=plan)
     if shell in config.SHELL_RUBRICS:
         return config.SHELL_RUBRICS[shell]
+    if families.of(spec) == "mechanical" and MECHANICAL_RUBRIC_FILE.is_file():
+        return MECHANICAL_RUBRIC_FILE
     if str((spec or {}).get("use") or "").lower() == "game" and config.GAME_RUBRIC_FILE.is_file():
         return config.GAME_RUBRIC_FILE
     return config.RUBRIC_FILE

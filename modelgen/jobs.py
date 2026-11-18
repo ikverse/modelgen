@@ -22,11 +22,13 @@ from pathlib import Path
 
 from . import config, db, pipeline, runner, uploads
 from .tools import agent_tools as at
-from .tools import asset_catalog, blender
+from .tools import asset_catalog, blender, mechanism
 
-OUTPUTS = ("game", "full", "views")
-STYLES = ("realistic", "flat")
+OUTPUTS = ("game", "full", "views", "motion")
+STYLES = ("realistic", "flat", "explainer")
 CAMERAS = ("persp", "ortho")
+ANGLES = ("front", "front34", "side")
+MOTION_TIMEOUT_S = 1800
 CLIENT = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 USAGE_RETRY_S = 15 * 60       # how long the queue waits after the Claude usage limit before trying again
 IDLE_S = 5                    # how often an idle worker looks again (it is also woken by a new job)
@@ -35,7 +37,7 @@ VIEWS_SIZE = 1024
 VIEWS_TIMEOUT_S = 1800
 MAX_REFERENCES = 4
 DEFAULTS = {"outputs": ["game", "full"], "style": "realistic", "camera": "persp", "reuse": True,
-            "max_versions": 2, "min_score": 70}
+            "max_versions": 2, "min_score": 70, "angle": "front"}
 
 BASE_URL = None  # set by the server once it knows its port; file links are absolute so any program can fetch them
 _wake = None
@@ -104,7 +106,15 @@ def clean_request(payload):
     """The job's settings from a POST /v1/jobs body, with the defaults filled in. Raises JobError."""
     if not isinstance(payload, dict):
         raise JobError("send a JSON object")
+    sheet, assumed = None, []
+    if payload.get("mechanism") not in (None, "", {}):
+        try:
+            sheet, assumed = mechanism.clean(payload["mechanism"])
+        except mechanism.MechanismError as exc:
+            raise JobError(f"mechanism: {exc}")
     obj = " ".join(str(payload.get("object") or "").split())
+    if not obj and sheet:
+        obj = mechanism.describe(sheet)
     if not obj:
         raise JobError("object is required: what to make, in a few words (\"fire hydrant\")")
     if len(obj) > 200:
@@ -130,6 +140,22 @@ def clean_request(payload):
     key = payload.get("request_key")
     if key is not None and (not isinstance(key, str) or not 0 < len(key) <= 200):
         raise JobError("request_key must be a string of 1 to 200 characters")
+    angle = payload.get("angle") or DEFAULTS["angle"]
+    if angle not in ANGLES:
+        raise JobError(f"angle must be one of {', '.join(ANGLES)}")
+    colours = payload.get("colours") or {}
+    if not isinstance(colours, dict):
+        raise JobError('colours must be {"part name": "#rrggbb"}')
+    for name, value in colours.items():
+        text = str(value).strip().lower()
+        if not re.match(r"^#[0-9a-f]{6}$", text):
+            raise JobError(f"colours: {name} must be #rrggbb")
+        colours[name] = text
+    if sheet:
+        unknown = sorted(set(colours) - {p["name"] for p in sheet["parts"]})
+        if unknown:
+            raise JobError(f"colours names {', '.join(unknown)}, which is not a part of the mechanism")
+        sheet["colours"] = {**sheet["colours"], **colours}
     req = {"object": obj, "notes": notes, "size": _size(payload.get("size")),
            "outputs": list(dict.fromkeys(outputs)), "style": style, "camera": camera,
            "reuse": bool(payload.get("reuse", DEFAULTS["reuse"])),
@@ -137,7 +163,9 @@ def clean_request(payload):
            "min_score": _number(payload.get("min_score", DEFAULTS["min_score"]), "min_score", 0, 100),
            "budget_usd": (None if payload.get("budget_usd") in (None, "") else
                           round(_number(payload["budget_usd"], "budget_usd", 0.01, 100), 2)),
-           "references": [str(r) for r in references]}
+           "references": [str(r) for r in references], "angle": angle, "colours": colours}
+    if sheet:
+        req["mechanism"], req["assumed"] = sheet, assumed
     return client, key, req
 
 
@@ -165,7 +193,7 @@ def _reference(ref):
 
 def _same(a, b):
     keys = ("object", "notes", "size", "outputs", "style", "camera", "reuse", "max_versions", "min_score",
-            "budget_usd", "references")
+            "budget_usd", "references", "angle", "colours", "mechanism")
     return all(a.get(k) == b.get(k) for k in keys)
 
 
@@ -218,13 +246,15 @@ def version_files(project, number, outputs=OUTPUTS, style=None, camera=None):
         exports = sorted(p for p in (folder / "exports").iterdir() if p.is_file()) if (folder / "exports").is_dir() else []
         found += exports + ([folder / "model.blend"] if (folder / "model.blend").is_file() else [])
         main["full"] = next((p for p in exports if p.suffix == ".glb"), None)
-    if "views" in outputs:
-        sets = ([folder / "views" / f"{style}-{camera}"] if style and camera else
-                sorted(p for p in (folder / "views").iterdir() if p.is_dir()) if (folder / "views").is_dir() else [])
-        for views in (s for s in sets if s.is_dir()):
-            found += sorted(p for p in views.iterdir() if p.is_file())
-            if style and camera and (views / "views.json").is_file():
-                main["views"] = views / "views.json"
+    for output, index in (("views", "views.json"), ("motion", "motion.json")):
+        if output not in outputs:
+            continue
+        sets = ([folder / output / f"{style}-{camera}"] if style and camera else
+                sorted(p for p in (folder / output).iterdir() if p.is_dir()) if (folder / output).is_dir() else [])
+        for made in (s for s in sets if s.is_dir()):
+            found += sorted(p for p in made.iterdir() if p.is_file())
+            if style and camera and (made / index).is_file():
+                main[output] = made / index
     files = {p.relative_to(folder).as_posix(): {"url": _link(p), "path": str(p.resolve())} for p in found}
     return {"files": files, "main": {k: p.relative_to(folder).as_posix() for k, p in main.items() if p}}
 
@@ -234,15 +264,29 @@ def source_of(project, number):
         return "car_generator"
     if pipeline.library_asset(project, number) is not None:
         return "ready_made"
+    if pipeline.parts_sheet(project, number) is not None:
+        return "part_tools"
     return "built"
+
+
+def _mechanism_record(project, number):
+    """A version's mechanism.json (the sheet, what was filled in, its key), or {}."""
+    path = pipeline.version_dir(project, number) / "mechanism.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except ValueError:
+        return {}
 
 
 def public(job):
     out = {k: job.get(k) for k in ("id", "client", "request_key", "object", "status", "project", "version",
                                    "score", "passed", "source", "error", "retry_at", "created", "started",
                                    "finished")}
-    out["request"] = {k: v for k, v in job["request"].items() if k != "reference_ids"}
+    out["request"] = {k: v for k, v in job["request"].items() if k not in ("reference_ids", "assumed")}
     out["notes"] = [n for n in (job.get("notes") or "").split("\n") if n]
+    out["assumed"] = list(job["request"].get("assumed") or [])
+    if job.get("project") and job.get("version") and not out["assumed"]:
+        out["assumed"] = list(_mechanism_record(job["project"], job["version"]).get("assumed") or [])
     out["step"] = job.get("step") or ""
     project = job.get("project")
     if job["status"] == "building" and project:
@@ -258,6 +302,19 @@ def public(job):
         req = job["request"]
         made = version_files(project, job["version"], req["outputs"], req["style"], req["camera"])
         out["files"], out["main"] = made["files"], made["main"]
+        record = _mechanism_record(project, job["version"])
+        if record:
+            out["mechanism"] = {"key": record.get("key"), "sizes_mm": record.get("sizes_mm"),
+                                "colours": record.get("colours")}
+    return out
+
+
+def parts_catalogue():
+    """GET /v1/parts: every part type the tools build, with its fields, units, ranges and defaults."""
+    out = mechanism.catalogue()
+    out["outputs"] = {"motion": "a seamless transparent loop of the mechanism working, motion/<style>-<camera>/",
+                      "views": "the angle pictures", "game": "game-ready files", "full": "full-detail files"}
+    out["styles"], out["angles"] = list(STYLES), list(ANGLES)
     return out
 
 
@@ -497,6 +554,8 @@ def _new_project(job):
         options["budget_usd"] = req["budget_usd"]
     if req.get("reference_ids"):
         options["references"] = req["reference_ids"]
+    if req.get("mechanism"):
+        options["mechanism"], options["assumed"] = req["mechanism"], req.get("assumed") or []
     proj = db.create_project(req["object"][:80], text, options=options)
     db.add_event("project_created", project=proj["name"], data={"title": proj["title"], "client": job["client"]})
     db.update_job(job["id"], project=proj["name"])
@@ -507,7 +566,14 @@ async def _build(job):
     job_id, req = job["id"], job["request"]
     if not config.blender_path():
         raise RuntimeError(f"Blender is not installed on this PC ({config.INSTALL_HINT})")
-    if req["reuse"] and not job.get("project"):
+    if req["reuse"] and not job.get("project") and req.get("mechanism"):
+        hit = exact_reuse(req["mechanism"])  # the same numbers: the same model, no agent needed
+        if hit:
+            project, number = hit
+            db.update_job(job_id, project=project, source="existing")
+            await _finish(job_id, project, number, source="existing")
+            return
+    elif req["reuse"] and not job.get("project"):
         db.update_job(job_id, step="looking for a model made before")
         hit = await _reuse(job)
         if hit:
@@ -560,11 +626,19 @@ async def _finish(job_id, project, number, source):
         db.add_event("accepted", project=project, data={"version": number, "by": job["client"]})
     score = v.get("score")
     passed = (score >= req["min_score"]) if score is not None else bool(v.get("passed"))
+    colours = {**(_mechanism_record(project, number).get("colours") or {}), **(req.get("colours") or {})}
     if "views" in req["outputs"]:
         db.update_job(job_id, step="rendering the angle pictures", project=project, version=number)
-        error = await render_views(project, number, req["style"], req["camera"])
+        error = await render_views(project, number, req["style"], req["camera"],
+                                   **({"colours": colours} if colours else {}))
         if error:
             db.update_job(job_id, notes=_note(db.get_job(job_id), f"the angle pictures could not be made: {error}"))
+    if "motion" in req["outputs"]:
+        db.update_job(job_id, step="rendering the motion", project=project, version=number)
+        error = await render_motion(project, number, req["style"], req["camera"], req.get("angle", DEFAULTS["angle"]),
+                                    colours)
+        if error:
+            db.update_job(job_id, notes=_note(db.get_job(job_id), f"the motion pictures could not be made: {error}"))
     if _cancelled(job_id):
         return
     db.update_job(job_id, status="done", step="", project=project, version=number, score=score, passed=passed,
@@ -572,7 +646,17 @@ async def _finish(job_id, project, number, source):
     db.add_event("api_job_done", project=project, data={"job": job_id, "version": number, "passed": passed})
 
 
-async def render_views(project, number, style="realistic", camera="persp"):
+def exact_reuse(sheet):
+    """An accepted model built by the part tools from exactly these numbers: (project, version) or None."""
+    want = mechanism.key(sheet)
+    for p in db.list_projects():
+        number = p.get("accepted_version")
+        if number and _mechanism_record(p["name"], number).get("key") == want and db.get_version(p["name"], number):
+            return p["name"], number
+    return None
+
+
+async def render_views(project, number, style="realistic", camera="persp", colours=None):
     """The transparent angle pictures of one version into v<n>\\views\\<style>-<camera>, with
     views.json. Made once per style and camera. Returns None, or what went wrong."""
     folder = pipeline.version_dir(project, number)
@@ -583,9 +667,10 @@ async def render_views(project, number, style="realistic", camera="persp"):
     if not blend.is_file():
         return "this version has no .blend to render"
     samples = int(config.get("render", "samples", 96))
-    runs = [blender.asset_views_step(out, camera, style, ("views", "shadows"), size=VIEWS_SIZE, samples=samples),
+    runs = [blender.asset_views_step(out, camera, style, ("views", "shadows"), size=VIEWS_SIZE, samples=samples,
+                                     colours=colours),
             blender.asset_views_step(out, camera, style, ("turntable",), turntable=TURNTABLE_FRAMES,
-                                     size=VIEWS_SIZE, samples=max(16, samples // 2))]
+                                     size=VIEWS_SIZE, samples=max(16, samples // 2), colours=colours)]
     made = []
     with runner.acting("critic", project, f"rendering angle pictures of v{number}", "render") as act:
         for step in runs:
@@ -603,4 +688,82 @@ async def render_views(project, number, style="realistic", camera="persp"):
               "shadows": camera == "persp",
               "files": sorted(p.name for p in out.iterdir() if p.suffix == ".png")}
     (out / "views.json").write_text(json.dumps(record, indent=1), encoding="utf-8")
+    return None
+
+
+def _loop_report(folder):
+    path = folder / "motion_report.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except ValueError:
+        return {}
+
+
+async def render_motion(project, number, style="explainer", camera="persp", angle="front34", colours=None):
+    """The model working, as a seamless loop of transparent pictures in v<n>\\motion\\<style>-<camera>:
+    frame_000.png ..., motion.json (frames, frame rate, how to repeat them) and parts.json (where each
+    part is in every frame). A loop of more than 24 frames is split over two Blender runs at once.
+    Returns None, or what went wrong."""
+    folder = pipeline.version_dir(project, number)
+    out = folder / "motion" / f"{style}-{camera}"
+    index = out / "motion.json"
+    if index.is_file():
+        try:
+            old = json.loads(index.read_text(encoding="utf-8"))
+            if old.get("angle") == angle and (style != "explainer" or not colours
+                                              or all(old.get("colours", {}).get(k) == v for k, v in colours.items())):
+                return None
+        except ValueError:
+            pass
+        for old in out.glob("*"):
+            old.unlink()
+    blend = folder / "model.blend"
+    if not blend.is_file():
+        return "this version has no .blend to render"
+    report = _loop_report(folder)
+    if not report and not (folder / "motion.py").is_file():
+        return "this model does not move; ask for views instead"
+    frames = int(report.get("frames") or 0)
+    samples = max(16, int(config.get("render", "samples", 96)) // 2)
+    if frames > 24:
+        half = frames // 2
+        runs = [(0, half - 1), (half, frames - 1)]
+    else:
+        runs = [(None, None)]
+    steps = [blender.motion_frames_step(out, camera, style, angle, a, b, size=VIEWS_SIZE, samples=samples,
+                                        colours=colours) for a, b in runs]
+    with runner.acting("critic", project, f"rendering the motion of v{number}", "render") as act:
+        results = await asyncio.gather(*(blender.run_job_async([s], open_blend=blend, timeout=MOTION_TIMEOUT_S)
+                                         for s in steps))
+        act.ok = all(r.ok for r in results)
+    for r in results:
+        if not r.ok:
+            info = r.summary()
+            return (info.get("traceback") or info.get("error") or "Blender failed")[-800:]
+    made = [m for r in results for m in r.outputs.get("motion_frames") or []]
+    where = {}
+    for m in made:
+        where.update({int(k): v for k, v in m["parts"].items()})
+    first = made[0]
+    loop = report.get("mechanism") or (json.loads(first["loop"]) if first.get("loop") else {})
+    count = first.get("frames") or len(where)
+    fps = first.get("fps") or 24
+    names = [f"frame_{i:03d}.png" for i in sorted(where)]
+    (out / "parts.json").write_text(json.dumps(
+        {"size_px": first.get("size_px"), "frames": [{"frame": i, "file": f"frame_{i:03d}.png", "parts": where[i]}
+                                                     for i in sorted(where)]}, indent=1), encoding="utf-8")
+    record = {"style": style, "camera": camera, "angle": angle, "size_px": first.get("size_px"), "fps": fps,
+              "frames": count, "loop_seconds": round(count / fps, 4), "view": first.get("view"),
+              "repeat": f"play frame_000 to frame_{count - 1:03d} in order, then start again at frame_000: the "
+                        "loop is seamless (the frame after the last is the first)",
+              "mode": loop.get("mode", "spin"), "driver": loop.get("driver"),
+              "driver_rpm": loop.get("driver_rpm") or loop.get("driver_rpm_peak"),
+              "parts": loop.get("parts") or {}, "colours": first.get("colours") or {}, "files": names}
+    if loop.get("mode") == "spin" and loop.get("driver_turns"):
+        record["driver_turns_per_loop"] = loop["driver_turns"]
+        record["note"] = ("the loop is the shortest stretch after which every part looks as it started (a plain "
+                          "gear repeats every tooth), so it is short: repeat it as often as the scene needs")
+    if loop.get("note"):
+        record["warning"] = loop["note"]
+    index.write_text(json.dumps(record, indent=1), encoding="utf-8")
     return None

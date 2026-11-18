@@ -336,6 +336,16 @@ def test_views_are_made_for_the_accepted_version(api, fake_build, monkeypatch):
     assert not any(k.startswith("exports/") for k in out["files"])  # "full" was not asked for
 
 
+def test_motion_output_the_explainer_style_and_an_angle_are_accepted(api):
+    job = api.post("/v1/jobs", json={**HYDRANT, "outputs": ["motion", "views"], "style": "explainer",
+                                     "angle": "side"}).json()
+    assert job["request"]["angle"] == "side" and job["request"]["style"] == "explainer"
+    bad = api.post("/v1/jobs", json={**HYDRANT, "angle": "below"})
+    assert bad.status_code == 400 and "angle" in bad.json()["detail"]
+    assert api.post("/v1/jobs", json={**HYDRANT, "colours": {"body": "red"}}).status_code == 400
+    assert "spur_gear" in api.get("/v1/parts").json()["types"]
+
+
 # --- the copy-in client ----------------------------------------------------------------------
 
 def test_the_client_reads_the_key_and_reports_a_missing_modelgen(tmp_path):

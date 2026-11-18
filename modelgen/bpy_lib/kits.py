@@ -11,6 +11,8 @@ the right way, so a builder starts from a correct shape and adds its own details
   are built from that one layout so they fit; `roof` and `curtain_tower` finish the building.
 - wheeled vehicles that are not cars: `wheel`, `wheel_arches`, `axle_positions`.
 - scene props: `tree`, `bench`, `fence`, `lamp_post`.
+- mechanical parts: `spur_gear`, `helical_gear`, `ring_gear`, `rack`, `bevel_gear` with true involute
+  teeth from their real numbers, `shaft`, and `gear_pair_layout` to place a meshing pair exactly.
 
 Conventions are the helpers': metres, Z up, the front faces -Y. Kit meshes carry placeholder
 materials, one per named slot (listed in each function); the materials step fills a slot with
@@ -41,6 +43,8 @@ SLOT_COLOURS = {
     "leaves": (0.22, 0.45, 0.20), "wood": (0.50, 0.33, 0.18), "post": (0.85, 0.85, 0.83),
     "rail": (0.85, 0.85, 0.83), "lamp": (0.95, 0.93, 0.80), "body": (0.62, 0.64, 0.68),
     "lamp_red": (0.70, 0.05, 0.05), "lamp_amber": (0.95, 0.60, 0.05), "lamp_clear": (0.92, 0.92, 0.88),
+    "tooth_face": (0.66, 0.67, 0.69), "hub": (0.56, 0.57, 0.59), "bore": (0.75, 0.75, 0.76),
+    "shaft": (0.78, 0.78, 0.79),
 }
 
 # the public functions of each kind of object (so a prompt can show only the kit that fits)
@@ -50,6 +54,7 @@ KIT_FUNCTIONS = {
     "building": ["openings", "walls", "windows", "door", "roof", "curtain_tower"],
     "vehicle": ["vehicle_body", "hood", "wheel", "wheel_arches", "axle_positions", "pocket"],
     "scene": ["tree", "bench", "fence", "lamp_post"],
+    "mechanical": ["spur_gear", "helical_gear", "ring_gear", "rack", "bevel_gear", "shaft", "gear_pair_layout"],
 }
 
 # face -> (axis of u, axis of v, axis the face looks along, which way it looks)
@@ -1397,3 +1402,524 @@ def lamp_post(height=4.0, name="lamp_post"):
     _add_revolved(bm, [(0, 0), (r * 3.8, 0), (r * 3.6, head * 0.05), (r * 0.8, head * 0.2), (r * 0.5, head * 0.28),
                        (0, head * 0.28)], 10, 0, offset=(0, 0, pole_top + head * 0.72))
     return _new_object(bm, name, ["metal", "lamp"], no_bevel=True)
+
+
+# --- mechanical parts: gears and shafts ------------------------------------------------------
+#
+# Every number is the real one in metres (module 2 mm = 0.002) and degrees. A gear's axis is its
+# local Z through the origin, tooth 0 is centred on local +X, and it is one closed solid. The tooth
+# maths is modelgen\tools\mechanism.py (loaded here), the same the layout and the checks use.
+# Slots: "tooth_face" (the teeth), "hub" (the body's faces and the hub), "bore" (the bore and its
+# keyway); a shaft has "shaft". Each part carries its numbers as JSON in obj["mg_gear"], which the
+# motion helpers and the mesh check read.
+
+GEAR_KEY = "mg_gear"
+_MECH = []
+
+
+def _mech():
+    """modelgen\\tools\\mechanism.py, loaded once by its path (it uses nothing but math)."""
+    if not _MECH:
+        import importlib.util
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools", "mechanism.py")
+        spec = importlib.util.spec_from_file_location("mg_mechanism_maths", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _MECH.append(module)
+    return _MECH[0]
+
+
+def _tag(obj, **info):
+    import json
+    obj[GEAR_KEY] = json.dumps({k: (round(v, 7) if isinstance(v, float) else v) for k, v in info.items()})
+    return obj
+
+
+def _unwrapped_angles(pts):
+    out, last = [], None
+    for x, y in pts:
+        a = math.atan2(y, x)
+        if last is not None:
+            while a < last - 1e-9:
+                a += 2 * math.pi
+        out.append(a)
+        last = a
+    return out
+
+
+def _keyway_radius(bore_r, width, depth, centre=math.pi / 2):
+    """r(angle) of a bore with a rectangular key slot centred on `centre`, and its four corner angles."""
+    w = width / 2
+    top = bore_r + depth
+    c_top = math.atan2(w, top)
+    c_low = math.asin(min(0.999, w / bore_r))
+
+    def radius(a):
+        d = (a - centre + math.pi) % (2 * math.pi) - math.pi
+        if abs(d) <= c_top:
+            return top / math.cos(d)
+        if abs(d) <= c_low:
+            return w / math.sin(abs(d))
+        return bore_r
+
+    return radius, [centre - c_low, centre - c_top, centre + c_top, centre + c_low]
+
+
+def _snap(angles, targets):
+    """Move the nearest angle onto each target (the corners of a key slot), keeping the order."""
+    out = list(angles)
+    n = len(out)
+    for t in targets:
+        best = min(range(n), key=lambda i: abs((out[i] - t + math.pi) % (2 * math.pi) - math.pi))
+        lo = out[best - 1] if best > 0 else -math.inf
+        hi = out[best + 1] if best < n - 1 else math.inf
+        cand = out[best] + ((t - out[best] + math.pi) % (2 * math.pi) - math.pi)
+        if lo < cand < hi:
+            out[best] = cand
+    return out
+
+
+def _outline_ring(pts, z, inset=0.0, twist=0.0):
+    c, s = math.cos(twist), math.sin(twist)
+    ring = []
+    for x, y in pts:
+        f = 1 - inset / max(math.hypot(x, y), 1e-9)
+        px, py = x * f, y * f
+        ring.append((px * c - py * s, px * s + py * c, z))
+    return ring
+
+
+def _circle_ring(angles, z, radius):
+    out = []
+    for a in angles:
+        r = radius(a) if callable(radius) else radius
+        out.append((r * math.cos(a), r * math.sin(a), z))
+    return out
+
+
+def _same_ring(a, b):
+    return len(a) == len(b) and max(abs(p[k] - q[k]) for p, q in zip(a, b) for k in range(3)) < 1e-9
+
+
+def _zip(bm, a, b, slot, pa, pb):
+    """Close the band between two rings of different point counts with triangles, walking round both
+    by angle: every triangle joins neighbours in angle, so none folds over another (a straight flank
+    has several points at one angle; pairing points by index would cross there). pa and pb are the
+    rings' points in full precision (a vertex keeps single precision, which can turn a straight
+    flank's equal angles into a step backwards)."""
+    aa = _unwrapped_angles([(p[0], p[1]) for p in pa])
+    raw = [math.atan2(p[1], p[0]) for p in pb]
+    n, m = len(a), len(b)
+    start = aa[0]
+    tau = 2 * math.pi
+    below = [start - ((start - x) % tau) for x in raw]  # each b's angle at or just below a's start
+    j0 = max(range(m), key=lambda j: below[j])  # the b nearest a's start without passing it
+    walk = [below[j0]]
+    for k in range(1, m + 1):
+        step = (raw[(j0 + k) % m] - raw[(j0 + k - 1) % m] + math.pi) % tau - math.pi
+        walk.append(walk[-1] + max(0.0, step))  # points at one angle (a straight flank) step by 0, not a turn
+
+    def ang_a(k):
+        return aa[k % n] + tau * (k // n)
+
+    def ang_b(k):
+        return walk[min(k, m)]
+
+    steps = []  # ("a", i): triangle a_i, a_i+1, b_j; ("b", i, j): triangle a_i, b_j+1, b_j
+    i = j = 0
+    while i < n or j < m:
+        if j >= m or (i < n and ang_a(i + 1) <= ang_b(j + 1)):
+            steps.append(("a", i, j))
+            i += 1
+        else:
+            steps.append(("b", i, j))
+            j += 1
+    flat = max(abs(p[2] - pa[0][2]) for p in list(pa) + list(pb)) < 1e-9
+    if not flat:
+        for kind, i, j in steps:
+            tri = ((a[i % n], a[(i + 1) % n], b[(j0 + j) % m]) if kind == "a" else
+                   (a[i % n], b[(j0 + j + 1) % m], b[(j0 + j) % m]))
+            bm.faces.new(tri).material_index = slot
+        return
+    # a flat face: each fan of triangles round one b point is one flat polygon, so no sliver triangle
+    # (three points on one radius) is left for the outline to draw as an edge
+    first = next(k for k, s in enumerate(steps) if s[0] == "b")
+    order = steps[first + 1:] + steps[:first + 1]
+    poly = None
+    for kind, i, j in order:
+        if poly is None:
+            poly = [b[(j0 + j) % m], a[i % n]]
+        if kind == "a":
+            poly.append(a[(i + 1) % n])
+        else:
+            poly.append(b[(j0 + j + 1) % m])
+            bm.faces.new(poly).material_index = slot
+            poly = None
+
+
+def _lathe(rings, slots, name, slot_names):
+    """One closed solid from rings round the Z axis: each ring is bridged to the next and the last to
+    the first, with quads between rings of the same point count and triangles walked by angle
+    between rings of different counts (a toothed outline and a plain circle). slots[i] is the slot
+    index of the band from ring i to ring i + 1."""
+    bm = bmesh.new()
+    keep, keep_slots = [], []
+    for ring, slot in zip(rings, slots):  # drop a ring that repeats the one before (a zero chamfer)
+        if keep and _same_ring(ring, keep[-1]):
+            keep_slots[-1] = slot
+            continue
+        keep.append(ring)
+        keep_slots.append(slot)
+    verts = [[bm.verts.new(p) for p in ring] for ring in keep]
+    for j in range(len(verts)):
+        a, b = verts[j], verts[(j + 1) % len(verts)]
+        if len(a) != len(b):
+            _zip(bm, a, b, keep_slots[j], keep[j], keep[(j + 1) % len(keep)])
+            continue
+        n = len(a)
+        for i in range(n):
+            k = (i + 1) % n
+            f = bm.faces.new((a[i], a[k], b[k], b[i]))
+            f.material_index = keep_slots[j]
+    return _new_object(bm, name, slot_names, no_bevel=True)
+
+
+def _circle_angles(outline_count, start=0.0, least=48, most=160):
+    """Evenly spaced angles for the plain circles of a gear (rim, hub, bore)."""
+    m = max(least, min(most, outline_count // 3))
+    return [start + 2 * math.pi * i / m for i in range(m)]
+
+
+def _detail(detail, teeth=24):
+    """Points per flank, tip and root: fewer on a gear with many (small-looking) teeth."""
+    d = max(0.5, float(detail)) * math.sqrt(24.0 / max(int(teeth), 6))
+    return {"flank": max(3, min(7, round(5 * d))), "tip": 2, "root": max(2, min(4, round(3 * d)))}
+
+
+def _extrude_outline(pts, z0, z1):
+    """A closed prism of a 2D outline (a hole or a spoke window cutter)."""
+    bm = bmesh.new()
+    low = [bm.verts.new((x, y, z0)) for x, y in pts]
+    high = [bm.verts.new((x, y, z1)) for x, y in pts]
+    n = len(pts)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((low[i], low[j], high[j], high[i]))
+    bm.faces.new(list(reversed(low)))
+    bm.faces.new(high)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    me = bpy.data.meshes.new("cutter")
+    bm.to_mesh(me)
+    bm.free()
+    obj = bpy.data.objects.new("cutter", me)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def _web_cutters(r_in, r_out, depth, holes=0, spokes=0, phase=0.0):
+    """Cutters for lightening holes or the windows between spokes, through the web."""
+    cutters = []
+    if holes:
+        mid, size = (r_in + r_out) / 2, (r_out - r_in)
+        dia = min(0.62 * size, 0.8 * 2 * math.pi * mid / holes - 0.0005)
+        for i in range(holes):
+            a = phase + 2 * math.pi * i / holes
+            cutters.append(_extrude_outline(h.circle_points(dia / 2, 24, center=(mid * math.cos(a), mid * math.sin(a))),
+                                            -depth, depth))
+    if spokes:
+        margin = 0.08 * (r_out - r_in)
+        lo, hi = r_in + margin, r_out - margin
+        spoke = max(0.25 * (hi - lo), 0.18 * 2 * math.pi * lo / spokes)  # spoke width at the hub
+        for i in range(spokes):
+            a0 = phase + 2 * math.pi * i / spokes + math.pi / spokes
+            half_lo = math.pi / spokes - (spoke / 2) / lo
+            half_hi = math.pi / spokes - (spoke / 2) / hi
+            if half_lo <= 0.02:
+                continue
+            outer = [(hi * math.cos(a0 + t), hi * math.sin(a0 + t)) for t in (half_hi * (k / 4 - 1) for k in range(9))]
+            inner = [(lo * math.cos(a0 + t), lo * math.sin(a0 + t)) for t in (half_lo * (1 - k / 3) for k in range(7))]
+            cutters.append(_extrude_outline(outer + inner, -depth, depth))
+    return cutters
+
+
+def _gear_body(pts, width, bore, chamfer, hub, web, holes, spokes, keyway, twist_of, layers, name, rim_r):
+    """The solid of an external gear from its outline: teeth (chamfered at the tips), the body or a
+    recessed web between rim and hub, the hub and the bore with its key slot."""
+    w2 = width / 2
+    c = min(chamfer or 0.0, 0.3 * width)
+    TOOTH, HUB, BORE = 0, 1, 2
+    rings = [_outline_ring(pts, -w2, c, twist_of(-w2))]
+    slots = [TOOTH]
+    for i in range(layers + 1):  # the teeth, bottom to top (more rings along a helix)
+        z = -w2 + c + (width - 2 * c) * i / layers
+        rings.append(_outline_ring(pts, z, 0.0, twist_of(z)))
+        slots.append(TOOTH)
+    rings.append(_outline_ring(pts, w2, c, twist_of(w2)))
+    slots.append(HUB)
+    angles = _circle_angles(len(pts))
+    bore_r = bore / 2
+    radius, angles_bore = bore_r, angles
+    if keyway and bore_r > 0:
+        kw = keyway if isinstance(keyway, (list, tuple)) else (bore * 0.25, bore * 0.12)
+        radius, corners = _keyway_radius(bore_r, kw[0], kw[1])
+        angles_bore = _snap(angles, corners)
+    hub_r = hub[0] / 2 if hub else 0.0
+    hub_h = max(w2, hub[1] / 2) if hub else w2
+    recess = web is not None and web < width - 1e-9
+    if recess:
+        hub_r = hub_r or max(bore_r + 0.35 * (rim_r - bore_r), bore_r * 1.6)
+    if holes or spokes:
+        # rim, web and hub as three clean solids merged into one: drilling the full-detail body would
+        # slice every one of its faces
+        rings += [_circle_ring(angles, w2, rim_r), _circle_ring(angles, -w2, rim_r)]
+        slots += [HUB, HUB]
+        rim = _lathe(rings, slots, name, ["tooth_face", "hub", "bore"])
+        seg = 64
+        plain = [2 * math.pi * i / seg for i in range(seg)]
+        if keyway and bore_r > 0:
+            plain = _snap(plain, corners) if len(plain) > 8 else plain
+        hub_rings = [_circle_ring(plain, -hub_h, hub_r), _circle_ring(plain, hub_h, hub_r),
+                     _circle_ring(plain, hub_h, radius), _circle_ring(plain, -hub_h, radius)]
+        boss = _lathe(hub_rings, [HUB, HUB, BORE, HUB], name + "_hub", ["tooth_face", "hub", "bore"])
+        t = (web if recess else width) / 2
+        reach = 0.02 * (rim_r - hub_r)
+        disc = _lathe([_circle_ring(plain, -t, hub_r - reach), _circle_ring(plain, -t, rim_r + reach),
+                       _circle_ring(plain, t, rim_r + reach), _circle_ring(plain, t, hub_r - reach)],
+                      [HUB, HUB, HUB, HUB], name + "_web", ["tooth_face", "hub", "bore"])
+        inner = hub_r + 0.04 * (rim_r - hub_r)
+        cutters = _web_cutters(inner, rim_r, width, holes, spokes, phase=math.pi / max(holes or spokes, 1))
+        disc = _cut(disc, cutters, slot="hub")
+        h.boolean(rim, [disc, boss], "UNION")
+        rim.name = name
+        h.merge_by_distance(rim, 1e-7)
+        return rim
+    top = []  # (radius, z) steps from the rim inwards on the top face, before the bore
+    if recess:
+        top = [(rim_r, w2), (rim_r, web / 2), (hub_r, web / 2), (hub_r, hub_h)]
+    elif hub:
+        top = [(hub_r, w2), (hub_r, hub_h)]
+    for r, z in top:
+        rings.append(_circle_ring(angles, z, r))
+        slots.append(HUB)
+    rings.append(_circle_ring(angles_bore, hub_h, radius))
+    slots.append(BORE)
+    rings.append(_circle_ring(angles_bore, -hub_h, radius))
+    slots.append(HUB)
+    for r, z in reversed(top):
+        rings.append(_circle_ring(angles, -z, r))
+        slots.append(HUB)
+    return _lathe(rings, slots, name, ["tooth_face", "hub", "bore"])
+
+
+def _gear_period(teeth, keyway, holes, spokes):
+    """After how much of a turn the gear looks the same again: [1, n] is 1/n of a turn."""
+    if keyway:
+        return [1, 1]
+    marks = holes or spokes
+    return [1, math.gcd(int(teeth), int(marks)) if marks else int(teeth)]
+
+
+def spur_gear(module, teeth, width, bore=0.0, pressure_angle=20.0, shift=0.0, shortening=0.0, backlash=None,
+              chamfer=None, hub=None, web=None, holes=0, spokes=0, keyway=False, detail=1.0, name="spur_gear"):
+    """A spur gear with true involute teeth: module (tooth size; pitch diameter = module x teeth),
+    teeth, width (face width) and bore, all in metres. shift: the profile shift coefficient (a
+    pinion under 17 teeth needs one; gear_pair_layout gives it); shortening: the tip shortening a
+    pair with shifts needs (gear_pair_layout). backlash: the gap between meshing teeth (default 5
+    percent of the module); chamfer: on the tooth tips (default 10 percent). hub: (diameter, length)
+    of a boss round the bore; web: a thinner web between rim and hub (its thickness), with `holes`
+    lightening holes or `spokes` spokes in it; keyway: True (or (width, depth)) for a key slot.
+    Centred on the origin, axis Z, tooth 0 on +X. Slots: "tooth_face", "hub", "bore"."""
+    mc = _mech()
+    bl = 0.05 * module if backlash is None else backlash
+    pts = mc.outline(module, int(teeth), pressure_angle, 0.0, shift, bl, False, shortening, **_detail(detail, teeth))
+    circ = mc.circles(module, int(teeth), pressure_angle, 0.0, shift, False, shortening)
+    if (holes or spokes) and web is None:
+        web = 0.45 * width
+    obj = _gear_body(pts, width, bore, module * 0.1 if chamfer is None else chamfer, hub, web, holes, spokes,
+                     keyway, lambda z: 0.0, 1, name, circ["root"] - 1.6 * module)
+    return _tag(obj, type="spur_gear", module=module, teeth=int(teeth), pitch_radius=circ["pitch"],
+                tip_radius=circ["tip"], root_radius=circ["root"], base_radius=circ["base"], width=width,
+                shift=shift, pressure_angle=pressure_angle, period=_gear_period(teeth, keyway, holes, spokes))
+
+
+def helical_gear(module, teeth, width, bore=0.0, pressure_angle=20.0, helix_angle=20.0, hand="right",
+                 herringbone=False, shift=0.0, shortening=0.0, backlash=None, chamfer=None, hub=None, web=None,
+                 holes=0, spokes=0, keyway=False, detail=1.0, name="helical_gear"):
+    """A helical gear: as spur_gear, with the teeth running along a helix at helix_angle to the axis
+    (module is the normal module; the pitch diameter is module x teeth / cos(helix_angle)). hand:
+    "right" or "left"; meshing gears on parallel shafts have opposite hands. herringbone: two
+    opposite helices meeting in the middle (no end thrust). Slots: "tooth_face", "hub", "bore"."""
+    mc = _mech()
+    bl = 0.05 * module if backlash is None else backlash
+    pts = mc.outline(module, int(teeth), pressure_angle, helix_angle, shift, bl, False, shortening,
+                     **_detail(detail, teeth))
+    circ = mc.circles(module, int(teeth), pressure_angle, helix_angle, shift, False, shortening)
+    rate = math.tan(math.radians(helix_angle)) / circ["pitch"] * (1 if hand == "right" else -1)
+    layers = max(3, min(12, math.ceil(abs(rate) * width / (2 * math.pi / int(teeth) / 3))))
+    if herringbone and layers % 2:
+        layers += 1
+    if (holes or spokes) and web is None:
+        web = 0.45 * width
+    obj = _gear_body(pts, width, bore, module * 0.1 if chamfer is None else chamfer, hub, web, holes, spokes,
+                     keyway, lambda z: rate * (abs(z) if herringbone else z), layers, name,
+                     circ["root"] - 1.6 * module)
+    return _tag(obj, type="helical_gear", module=module, teeth=int(teeth), pitch_radius=circ["pitch"],
+                tip_radius=circ["tip"], root_radius=circ["root"], base_radius=circ["base"], width=width,
+                helix_angle=helix_angle, hand=hand, herringbone=bool(herringbone), shift=shift,
+                pressure_angle=pressure_angle, period=_gear_period(teeth, keyway, holes, spokes))
+
+
+def ring_gear(module, teeth, width, rim_diameter=None, pressure_angle=20.0, backlash=None, chamfer=None,
+              detail=1.0, name="ring_gear"):
+    """An internal (ring) gear: involute teeth on the inside of a ring, for a spur gear of the same
+    module to mesh inside it (at least 10 teeth fewer). rim_diameter: the outside (default the root
+    diameter plus 6 modules). Centred on the origin, axis Z, a tooth on +X.
+    Slots: "tooth_face", "hub"."""
+    mc = _mech()
+    bl = 0.05 * module if backlash is None else backlash
+    pts = mc.outline(module, int(teeth), pressure_angle, 0.0, 0.0, bl, True, 0.0, **_detail(detail, teeth))
+    circ = mc.circles(module, int(teeth), pressure_angle, 0.0, 0.0, True)
+    outer = (rim_diameter or 2 * circ["root"] + 6 * module) / 2
+    w2 = width / 2
+    c = min(module * 0.1 if chamfer is None else chamfer, 0.3 * width)
+    angles = _circle_angles(len(pts))
+    rings = [_circle_ring(angles, -w2, outer), _circle_ring(angles, w2, outer),
+             _outline_ring(pts, w2, -c), _outline_ring(pts, w2 - c), _outline_ring(pts, -w2 + c),
+             _outline_ring(pts, -w2, -c)]
+    obj = _lathe(rings, [1, 1, 0, 0, 0, 1], name, ["tooth_face", "hub"])
+    return _tag(obj, type="ring_gear", module=module, teeth=int(teeth), pitch_radius=circ["pitch"],
+                tip_radius=circ["tip"], root_radius=circ["root"], base_radius=circ["base"], width=width,
+                outer_radius=outer, pressure_angle=pressure_angle, internal=True, period=[1, int(teeth)])
+
+
+def rack(module, teeth, width, height=None, pressure_angle=20.0, backlash=None, name="rack"):
+    """A straight rack: teeth along X pointing up (+Z) with straight flanks at the pressure angle,
+    the pitch line on z = 0, `width` across Y, a bar `height` below the tooth roots (default 2.5
+    modules). Teeth are centred on x = (k - (teeth - 1) / 2) x pitch (pitch = pi x module).
+    Slots: "tooth_face", "hub"."""
+    mc = _mech()
+    bl = 0.05 * module if backlash is None else backlash
+    top, bottom = mc.rack_profile(module, int(teeth), pressure_angle, bl, height)
+    poly = top + [(top[-1][0], bottom), (top[0][0], bottom)]
+    bm = bmesh.new()
+    w2 = width / 2
+    front = [bm.verts.new((x, -w2, z)) for x, z in poly]
+    back = [bm.verts.new((x, w2, z)) for x, z in poly]
+    n = len(poly)
+    for i in range(n):
+        j = (i + 1) % n
+        f = bm.faces.new((front[i], front[j], back[j], back[i]))
+        f.material_index = 0 if i < len(top) - 1 else 1
+    for cap in (front, list(reversed(back))):
+        f = bm.faces.new(cap)
+        f.material_index = 1
+    obj = _new_object(bm, name, ["tooth_face", "hub"], no_bevel=True)
+    pitch = math.pi * module
+    return _tag(obj, type="rack", module=module, teeth=int(teeth), pitch=pitch, width=width,
+                length=teeth * pitch, pressure_angle=pressure_angle, period=[1, 1])
+
+
+def bevel_gear(module, teeth, mate_teeth, width=None, bore=0.0, pressure_angle=20.0, hub=None, keyway=False,
+               backlash=None, detail=1.0, name="bevel_gear"):
+    """A straight bevel gear for a pair meshing at 90 degrees: its cone angle comes from the pair's
+    tooth counts (mate_teeth: the other gear's). Teeth are cut on the back cone (Tredgold's
+    approximation) and narrow towards the shared apex; width is the face width along the cone
+    (default a third of the cone distance). The back face is at z = 0 with the pitch circle there,
+    the apex on +Z; hub: (diameter, length) of a boss behind it. Slots: "tooth_face", "hub", "bore"."""
+    mc = _mech()
+    bl = 0.07 * module if backlash is None else backlash
+    b = mc.bevel_numbers(module, int(teeth), int(mate_teeth), width)
+    delta = math.radians(b["cone_deg"])
+    rp, face, zv = b["pitch"], b["face"], b["virtual_teeth"]
+    rpv = module * zv / 2
+    alpha = math.radians(pressure_angle)
+    d = _detail(detail, teeth)
+    prof = mc.tooth_profile(module, rpv, rpv * math.cos(alpha), rpv + module, rpv - 1.25 * module,
+                            math.pi / (2 * zv) - bl / (4 * rpv), alpha, d["flank"], d["tip"])
+
+    def actual(rv, tv):  # a point of the virtual spur tooth on the back cone, seen down the axis
+        # the back cone is square to the pitch cone: outward along it also moves towards the apex
+        dr = rv - rpv
+        r = rp + dr * math.cos(delta)
+        return r, math.asin(max(-1.0, min(1.0, rv * math.sin(tv) / r))), dr * math.sin(delta)
+
+    one = [actual(r, t) for r, t in prof]
+    pitch = 2 * math.pi / int(teeth)
+    pts = []
+    for k in range(int(teeth)):
+        base = k * pitch
+        pts += [(r, base + t, z) for r, t, z in one]
+        gap = pitch + one[0][1] - one[-1][1]
+        pts += [(one[0][0], base + one[-1][1] + gap * j / d["root"], one[0][2]) for j in range(1, d["root"])]
+    back = [(r * math.cos(a), r * math.sin(a), z) for r, a, z in pts]
+    apex = rp / math.tan(delta)
+    k = (b["cone_distance"] - face) / b["cone_distance"]
+    front = [(x * k, y * k, apex + k * (z - apex)) for x, y, z in back]
+    z_front = apex * (1 - k)
+    angles = _circle_angles(len(back))
+    bore_r = bore / 2
+    radius, angles_bore = bore_r, angles
+    if keyway and bore_r > 0:
+        kw = keyway if isinstance(keyway, (list, tuple)) else (bore * 0.25, bore * 0.12)
+        radius, corners = _keyway_radius(bore_r, kw[0], kw[1])
+        angles_bore = _snap(angles, corners)
+    r_front = max(bore_r + 0.25 * module, k * (rp - 1.25 * module * math.cos(delta)) - 0.5 * module)
+    r_back = max(bore_r + 0.5 * module, rp - 1.25 * module * math.cos(delta) - 0.8 * module)
+
+    def on_back_cone(r):  # the heel is the back cone, square to the pitch cone: further in, further back
+        return (r - rp) * math.tan(delta)
+
+    inner = hub[0] / 2 if hub else r_back
+    back_z = min(on_back_cone(inner), -hub[1]) if hub else on_back_cone(r_back)
+    rings = [back, front, _circle_ring(angles, z_front, r_front), _circle_ring(angles_bore, z_front, radius),
+             _circle_ring(angles_bore, back_z, radius)]
+    slots = [0, 1, 1, 2, 1]  # teeth, front face, front face to the bore, the bore, then the back
+    if hub:
+        rings += [_circle_ring(angles, back_z, inner), _circle_ring(angles, on_back_cone(inner), inner)]
+        slots += [1, 1]
+    else:
+        rings.append(_circle_ring(angles, back_z, r_back))
+        slots.append(1)
+    obj = _lathe(rings, slots, name, ["tooth_face", "hub", "bore"])
+    return _tag(obj, type="bevel_gear", module=module, teeth=int(teeth), mate_teeth=int(mate_teeth),
+                pitch_radius=rp, tip_radius=rp + module * math.cos(delta), cone_deg=b["cone_deg"],
+                cone_distance=b["cone_distance"], face=face, apex_z=apex, pressure_angle=pressure_angle,
+                period=[1, 1 if keyway else int(teeth)])
+
+
+def shaft(diameter, length, keyway=False, chamfer=None, steps=None, segments=32, name="shaft"):
+    """A round shaft along Z, centred on the origin, chamfered at both ends. steps: [(length,
+    diameter), ...] along it from -Z to +Z instead of one diameter (their lengths add up to length).
+    keyway: True (or (width, depth, length)) for a key slot along it on +Y. Slot: "shaft"."""
+    c = min(diameter * 0.1 if chamfer is None else chamfer, 0.2 * diameter)
+    pieces = steps or [(length, diameter)]
+    z = -length / 2
+    prof = [(0.0, z)]
+    for i, (seg, dia) in enumerate(pieces):
+        rr = dia / 2
+        prof += [(rr - c, z), (rr, z + c)] if i == 0 else [(rr, z)]
+        z += seg
+        prof.append((rr, z - c) if i == len(pieces) - 1 else (rr, z))
+    prof += [(pieces[-1][1] / 2 - c, z), (0.0, z)]
+    bm = bmesh.new()
+    _add_revolved(bm, prof, segments, 0)
+    obj = _new_object(bm, name, ["shaft"], no_bevel=True)
+    if keyway:
+        kw = keyway if isinstance(keyway, (list, tuple)) else (diameter * 0.25, diameter * 0.12, length * 0.5)
+        cutter = h.box((kw[0], kw[1] * 2, kw[2]), location=(0, diameter / 2, 0))
+        obj = _cut(obj, [cutter], slot="shaft")
+        obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="shaft", radius=diameter / 2, length=length, period=[1, 1 if keyway else 8])
+
+
+def gear_pair_layout(module, teeth_a, teeth_b, pressure_angle=20.0, helix_angle=0.0, internal=False,
+                     direction_deg=0.0, phase_a_deg=0.0):
+    """Where the second gear of a meshing pair goes (metres in, metres out): the exact centre
+    distance, b's centre (x, y) with gear a at the origin and the line of centres at direction_deg
+    in their plane, the profile shifts to build each with (spur_gear's shift; small pinions need
+    one), the tip shortening, and the angle (degrees about its own axis) gear b must start at so a
+    tooth sits in a gap from frame 1 when gear a starts at phase_a_deg. Also b's turns per turn of
+    a ("ratio") and "same_direction". internal: b is a ring gear round a."""
+    return _mech().gear_pair_layout(module, int(teeth_a), int(teeth_b), pressure_angle, helix_angle, internal,
+                                    direction_deg, phase_a_deg)

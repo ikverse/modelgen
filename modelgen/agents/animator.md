@@ -47,6 +47,25 @@ Smoke and steam are drawn by the page at your markers and never appear in a rend
 the markers show as balls (grey smoke, white steam): check that each ball sits on top of the part it
 rises from, not inside it.
 
+## A mechanism (gears, racks, shafts)
+When your task carries a mechanism sheet, take every speed and direction from it; never choose
+them. Spin the driver at the sheet's rpm and turn everything else from it:
+
+```python
+from bpy_lib import motion as m
+
+def animate(parts):
+    m.spin(parts["pinion"], rpm=20, reverse=True)       # reverse: clockwise seen from the front
+    m.mesh_drive(parts["pinion"], parts["wheel"])        # the ratio and the way round come from the teeth
+    m.mesh_drive(parts["wheel"], parts["output_shaft"], ratio=1, same_direction=True)  # fixed together
+```
+
+`mesh_drive` reads each kit gear's teeth and pitch circle, so the ratio is exact and meshing
+external gears turn opposite ways, a gear inside a ring gear the same way, bevel gears as their
+cones meet; a rack slides back and forth with its pinion. The loop length is chosen by itself: the
+shortest stretch after which every part looks as it started. Do not call `m.loop` or `m.travel`
+for a mechanism, and never move a gear's centre. The report gives every part's turns per loop.
+
 ## How you work
 1. Read the spec's `motion` entry and the parts list in your task. The wheels named there are the
    objects to spin; an effect names the part its smoke or steam comes from.

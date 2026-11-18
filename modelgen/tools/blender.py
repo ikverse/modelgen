@@ -83,6 +83,8 @@ try:
         elif kind == "measure":
             result["outputs"]["measure"] = measure.measure_scene(step.get("floor_tolerance", 0.002),
                                                                  step.get("contact_tolerance", 0.0015))
+        elif kind == "mesh_check":
+            result["outputs"]["mesh_check"] = measure.mesh_report(step["pairs"], step.get("moments", 12))
         elif kind == "part_measure":
             result["outputs"].setdefault("part_measure", {})[step["part"]] = measure.part_report(
                 step["part"], step.get("contact_tolerance", 0.0015), step.get("floor_tolerance", 0.002))
@@ -110,8 +112,15 @@ try:
                                               ("three_quarter", "back_three_quarter"))
             elif which == "asset_views":
                 made = rig.render_asset_views(step["dir"], step.get("camera", "persp"), step.get("style", "realistic"),
-                                              step.get("shadows", True), step.get("turntable", 0), step.get("only"))
+                                              step.get("shadows", True), step.get("turntable", 0), step.get("only"),
+                                              step.get("colours"))
                 result["outputs"].setdefault("asset_views", []).append(made)
+                paths = made["files"]
+            elif which == "motion":
+                made = rig.render_motion(step["dir"], step.get("camera", "persp"), step.get("style", "explainer"),
+                                         step.get("angle", "front34"), step.get("first"), step.get("last"),
+                                         step.get("colours"))
+                result["outputs"].setdefault("motion_frames", []).append(made)
                 paths = made["files"]
             else:
                 raise ValueError("unknown render set " + which)
@@ -288,13 +297,29 @@ def game_step(out_dir, basename, budget, lods=(0.5, 0.2)):
 
 
 def asset_views_step(out_dir, camera="persp", style="realistic", only=("views",), turntable=0, size=1024,
-                     samples=None):
+                     samples=None, colours=None):
     """Transparent angle pictures of the opened model (bpy_lib.rig.render_asset_views), for the /v1
-    API's "views". only picks the sets this run renders: "views", "shadows", "turntable"."""
+    API's "views". only picks the sets this run renders: "views", "shadows", "turntable". colours:
+    {part: "#rrggbb"} for the explainer style."""
     return {"kind": "render", "set": "asset_views", "key": "asset_views", "dir": str(out_dir), "camera": camera,
             "style": style, "only": list(only), "turntable": int(turntable), "shadows": "shadows" in only,
             "size": int(size), "samples": int(samples or config.get("render", "samples", 96)),
-            "label": f"render angle pictures ({', '.join(only)})"}
+            "colours": colours or {}, "label": f"render angle pictures ({', '.join(only)})"}
+
+
+def motion_frames_step(out_dir, camera="persp", style="explainer", angle="front34", first=None, last=None,
+                       size=1024, samples=None, colours=None):
+    """Transparent pictures of the opened model moving through its loop (bpy_lib.rig.render_motion),
+    frames first..last of the loop (all of them when left out), for the /v1 API's "motion"."""
+    return {"kind": "render", "set": "motion", "key": "motion", "dir": str(out_dir), "camera": camera, "style": style,
+            "angle": angle, "first": first, "last": last, "size": int(size), "colours": colours or {},
+            "samples": int(samples or config.get("render", "samples", 96)),
+            "label": f"render the motion frames {first or ''}-{last or ''}"}
+
+
+def mesh_check_step(pairs, moments=12):
+    """Measure meshing parts at moments across the loop (bpy_lib.measure.mesh_report)."""
+    return {"kind": "mesh_check", "pairs": list(pairs), "moments": int(moments), "label": "the mesh check"}
 
 
 def measure_step():
