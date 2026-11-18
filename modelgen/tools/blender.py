@@ -108,6 +108,11 @@ try:
             elif which == "context":
                 paths = rig.render_in_context(step["dir"], step["part"], step.get("views") or
                                               ("three_quarter", "back_three_quarter"))
+            elif which == "asset_views":
+                made = rig.render_asset_views(step["dir"], step.get("camera", "persp"), step.get("style", "realistic"),
+                                              step.get("shadows", True), step.get("turntable", 0), step.get("only"))
+                result["outputs"].setdefault("asset_views", []).append(made)
+                paths = made["files"]
             else:
                 raise ValueError("unknown render set " + which)
             result["outputs"].setdefault("renders", {})[step.get("key", which)] = paths
@@ -280,6 +285,16 @@ def game_step(out_dir, basename, budget, lods=(0.5, 0.2)):
     its own on the saved .blend: it reduces the scene's meshes."""
     return {"kind": "game", "dir": str(out_dir), "basename": basename, "budget": int(budget),
             "lods": [float(v) for v in lods], "label": "game-ready export"}
+
+
+def asset_views_step(out_dir, camera="persp", style="realistic", only=("views",), turntable=0, size=1024,
+                     samples=None):
+    """Transparent angle pictures of the opened model (bpy_lib.rig.render_asset_views), for the /v1
+    API's "views". only picks the sets this run renders: "views", "shadows", "turntable"."""
+    return {"kind": "render", "set": "asset_views", "key": "asset_views", "dir": str(out_dir), "camera": camera,
+            "style": style, "only": list(only), "turntable": int(turntable), "shadows": "shadows" in only,
+            "size": int(size), "samples": int(samples or config.get("render", "samples", 96)),
+            "label": f"render angle pictures ({', '.join(only)})"}
 
 
 def measure_step():

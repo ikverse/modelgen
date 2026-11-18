@@ -18,8 +18,10 @@ def current_project(name=None):
         proj = db.get_project(name)
         if proj:
             return proj
-    projects = db.list_projects()
-    return db.get_project(projects[0]["name"]) if projects else None
+    # the newest of the person's own models: one another program asked for (the /v1 API) is never
+    # picked on its own, so a message in the chat cannot change it by accident
+    own = next((p for p in db.list_projects() if not db.project_client(p["name"])), None)
+    return db.get_project(own["name"]) if own else None
 
 
 def project_summary(name):

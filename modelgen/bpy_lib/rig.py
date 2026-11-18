@@ -663,6 +663,175 @@ def render_frames(out_dir, count=6):
     return paths
 
 
+# --- angle pictures for other programs (the /v1 API's "views") ------------------------------
+#
+# Transparent pictures of the finished model from fixed angles, for apps that draw in 2D: no
+# backdrop, no floor. The soft shadow under it is a picture of its own (<view>_shadow.png), so an
+# app can put it on its own ground. views.json says where each camera stood and where the model
+# and its lowest point are in each picture, so it can be scaled to its real size.
+
+ASSET_VIEWS = {"front": 0, "front34": 45, "side": 90, "back34": 135, "back": 180, "top": None}
+ASSET_ELEVATION = {"persp": 15, "ortho": 0}
+SHADOW_CATCHER = "_mg_shadow_catcher"
+
+
+def _picture_box(cam, objs, size):
+    """Where the model is in the picture: its box in pixels (x0, y0, x1, y1, from the top left) and
+    the height in pixels of its lowest point."""
+    from bpy_extras.object_utils import world_to_camera_view
+    scene = bpy.context.scene
+    xs, ys = [], []
+    dg = bpy.context.evaluated_depsgraph_get()
+    for obj in objs:
+        ev = obj.evaluated_get(dg)
+        mesh = ev.to_mesh()
+        try:
+            step = max(1, len(mesh.vertices) // 4000)  # enough points for a box, quick on dense meshes
+            for v in list(mesh.vertices)[::step]:
+                p = world_to_camera_view(scene, cam, ev.matrix_world @ v.co)
+                xs.append(p.x * size)
+                ys.append((1 - p.y) * size)
+        finally:
+            ev.to_mesh_clear()
+    if not xs:
+        return None
+    return [round(min(xs), 1), round(min(ys), 1), round(max(xs), 1), round(max(ys), 1)]
+
+
+FLAT_LIGHT = 0.3  # how much of the flat look is lit shading; the rest is the material's own flat colour
+
+
+def _flat_style(objs):
+    """The flat look, closer to drawn 2D art than the photo studio: every material shows its own
+    colours and patterns (a label, a gradient) mostly unlit, with a little light for its form, no
+    gloss, and a dark outline (Freestyle) round the model and its edges."""
+    done = set()
+    for obj in objs:
+        for slot in obj.material_slots:
+            mat = slot.material
+            if mat is None or mat.name in done:
+                continue
+            done.add(mat.name)
+            bsdf = _principled(mat)
+            out = _output(mat) if bsdf is not None else None
+            if out is None:
+                continue
+            nt = mat.node_tree
+            base = bsdf.inputs.get("Base Color")
+            emit = nt.nodes.new("ShaderNodeEmission")
+            lit = nt.nodes.new("ShaderNodeBsdfDiffuse")
+            mix = nt.nodes.new("ShaderNodeMixShader")
+            mix.inputs["Fac"].default_value = FLAT_LIGHT
+            for target in (emit.inputs["Color"], lit.inputs["Color"]):
+                if base is not None and base.links:
+                    nt.links.new(base.links[0].from_socket, target)
+                elif base is not None:
+                    target.default_value = base.default_value
+            emit.inputs["Strength"].default_value = 1.0
+            nt.links.new(emit.outputs[0], mix.inputs[1])
+            nt.links.new(lit.outputs[0], mix.inputs[2])
+            nt.links.new(mix.outputs[0], out.inputs["Surface"])
+    scene = bpy.context.scene
+    scene.render.use_freestyle = True
+    scene.render.line_thickness_mode = "ABSOLUTE"
+    scene.render.line_thickness = max(1.0, scene.render.resolution_x / 512)
+    layer = bpy.context.view_layer
+    layer.use_freestyle = True
+    for lineset in layer.freestyle_settings.linesets:
+        lineset.linestyle.color = (0.06, 0.06, 0.07)
+    try:
+        scene.view_settings.view_transform = "Standard"  # true flat colours, not the photo look
+        scene.view_settings.look = "None"
+    except TypeError:
+        pass
+    scene.view_settings.exposure = 0.0
+
+
+def _shadow_catcher(lo, hi):
+    """A large floor that only shows the model's shadow (Cycles' shadow catcher)."""
+    obj = bpy.data.objects.get(SHADOW_CATCHER)
+    if obj is None:
+        bpy.ops.mesh.primitive_plane_add(size=1.0)
+        obj = bpy.context.active_object
+        obj.name = SHADOW_CATCHER
+        obj.is_shadow_catcher = True
+    span = max((hi - lo).length, 0.01) * 8
+    obj.scale = (span, span, 1.0)
+    obj.location = ((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z)
+    return obj
+
+
+def render_asset_views(out_dir, camera_mode="persp", style="realistic", shadows=True, turntable=0, only=None):
+    """The angle pictures: front, front34, side, back34, back and top as <view>.png, each but top with
+    <view>_shadow.png, and turntable frames turntable_00.png ... if asked. only: render just these
+    sets ("views", "shadows", "turntable"), so a long render can be split over several Blender runs.
+    Returns {"views": {...}, "files": [...]} for views.json."""
+    os.makedirs(out_dir, exist_ok=True)
+    objs = model_objects()
+    if not objs:
+        raise RuntimeError("there is no model in the scene to render")
+    stage()
+    scene = bpy.context.scene
+    backdrop = bpy.data.objects.get(BACKDROP)
+    if backdrop is not None:
+        backdrop.hide_render = True
+    scene.render.film_transparent = True
+    scene.render.image_settings.color_mode = "RGBA"
+    size = scene.render.resolution_x
+    cam = camera()
+    cam.data.type = "ORTHO" if camera_mode == "ortho" else "PERSP"
+    _, radius, lo, hi = frame(objs)
+    elevation = ASSET_ELEVATION.get(camera_mode, 15)
+    if style == "flat":
+        _flat_style(objs)
+    sets = set(only or ("views", "shadows", "turntable"))
+    files, views = [], {}
+
+    def place(az, el):
+        aim_box(cam, lo, hi, az, el)
+        info = {"azimuth_deg": az, "elevation_deg": el, "camera": camera_mode}
+        if cam.data.type == "ORTHO":
+            info["ortho_scale_m"] = round(cam.data.ortho_scale, 4)
+            info["pixels_per_metre"] = round(size / cam.data.ortho_scale, 2)
+        else:
+            info["lens_mm"], info["distance_m"] = LENS_MM, round((cam.location - (lo + hi) / 2).length, 4)
+        box = _picture_box(cam, objs, size)
+        if box:
+            info["box_px"], info["ground_px"] = box, box[3]
+        return info
+
+    angles = [(name, az if az is not None else 0, el) for name, az in ASSET_VIEWS.items()
+              for el in [89.5 if az is None else elevation]]
+    if "views" in sets:
+        for name, az, el in angles:
+            views[name] = place(az, el)
+            files.append(_render(os.path.join(out_dir, f"{name}.png")))
+    if "turntable" in sets and turntable:
+        for i in range(int(turntable)):
+            place(360 * i / int(turntable), elevation)
+            files.append(_render(os.path.join(out_dir, f"turntable_{i:02d}.png")))
+    if "shadows" in sets and shadows and elevation >= 5:  # a camera on the floor sees the shadow edge-on
+        scene.render.engine = "CYCLES"  # the shadow catcher is Cycles only, also in the flat style
+        scene.render.use_freestyle = False  # the flat style's outline would trace the shadow floor's edge
+        catcher = _shadow_catcher(lo, hi)
+        for obj in objs:
+            obj.visible_camera = False  # the model still casts its shadow, but is not in the picture
+        try:
+            for name, az, el in angles:
+                if name == "top":
+                    continue  # straight down the shadow is hidden under the model
+                place(az, el)
+                files.append(_render(os.path.join(out_dir, f"{name}_shadow.png")))
+        finally:
+            for obj in objs:
+                obj.visible_camera = True
+            bpy.data.objects.remove(catcher, do_unlink=True)
+    cam.data.type = "PERSP"
+    return {"views": views, "files": files, "size_px": size,
+            "size_m": {"width": round(hi.x - lo.x, 4), "depth": round(hi.y - lo.y, 4),
+                       "height": round(hi.z - lo.z, 4)}}
+
+
 # --- export -------------------------------------------------------------------------
 
 def _plain_materials():

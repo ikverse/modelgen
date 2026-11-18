@@ -72,6 +72,26 @@ CREATE TABLE IF NOT EXISTS events (
     data_json TEXT NOT NULL DEFAULT '{}',
     created TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    client TEXT NOT NULL,
+    request_key TEXT,
+    object TEXT NOT NULL,
+    request_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'queued',
+    step TEXT NOT NULL DEFAULT '',
+    project TEXT,
+    version INTEGER,
+    score REAL,
+    passed INTEGER,
+    source TEXT,
+    error TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    retry_at TEXT,
+    created TEXT NOT NULL,
+    started TEXT,
+    finished TEXT
+);
 """
 
 # Columns added after the first release, added to an older database on open.
@@ -357,6 +377,71 @@ def highest_version_number(project):
     row = _row("SELECT MAX(n) AS n FROM (SELECT MAX(number) AS n FROM versions WHERE project = ? "
                "UNION ALL SELECT MAX(version) FROM runs WHERE project = ?)", (project, project))
     return int(row["n"] or 0) if row else 0
+
+
+def project_client(name):
+    """The other program a model was made for through the /v1 API ("village"), or None for a model
+    the person started on the page."""
+    proj = get_project(name) if name else None
+    api = ((proj or {}).get("options") or {}).get("api") or {}
+    return api.get("client") or None
+
+
+# --- jobs from other programs (the /v1 API) ---------------------------------------------
+
+JOB_LIVE = ("queued", "building", "waiting_for_usage")
+
+
+def _job_row(row):
+    row["request"] = json.loads(row.pop("request_json") or "{}")
+    row["passed"] = None if row["passed"] is None else bool(row["passed"])
+    return row
+
+
+def add_job(job_id, client, obj, request, request_key=None):
+    _exec("INSERT INTO jobs (id, client, request_key, object, request_json, created) VALUES (?, ?, ?, ?, ?, ?)",
+          (job_id, client, request_key, obj, json.dumps(request, ensure_ascii=False), now()))
+    return get_job(job_id)
+
+
+def get_job(job_id):
+    row = _row("SELECT * FROM jobs WHERE id = ?", (job_id,))
+    return _job_row(row) if row else None
+
+
+def update_job(job_id, **fields):
+    if "request" in fields:
+        fields["request_json"] = json.dumps(fields.pop("request"), ensure_ascii=False)
+    if "passed" in fields and fields["passed"] is not None:
+        fields["passed"] = int(bool(fields["passed"]))
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    _exec(f"UPDATE jobs SET {sets} WHERE id = ?", (*fields.values(), job_id))
+    return get_job(job_id)
+
+
+def list_jobs(client=None, status=None, limit=200):
+    """Newest first. status may be one status or a list of them."""
+    sql, args = "SELECT * FROM jobs WHERE 1 = 1", []
+    if client:
+        sql += " AND client = ?"
+        args.append(client)
+    if status:
+        wanted = [status] if isinstance(status, str) else list(status)
+        sql += f" AND status IN ({', '.join('?' for _ in wanted)})"
+        args += wanted
+    return [_job_row(r) for r in _rows(sql + " ORDER BY created DESC, rowid DESC LIMIT ?", (*args, limit))]
+
+
+def job_by_key(client, request_key):
+    row = _row("SELECT * FROM jobs WHERE client = ? AND request_key = ? ORDER BY rowid DESC LIMIT 1",
+               (client, request_key))
+    return _job_row(row) if row else None
+
+
+def queued_jobs():
+    """Jobs waiting their turn, oldest first."""
+    return [_job_row(r) for r in _rows("SELECT * FROM jobs WHERE status IN ('queued', 'waiting_for_usage') "
+                                       "ORDER BY created, rowid")]
 
 
 # --- agent runs and spend ---------------------------------------------------------

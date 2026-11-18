@@ -255,6 +255,10 @@ def ask_tool(project, seat):
     timeout = float(config.get("questions", "timeout_s", 600))
 
     async def ask(args):
+        if db.project_client(project):  # made for another program through the /v1 API: nobody is watching
+            return {"answered": False, "note": "No person is available for this model (another program asked for "
+                                               "it). Decide yourself, say what you assumed in your finish notes, "
+                                               "and carry on."}
         reply = await questions.ask(project, seat, str(args.get("question", "")).strip(),
                                     args.get("options") or [], timeout=timeout)
         if reply is None:

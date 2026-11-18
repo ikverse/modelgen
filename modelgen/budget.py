@@ -70,6 +70,8 @@ async def ensure(project, agent_name):
                 return
             which, spent, limit = found
             what = "today's limit" if which == "daily" else "this model's limit"
+            if db.project_client(project):  # another program's model: nobody to ask, so it stops here
+                raise BudgetStop(f"stopped at {what} (${spent:.2f} of ${limit:.2f})")
             text = (f"The next step could take spending past {what} (${spent:.2f} spent of ${limit:.2f}). "
                     f"Raise the limit and keep going?")
             choice = await questions.ask(project, "director", text, [RAISE, STOP], kind="budget")

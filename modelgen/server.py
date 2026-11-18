@@ -20,7 +20,8 @@ from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketD
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import config, db, director, pipeline, questions, runner, settings_store, studio_state, talk, updater, uploads
+from . import (api_v1, config, db, director, jobs, pipeline, questions, runner, settings_store, studio_state, talk,
+               updater, uploads)
 from .tools.files import OutsideProject, ProjectFiles
 from .tools.library import Library, clean_name
 
@@ -91,15 +92,20 @@ async def lifespan(app):
     for p in db.list_projects():  # a build cannot survive a restart
         if p["status"] in LIVE_STATES and not pipeline.is_running(p["name"]):
             db.update_project(p["name"], status="interrupted")
+    jobs.recover()  # a job from another program that was being built goes back in the queue
+    jobs.api_key()  # made now, so a program can read it before its first call
     db.subscribe(_broadcast)
     updater.subscribe(_update_changed)
     ticker = asyncio.create_task(_ticker())
     checker = asyncio.create_task(updater.loop(asyncio.sleep))
+    builder = asyncio.create_task(jobs.worker()) if app.state.run_jobs else None
     try:
         yield
     finally:
         ticker.cancel()
         checker.cancel()
+        if builder:
+            builder.cancel()
         updater.unsubscribe(_update_changed)
         db.unsubscribe(_broadcast)
         _loop = None
@@ -117,6 +123,8 @@ class FreshStaticFiles(StaticFiles):
 
 
 app = FastAPI(title="ModelGen", lifespan=lifespan)
+app.state.run_jobs = True  # the tests turn the job worker off and drive jobs.run themselves
+app.include_router(api_v1.router)
 app.mount("/static", FreshStaticFiles(directory=config.WEB_DIR), name="static")
 app.mount("/map", FreshStaticFiles(directory=MAP_DIR, html=True), name="map")
 
@@ -611,6 +619,7 @@ def main():
     args = parser.parse_args()
     host = config.get("server", "host", "127.0.0.1")
     url = f"http://{host}:{args.port}/"
+    jobs.BASE_URL = url.rstrip("/")  # the /v1 API's file links are absolute
     print(f"ModelGen is running at {url}  (close this window to stop it)")
     if args.open:
         threading.Timer(1.5, webbrowser.open, [url]).start()

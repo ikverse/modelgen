@@ -110,7 +110,9 @@ async def run(project, request=None, changes=None, on_done=None, next_version=Fa
         db.update_project(project, status="failed")
         db.add_event("error", project=project, data={"text": outcome["error"]})
     db.add_event("finished", project=project, data=outcome)
-    if outcome.get("remix"):
+    if db.project_client(project):
+        pass  # made for another program (the /v1 API): its job reports to it, not to the chat
+    elif outcome.get("remix"):
         _report_remix(project, outcome)  # said plainly: no agent writes the report of a car made without agents
     elif outcome.get("library"):
         _report_library(project, outcome)
@@ -926,6 +928,11 @@ def _options_text(project):
     """What the person set on the page for this model: a size and reference images."""
     options = (db.get_project(project) or {}).get("options") or {}
     lines = []
+    if (options.get("api") or {}).get("client"):
+        lines += ["## Made for another program (no person is watching)",
+                  f"{options['api']['client']} asked for this model for its videos and games. Make a generic "
+                  "design: no brand names, logos, trademarks or a brand's signature shapes, even when the request "
+                  "or the research names a real product. Nobody can answer questions: decide yourself.", ""]
     size = options.get("size") or {}
     if any(size.get(k) for k in ("width", "depth", "height")):
         unit = size.get("unit", "cm")

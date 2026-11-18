@@ -68,8 +68,9 @@ def cast_id(seat):
 
 
 def current_project():
-    """The model being built now, else the newest one."""
-    projects = db.list_projects()
+    """The person's model being built now, else their newest one. Models other programs asked for
+    (the /v1 API) are left out: the page opens one only when the person picks it."""
+    projects = [p for p in db.list_projects() if not db.project_client(p["name"])]
     for p in projects:
         if pipeline.is_running(p["name"]):
             return p["name"]
@@ -536,8 +537,11 @@ def models():
             meta = f"v{best['number']} · {best['score'] / 10:.1f}" + (" · needs changes" if p["status"] == "needs_changes" else "")
         else:
             meta = {"stopped": "stopped","interrupted": "interrupted"}.get(p["status"], p["status"])
+        client = db.project_client(name)
+        if client:  # asked for by another program through the /v1 API
+            meta = f"from {client} · {meta}"
         out.append({"name": p["title"], "project": name, "status": _status_word(p), "meta": meta,
-                    "thumb": _thumb(name, shown) if shown else None, "created": p["created"]})
+                    "thumb": _thumb(name, shown) if shown else None, "created": p["created"], "client": client})
     return out
 
 

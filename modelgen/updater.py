@@ -179,7 +179,8 @@ def install(force=False, download=None, expected=None, launch=None, exit_soon=No
         raise UpdateError("The update is already on its way.")
     if not ready:
         raise UpdateError("There is no newer version to install.")
-    running = running_builds()
+    # jobs other programs queued (the /v1 API) count too: they would wait out the restart, so ask first
+    running = running_builds() + [f"{j['client']}: {j['object']}" for j in db.queued_jobs()]
     if running and not force:
         return {"action": "confirm", "running": running}
     download, expected = download or _download, expected or _expected_sum
