@@ -103,6 +103,7 @@ If this call fails, ModelGen is not running: fall back to something else. Do not
 | `style` | `realistic` | pictures: `realistic` (photo studio), `flat` (flat colours, dark outline) or `explainer` (each part one clean saturated colour, soft light, crisp outline: for learning videos) |
 | `camera` | `persp` | pictures: `persp` (15° above) or `ortho` (flat, side-on, no shadows) |
 | `angle` | `front` | motion pictures: `front`, `front34` or `side` |
+| `cut` | `auto` | cutaway: the half of each housing nearest the camera is cut away through its axis; or `top`, `side`, `front` |
 | `colours` | the palette | explainer colour per part, `{"wheel": "#2e86ab"}` |
 | `mechanism` | | a mechanical part or mechanism by its numbers (see Mechanisms); `object` may then be left out |
 | `reuse` | `true` | use a model made before when one fits |
@@ -161,7 +162,8 @@ each output.
 ## Mechanisms (gears and other mechanical parts)
 
 A job can carry `mechanism`: the parts by their engineering numbers. When every part has a tool
-(stage 1: `spur_gear`, `helical_gear`, `ring_gear`, `rack`, `bevel_gear`, `shaft`), ModelGen
+(`spur_gear`, `helical_gear`, `ring_gear`, `rack`, `bevel_gear`, `shaft`, `compressor_wheel`,
+`turbine_wheel`, `volute` (with `houses`: its wheel), `bearing`; `GET /v1/parts` has them all), ModelGen
 builds it straight from the tools with no agents, in about 1 to 3 minutes, and `source` is
 `part_tools`. The same numbers asked for again return the stored model at once (`existing`, no
 agent). A request in plain words that names a mechanical part ("two gears, the small one drives the
@@ -195,6 +197,8 @@ Inside the version folder `projects\<model>\v<n>\`:
 | `full` | `exports/<model>.glb`, `.fbx`, `.obj`, `.stl` at full detail, and `model.blend` |
 | `views` | `views/<style>-<camera>/`: transparent 1024 px PNGs `front`, `front34`, `side`, `back34`, `back`, `top`, a 24-frame turntable `turntable_00` … `turntable_23`, and (persp only) `<view>_shadow.png` for every view but top, plus `views.json` |
 | `motion` | `motion/<style>-<camera>/`: transparent 1024 px `frame_000.png` … one seamless loop at 24 frames a second, `motion.json` and `parts.json` |
+| `cutaway` | `cutaway/<style>-<camera>/`: the same loop with the housings sliced open (cut faces `#ff2e63`), `cutaway.json`, `parts.json` |
+| `exploded` | `exploded/<style>-<camera>/`: 48 frames of the parts sliding apart along the shaft in assembly order and back, `exploded.json` (with each part's offset), `parts.json` |
 
 `motion.json`: `frames`, `fps`, `loop_seconds`, `angle`, `view` (where the camera stood), `repeat`
 (play the frames in order and start again: the frame after the last is the first), `mode` (`spin`,
@@ -203,7 +207,9 @@ or `swing` when a rack goes back and forth), `driver`, `driver_rpm`, each part's
 gear repeats after one tooth), so it can be short: repeat it as long as the scene needs. One motion
 set is kept per style and camera; asking for another angle renders it again in the same folder.
 `parts.json`: for every frame, each part's `name`, `colour`, `box_px` (x0, y0, x1, y1 from the top
-left) and `centre_px` (its axis): for labels and arrows.
+left) and `centre_px` (its axis): for labels and arrows. `flows`: air paths in picture pixels
+(`intake`, `compressed`, `exhaust_in`, `exhaust` on a turbocharger's housings) for you to draw; they
+are not in the pictures.
 
 Angle pictures: azimuth 0 looks at the model's front, 90 at its side, 180 at its back; the
 turntable starts at the front and turns 15° a frame. The shadow pictures hold only the soft shadow

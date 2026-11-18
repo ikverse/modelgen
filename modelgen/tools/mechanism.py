@@ -305,9 +305,45 @@ TYPES = {
                          "keyway": {"type": "boolean", "default": False, "about": "a key slot along it"},
                          "chamfer": _f("mm", 0, 50, "0.1 x diameter", "chamfer on both ends"),
                          "colour": GEAR_FIELDS["colour"]}},
+    "compressor_wheel": {"about": "a turbocharger's compressor wheel: blades curving from the nose (inducer) to "
+                                  "the rim, splitter blades between; faces the front of the shaft",
+                         "fields": {"diameter": _f("mm", 10, 2000, None, "rim (exducer) diameter (required)"),
+                                    "blades": {"type": "integer", "min": 3, "max": 20, "default": 6,
+                                               "about": "full blades"},
+                                    "splitters": {"type": "boolean", "default": True,
+                                                  "about": "a shorter blade between each two"},
+                                    "length": _f("mm", 3, 2000, "0.42 x diameter", "along the axis"),
+                                    "inducer_diameter": _f("mm", 3, 2000, "0.7 x diameter", "blade tips at the nose"),
+                                    "backsweep": _f("deg", 0, 60, 30, "blade angle back at the rim"),
+                                    "bore": _f("mm", 0, 500, "the shaft's", "hole for the shaft"),
+                                    "colour": GEAR_FIELDS["colour"]}},
+    "turbine_wheel": {"about": "a turbocharger's radial turbine wheel: exhaust in at the rim, out along the "
+                               "axis; faces the back of the shaft",
+                      "fields": {"diameter": _f("mm", 10, 2000, None, "rim diameter (required)"),
+                                 "blades": {"type": "integer", "min": 5, "max": 20, "default": 11, "about": "blades"},
+                                 "length": _f("mm", 3, 2000, "0.38 x diameter", "along the axis"),
+                                 "exducer_diameter": _f("mm", 3, 2000, "0.86 x diameter", "blade tips at the nose"),
+                                 "bore": _f("mm", 0, 500, "the shaft's", "hole for the shaft"),
+                                 "colour": GEAR_FIELDS["colour"]}},
+    "volute": {"about": "the snail housing round a compressor or turbine wheel: a scroll that grows round the "
+                        "wheel, an axial pipe and a tangential pipe with flanges",
+               "fields": {"wall": _f("mm", 0.3, 100, "3.5 percent of the wheel", "wall thickness"),
+                          "flanges": {"type": "boolean", "default": True, "about": "flanges on the pipes"},
+                          "colour": GEAR_FIELDS["colour"]}},
+    "bearing": {"about": "a deep-groove ball bearing on a shaft: races, balls and cage (the balls run round at "
+                         "the cage's speed)",
+                "fields": {"bore": _f("mm", 1, 1000, "the shaft's diameter", "inner diameter"),
+                           "outer_diameter": _f("mm", 3, 2000, "2.6 x bore", "outer diameter"),
+                           "width": _f("mm", 1, 500, "0.3 x outer diameter", "width"),
+                           "balls": {"type": "integer", "min": 5, "max": 40, "default": "as many as fit",
+                                     "about": "balls"},
+                           "colour": GEAR_FIELDS["colour"]}},
 }
 GEARS = ("spur_gear", "helical_gear", "ring_gear", "bevel_gear", "rack")
 EXTERNAL = ("spur_gear", "helical_gear")
+WHEELS = ("compressor_wheel", "turbine_wheel")
+ON_SHAFT = ("spur_gear", "helical_gear", "bevel_gear", "compressor_wheel", "turbine_wheel", "bearing")
+LINK_FIELDS["houses"] = {"type": "string", "about": "a volute: the wheel it houses"}
 PALETTE = ["#e4572e", "#2e86ab", "#f2c14e", "#4cb944", "#8e5bd6", "#f28c28", "#17bebb", "#e84a8a"]
 DEFAULT_RPM = 20
 MIN_TEETH_DIFFERENCE = 10  # a spur gear inside a ring gear needs this many fewer teeth, or the tips clash
@@ -394,6 +430,33 @@ def _part(raw, i, assumed):
         take("length", None, 1, 10000)
         out["keyway"] = bool(raw.get("keyway", False))
         take("chamfer", None, 0, 50)
+    elif kind in WHEELS:
+        if raw.get("diameter") in (None, ""):
+            raise MechanismError(f"wheel {name} has no diameter")
+        d = out["diameter"] = _num(raw, "diameter", 10, 2000, float, where)
+        turbine = kind == "turbine_wheel"
+        take("blades", 11 if turbine else 6, 3, 20, int)
+        take("length", round((0.38 if turbine else 0.42) * d, 2), 3, 2000,
+             note=f"{0.38 if turbine else 0.42} x diameter")
+        tip_key = "exducer_diameter" if turbine else "inducer_diameter"
+        take(tip_key, round((0.86 if turbine else 0.7) * d, 2), 3, 2000)
+        if out[tip_key] >= d:
+            raise MechanismError(f"{where}{tip_key} must be under the diameter ({d:g} mm)")
+        if not turbine:
+            out["splitters"] = bool(raw.get("splitters", True))
+            take("backsweep", 30.0, 0, 60)
+        take("bore", None, 0, 500)
+    elif kind == "volute":
+        take("wall", None, 0.3, 100)
+        out["flanges"] = bool(raw.get("flanges", True))
+        out["houses"] = str(raw.get("houses") or "") or None
+        if not out["houses"]:
+            raise MechanismError(f"volute {name} houses no wheel: give houses, the wheel's name")
+    elif kind == "bearing":
+        take("bore", None, 1, 1000)
+        take("outer_diameter", None, 3, 2000)
+        take("width", None, 1, 500)
+        take("balls", None, 5, 40, int)
     else:
         for key in ("module", "teeth"):
             if raw.get(key) in (None, "") and not (kind == "rack" and key == "teeth"):
@@ -480,9 +543,19 @@ def clean(raw):
                 raise MechanismError(f"part {p['name']} is on_shaft {p['on_shaft']}, but there is no part named so")
             if s["type"] != "shaft":
                 raise MechanismError(f"part {p['name']} is on_shaft {s['name']}, which is a {s['type']}, not a shaft")
-            if p["type"] in ("rack", "ring_gear", "shaft"):
+            if p["type"] not in ON_SHAFT:
                 raise MechanismError(f"a {p['type']} ({p['name']}) cannot sit on a shaft")
             links.append({"kind": "shaft", "a": p["name"], "b": s["name"]})
+        if p.get("houses"):
+            w = by.get(p["houses"])
+            if w is None or w["type"] not in WHEELS:
+                raise MechanismError(f"volute {p['name']} houses {p['houses']}, which is not a compressor or turbine "
+                                     "wheel of this mechanism")
+            if any(l["kind"] == "housing" and l["b"] == w["name"] for l in links):
+                raise MechanismError(f"wheel {w['name']} has two volutes")
+            links.append({"kind": "housing", "a": p["name"], "b": w["name"]})
+        if p["type"] in WHEELS + ("bearing",) and p["meshes_with"]:
+            raise MechanismError(f"a {p['type']} ({p['name']}) has no teeth to mesh with")
     for link in [l for l in links if l["kind"] == "mesh"]:
         _check_mesh(by[link["a"]], by[link["b"]])
     _check_no_loop(parts, links)
@@ -490,12 +563,13 @@ def clean(raw):
     _fill_pair_numbers(parts, links, by, assumed)
     driver = raw.get("driver") or next((p["name"] for p in parts if p.get("driver")), None)
     if driver in (None, ""):
-        driver = next((p["name"] for p in parts if p["type"] in GEARS and p["type"] != "rack"), parts[0]["name"])
+        driver = next((p["name"] for kinds in (GEARS[:4], ("shaft",), WHEELS, ("bearing",))
+                       for p in parts if p["type"] in kinds), parts[0]["name"])
         assumed.append(f"driver = {driver}")
     if driver not in by:
         raise MechanismError(f"driver {driver} is not one of the parts")
-    if by[driver]["type"] == "rack":
-        raise MechanismError(f"driver {driver} is a rack; let the gear meshing with it drive")
+    if by[driver]["type"] in ("rack", "volute"):
+        raise MechanismError(f"driver {driver} is a {by[driver]['type']} and cannot drive; name a gear, wheel or shaft")
     if raw.get("rpm") in (None, ""):
         rpm = DEFAULT_RPM
         assumed.append(f"rpm = {DEFAULT_RPM}")
@@ -571,6 +645,10 @@ def _check_no_loop(parts, links):
 
 
 def _default_bore(p):
+    if p["type"] in WHEELS:
+        return float(max(2, round(0.1 * p["diameter"])))
+    if p["type"] == "bearing":
+        return 9e9  # a bearing has no bore of its own to offer: it takes the shaft's
     pitch_d = p["module"] * p["teeth"] / math.cos(math.radians(p.get("helix_angle") or 0))
     return float(max(round(p["module"] * 1.5), round(pitch_d * 0.25 / 2) * 2, 1))
 
@@ -578,16 +656,38 @@ def _default_bore(p):
 def _fill_bores_and_shafts(parts, links, assumed):
     by = {p["name"]: p for p in parts}
     holed = ("spur_gear", "helical_gear", "bevel_gear")
-    # a shaft with no diameter takes a bore one of its gears was given, else the smallest default
-    # bore of its gears (so it fits every one of them); a gear on a shaft with no bore takes the shaft's
+    # a shaft with no diameter takes a bore one of its parts was given, else the smallest default
+    # bore of its parts (so it fits every one of them); a part on a shaft with no bore takes the shaft's
     for s in [p for p in parts if p["type"] == "shaft" and p["diameter"] is None]:
-        on = [by[l["a"]] for l in links if l["kind"] == "shaft" and l["b"] == s["name"] and by[l["a"]]["type"] in holed]
-        if not on:
-            raise MechanismError(f"shaft {s['name']} has no diameter and no gear on it to take one from")
+        on = [by[l["a"]] for l in links if l["kind"] == "shaft" and l["b"] == s["name"]]
+        if not on or all(g["type"] == "bearing" and g["bore"] is None for g in on):
+            raise MechanismError(f"shaft {s['name']} has no diameter and no gear or wheel on it to take one from")
         given = [g for g in on if g["bore"] is not None]
         s["diameter"] = given[0]["bore"] if given else min(_default_bore(g) for g in on)
         assumed.append(f"{s['name']}.diameter = {s['diameter']:g}" + (f" (the bore of {given[0]['name']})" if given
-                                                                     else " (fits every gear on it)"))
+                                                                     else " (fits every part on it)"))
+    for p in parts:
+        if p["type"] in WHEELS + ("bearing",) and p["bore"] is None:
+            shaft = by.get(p["on_shaft"]) if p["on_shaft"] else None
+            if shaft:
+                p["bore"] = shaft["diameter"]
+                assumed.append(f"{p['name']}.bore = {p['bore']:g} (the shaft's diameter)")
+            elif p["type"] == "bearing":
+                raise MechanismError(f"bearing {p['name']} has no bore and sits on no shaft")
+            else:
+                p["bore"] = _default_bore(p)
+                assumed.append(f"{p['name']}.bore = {p['bore']:g}")
+        if p["type"] in WHEELS and p["bore"] > 0.35 * p["diameter"]:
+            raise MechanismError(f"wheel {p['name']}: bore {p['bore']:g} mm is too big for a {p['diameter']:g} mm wheel")
+        if p["type"] == "bearing":
+            if p["outer_diameter"] is None:
+                p["outer_diameter"] = round(2.6 * p["bore"], 2)
+                assumed.append(f"{p['name']}.outer_diameter = {p['outer_diameter']:g}")
+            if p["width"] is None:
+                p["width"] = round(0.3 * p["outer_diameter"], 2)
+                assumed.append(f"{p['name']}.width = {p['width']:g}")
+            if p["outer_diameter"] < 1.5 * p["bore"]:
+                raise MechanismError(f"bearing {p['name']}: outer_diameter must be at least 1.5 x the bore")
     for p in parts:
         if p["type"] in holed:
             m = p["module"]
@@ -694,9 +794,29 @@ def key(sheet):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:20]
 
 
+def bearing_numbers(bore, outer, balls=None):
+    """A ball bearing's pitch radius, ball radius, ball count and cage speed (turns per turn of the
+    inner race), in the units given."""
+    ri, ro = bore / 2, outer / 2
+    pitch = (ri + ro) / 2
+    ball = 0.62 * (ro - ri) / 2
+    count = int(balls) if balls else max(6, int(2 * math.pi * pitch / (ball * 2 * 1.45)))
+    return {"pitch": pitch, "ball": ball, "count": count, "cage_ratio": 0.5 * (1 - ball / pitch)}
+
+
+def wheel_clearance(diameter_mm):
+    """The gap a volute leaves round its wheel's blade tips, mm (kits.volute's default)."""
+    return max(0.3, 0.008 * diameter_mm)
+
+
 def describe(sheet):
     """A few words for the model's title: "spur gear pair 12/24"."""
     parts = sheet["parts"]
+    kinds_present = {p["type"] for p in parts}
+    if {"compressor_wheel", "turbine_wheel"} <= kinds_present:
+        return "turbocharger" + (" with housings" if "volute" in kinds_present else "")
+    if kinds_present & set(WHEELS) and len(parts) == 1:
+        return parts[0]["type"].replace("_", " ")
     gears = [p for p in parts if p["type"] in GEARS]
     kinds = sorted({p["type"].replace("_", " ") for p in gears})
     if len(gears) == 2 and len(kinds) == 1:
@@ -772,6 +892,12 @@ def _local_angle(rot, d):
 def gear_info(p):
     """The numbers of one gear the layout, the motion and the checks use (metres)."""
     t = p["type"]
+    if t in WHEELS:
+        return {"pitch": p["diameter"] * MM / 2, "tip": p["diameter"] * MM / 2, "module": None, "teeth": None}
+    if t == "bearing":
+        return {"pitch": None, "tip": p["outer_diameter"] * MM / 2, "module": None, "teeth": None}
+    if t == "volute":
+        return {"pitch": None, "tip": None, "module": None, "teeth": None}
     m = p["module"] * MM
     if t == "rack":
         return {"pitch": None, "tip": None, "module": m, "teeth": p["teeth"]}
@@ -788,6 +914,8 @@ def _extent(p, info):
     """Half the part's size along its axis, metres (the rest of the layout only needs a rough one)."""
     if p["type"] == "shaft":
         return (p["length"] or 0) * MM / 2
+    if p["type"] in WHEELS:
+        return p["length"] * MM / 2
     w = (p.get("width") or 0) * MM
     return max(w, (p.get("hub_length") or 0) * MM) / 2
 
@@ -863,6 +991,8 @@ def layout(sheet):
                     continue
                 if l["kind"] == "shaft":
                     _place_on_shaft(cur, other, by, place, put, links)
+                elif l["kind"] == "housing":  # a volute stands exactly where its wheel does
+                    put(other, list(place[cur]["centre"]), place[cur]["rotation"], 0.0)
                 else:
                     _place_mesh(cur, other, by, place, put, taken)
                 queue.append(other)
@@ -873,6 +1003,10 @@ def layout(sheet):
         if l["kind"] == "shaft":
             pairs.append({"a": l["a"], "b": l["b"], "kind": "shaft"})
             continue
+        if l["kind"] == "housing":  # the wheel must clear its volute all the way round
+            pairs.append({"a": b["name"], "b": a["name"], "kind": "housing",
+                          "clearance_m": wheel_clearance(b["diameter"]) * MM})
+            continue
         pairs.append(_pair_numbers(a, b, place))
     return {"place": place, "order": order, "pairs": pairs}
 
@@ -881,6 +1015,8 @@ def _radius(p):
     """How far a part reaches from its axis (a rack: half its length), metres."""
     if p["type"] == "shaft":
         return (p["diameter"] or 10) * MM / 2
+    if p["type"] == "volute":
+        return 0.0  # placed round its wheel, never in anyone's way
     info = gear_info(p)
     return info["tip"] or (p["teeth"] + 1) * math.pi * info["module"] / 2
 
@@ -902,16 +1038,26 @@ def _place_on_shaft(cur, other, by, place, put, links):
         put(other, list(pl["centre"]), _rot_from_axis(_col(pl["rotation"], 2)) if c["type"] == "bevel_gear"
             else pl["rotation"], 0.0)
         return
-    # a further gear on a shaft already placed: behind the gears already on it
+    # a further part on a shaft already placed: behind the parts already on it (a turbo's wheels get
+    # room for their housings' back plates beside them)
     axis = _col(pl["rotation"], 2)
     on = [l["a"] for l in links if l["kind"] == "shaft" and l["b"] == cur and l["a"] in place]
     g = by[other]
-    deepest = 0.0
+    deepest, last = 0.0, None
     for n in on:
         d = _dot(_sub(place[n]["centre"], pl["centre"]), axis)
-        deepest = min(deepest, d - _extent(by[n], gear_info(by[n])))
-    offset = deepest - 0.001 - _extent(g, gear_info(g))
-    rot = BEVEL_FRONT if g["type"] == "bevel_gear" else pl["rotation"]
+        end = d - _extent(by[n], None)
+        if end < deepest or last is None:
+            deepest, last = min(deepest, end), n
+    wheels = [by[n]["diameter"] for n in (other, last) if n and by[n]["type"] in WHEELS]
+    gap = 0.3 * max(wheels) * MM if wheels else 0.001  # room for both housings' scrolls
+    offset = deepest - gap - _extent(g, None)
+    if g["type"] == "bevel_gear":
+        rot = BEVEL_FRONT
+    elif g["type"] == "turbine_wheel":
+        rot = _rot_from_axis(_mul(axis, -1))  # its nose faces away from the compressor
+    else:
+        rot = pl["rotation"]
     put(other, _add(pl["centre"], _mul(axis, offset)), rot, 0.0)
 
 
@@ -1113,10 +1259,11 @@ def speeds(sheet):
             if cur not in (pair["a"], pair["b"]):
                 continue
             other = pair["b"] if pair["a"] == cur else pair["a"]
-            if other in rates or other in racks:
+            if other in rates or other in racks or pair["kind"] == "housing":
                 continue
             if pair["kind"] == "shaft":
-                rates[other] = rates[cur]
+                rates[other] = rates[cur] * Fraction(_cage(by[other])).limit_denominator(1000) \
+                    / Fraction(_cage(by[cur])).limit_denominator(1000)
             elif pair["kind"] == "rack":
                 racks[other] = (cur, pair["metres_per_radian"])
                 continue
@@ -1131,11 +1278,24 @@ def speeds(sheet):
     return {"rates": rates, "periods": periods, "racks": racks}
 
 
+def _cage(p):
+    """How fast a part turns for each turn of the shaft it sits on: a bearing at its cage's speed (its
+    balls run round, its races look the same at any angle), everything else 1."""
+    if p["type"] == "bearing":  # a simple fraction close to it: the loop stays a few turns long
+        return float(Fraction(bearing_numbers(p["bore"], p["outer_diameter"], p.get("balls"))["cage_ratio"])
+                     .limit_denominator(3))
+    return 1.0
+
+
 def period(p):
     """A part's picture period in its own turns (Fraction)."""
     t = p["type"]
     if t == "shaft":
         return Fraction(1) if p.get("keyway") else Fraction(1, 8)
+    if t in WHEELS:
+        return Fraction(1, p["blades"])
+    if t == "bearing":
+        return Fraction(1, bearing_numbers(p["bore"], p["outer_diameter"], p.get("balls"))["count"])
     if p.get("keyway"):
         return Fraction(1)
     teeth = p.get("teeth") or 1
@@ -1166,7 +1326,7 @@ def _m(v):
     return round(float(v) * MM, 7)
 
 
-def part_code(p, lay=None):
+def part_code(p, lay=None, by=None):
     """The part's build script: one call to its kit tool with its numbers in metres."""
     t = p["type"]
     n = p["name"]
@@ -1175,6 +1335,23 @@ def part_code(p, lay=None):
         args = (f"diameter={_m(p['diameter'])}, length={_m(length)}, keyway={bool(p['keyway'])}, "
                 f"chamfer={_m(p['chamfer'])}")
         call = f"k.shaft({args}, name={n!r})"
+    elif t == "compressor_wheel":
+        call = (f"k.compressor_wheel(diameter={_m(p['diameter'])}, length={_m(p['length'])}, blades={p['blades']}, "
+                f"splitters={bool(p['splitters'])}, inducer_ratio={round(p['inducer_diameter'] / p['diameter'], 5)}, "
+                f"bore={_m(p['bore'])}, backsweep={p['backsweep']}, name={n!r})")
+    elif t == "turbine_wheel":
+        call = (f"k.turbine_wheel(diameter={_m(p['diameter'])}, length={_m(p['length'])}, blades={p['blades']}, "
+                f"exducer_ratio={round(p['exducer_diameter'] / p['diameter'], 5)}, bore={_m(p['bore'])}, name={n!r})")
+    elif t == "volute":
+        w = (by or {}).get(p["houses"]) or {}
+        turbine = w.get("type") == "turbine_wheel"
+        inlet = w.get("exducer_diameter" if turbine else "inducer_diameter") or 0.7 * w.get("diameter", 50)
+        call = (f"k.volute(wheel_diameter={_m(w.get('diameter', 50))}, wheel_length={_m(w.get('length', 20))}, "
+                f"inlet_diameter={_m(inlet)}, kind={'turbine' if turbine else 'compressor'!r}, "
+                f"wall={_m(p['wall']) if p.get('wall') else None}, flanges={bool(p['flanges'])}, name={n!r})")
+    elif t == "bearing":
+        call = (f"k.bearing(bore={_m(p['bore'])}, outer_diameter={_m(p['outer_diameter'])}, width={_m(p['width'])}, "
+                f"balls={p.get('balls')}, name={n!r})")
     elif t == "rack":
         call = (f"k.rack(module={_m(p['module'])}, teeth={p['teeth']}, width={_m(p['width'])}, "
                 f"height={_m(p['height'])}, pressure_angle={p['pressure_angle']}, backlash={_m(p['backlash'])}, "
@@ -1226,7 +1403,9 @@ def assembly_code(sheet, lay):
 
 
 METALS = {"spur_gear": (0.62, 0.63, 0.65), "helical_gear": (0.66, 0.6, 0.48), "ring_gear": (0.5, 0.52, 0.55),
-          "bevel_gear": (0.7, 0.62, 0.42), "rack": (0.55, 0.56, 0.58), "shaft": (0.78, 0.78, 0.79)}
+          "bevel_gear": (0.7, 0.62, 0.42), "rack": (0.55, 0.56, 0.58), "shaft": (0.78, 0.78, 0.79),
+          "compressor_wheel": (0.8, 0.81, 0.83), "turbine_wheel": (0.42, 0.4, 0.38), "volute": (0.52, 0.53, 0.55),
+          "bearing": (0.72, 0.73, 0.75)}
 
 
 def materials_code(sheet):
@@ -1244,7 +1423,7 @@ def materials_code(sheet):
                   f"name={n + '_body'!r})",
                   f"    m.assign_slot(parts[{n!r}][0], 'tooth_face', face)",
                   f"    m.assign_slot(parts[{n!r}][0], 'hub', body)"]
-        if p["type"] not in ("rack", "ring_gear"):
+        if p["type"] not in ("rack", "ring_gear", "volute"):
             lines.append(f"    m.assign_slot(parts[{n!r}][0], 'bore', m.polished_metal(color={c}, roughness=0.2, "
                          f"name={n + '_bore'!r}))")
     return "\n".join(lines) + "\n"
@@ -1267,8 +1446,12 @@ def motion_code(sheet, lay):
                 continue
             done.add(other)
             todo.append(other)
+            if pair["kind"] == "housing":
+                continue  # a volute stands still round its wheel
             if pair["kind"] == "shaft":
-                lines.append(f"    m.mesh_drive(parts[{cur!r}][0], parts[{other!r}][0], ratio=1, same_direction=True)")
+                ratio = _cage(by[other]) / _cage(by[cur])
+                lines.append(f"    m.mesh_drive(parts[{cur!r}][0], parts[{other!r}][0], ratio={round(ratio, 9)}, "
+                             "same_direction=True)")
             else:
                 ratio = by[cur]["teeth"] / by[other]["teeth"] if by[other]["type"] != "rack" else None
                 lines.append(f"    m.mesh_drive(parts[{cur!r}][0], parts[{other!r}][0]"
@@ -1280,7 +1463,8 @@ def scripts(sheet):
     """{relative path: code} for a version folder: one part script per part, the assembly, the
     materials and the motion; plus the layout they were written from."""
     lay = layout(sheet)
-    files = {f"parts/{p['name']}.py": part_code(p, lay) for p in sheet["parts"]}
+    by = {p["name"]: p for p in sheet["parts"]}
+    files = {f"parts/{p['name']}.py": part_code(p, lay, by) for p in sheet["parts"]}
     files["assembly.py"] = assembly_code(sheet, lay)
     files["materials.py"] = materials_code(sheet)
     if len(sheet["parts"]) > 1 or sheet["parts"][0]["type"] != "rack":
@@ -1295,6 +1479,41 @@ def plan_entries(sheet):
         info = {k: v for k, v in p.items() if k not in ("meshes_with", "on_shaft", "at")}
         out.append({"name": p["name"], "tool": p["type"], "description": describe({"parts": [p]}),
                     "numbers": info})
+    return out
+
+
+def housings(sheet):
+    """The parts a cutaway slices open: the housings (volutes)."""
+    return [p["name"] for p in sheet["parts"] if p["type"] == "volute"]
+
+
+def exploded_offsets(sheet, lay=None):
+    """How far each part slides out in the exploded view (metres, a vector per part): along the main
+    shaft, in assembly order from the middle outwards, a housing further out than the wheel it
+    houses, so every part stands clear of its neighbours."""
+    lay = lay or layout(sheet)
+    by = {p["name"]: p for p in sheet["parts"]}
+    shaft = next((p["name"] for p in sheet["parts"] if p["type"] == "shaft"), sheet["driver"])
+    axis = _col(lay["place"][shaft]["rotation"], 2)
+    housed = {p["houses"]: p["name"] for p in sheet["parts"] if p.get("houses")}
+    middle = sum(_dot(pl["centre"], axis) for pl in lay["place"].values()) / len(lay["place"])
+    rows = []
+    for name, pl in lay["place"].items():
+        s = _dot(pl["centre"], axis) - middle
+        if by[name]["type"] == "volute":
+            s += math.copysign(1e-6, s or 1.0)  # just outside its wheel, so it slides off it
+        rows.append((s, name))
+    rows.sort()
+    size = max([2 * _radius(p) for p in sheet["parts"]] + [_extent(p, None) * 2 for p in sheet["parts"]] + [0.01])
+    step = 0.45 * size
+    centre_rank = (len(rows) - 1) / 2
+    out = {}
+    for rank, (s, name) in enumerate(rows):
+        if by[name]["type"] == "shaft":
+            out[name] = [0.0, 0.0, 0.0]
+            continue
+        out[name] = [round(v, 6) for v in _mul(axis, (rank - centre_rank) * step)]
+    del housed
     return out
 
 

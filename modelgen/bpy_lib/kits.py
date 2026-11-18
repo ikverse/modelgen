@@ -1913,6 +1913,296 @@ def shaft(diameter, length, keyway=False, chamfer=None, steps=None, segments=32,
     return _tag(obj, type="shaft", radius=diameter / 2, length=length, period=[1, 1 if keyway else 8])
 
 
+# --- turbocharger parts: radial wheels, volutes, bearings ---------------------------------------
+#
+# A wheel's axis is its local Z, its middle at the origin: the back plate at -length/2 and the nose
+# (the inducer of a compressor, the exducer of a turbine) at +length/2. A volute is built round the
+# wheel it houses in that same frame, so it is placed exactly where its wheel is.
+
+def _wheel_curves(diameter, length, tip_ratio, exit_height, nose_ratio, back_thickness):
+    """The hub line and the blade-tip (shroud) line of a radial wheel as functions of s (0 at the
+    nose, 1 at the rim): each gives (radius, z)."""
+    r2, zn = diameter / 2, length / 2
+    zb = -length / 2 + back_thickness
+    r1, rn = r2 * tip_ratio, r2 * nose_ratio
+
+    def hub(s):
+        a = s * math.pi / 2
+        return rn + (0.97 * r2 - rn) * (1 - math.cos(a)), zb + (zn - zb) * (1 - math.sin(a))
+
+    def tip(s):
+        a = s * math.pi / 2
+        return r1 + (r2 - r1) * (1 - math.cos(a)) ** 0.85, zb + exit_height + (zn - zb - exit_height) * (1 - math.sin(a))
+
+    return hub, tip, zb
+
+
+def _blade(bm, hub, tip, theta, s0, thick, ns=14, nt=5, sink=0.06):
+    """One blade as a closed thin solid between the hub and tip lines, from s0 to the rim, turned
+    by theta(s, t) round the axis."""
+    sides = []
+    for side in (-1, 1):
+        grid = []
+        for i in range(ns + 1):
+            s = s0 + (1 - s0) * i / ns
+            (rh, zh), (rt, zt) = hub(s), tip(s)
+            row = []
+            for j in range(nt + 1):
+                t = -sink + (1 + sink) * j / nt
+                r, z = rh + (rt - rh) * t, zh + (zt - zh) * t
+                a = theta(s, max(t, 0.0)) + side * (thick / 2) / max(r, 1e-6)
+                row.append(bm.verts.new((r * math.cos(a), r * math.sin(a), z)))
+            grid.append(row)
+        sides.append(grid)
+    a, b = sides
+    for i in range(ns):
+        for j in range(nt):
+            bm.faces.new((a[i][j], a[i + 1][j], a[i + 1][j + 1], a[i][j + 1]))
+            bm.faces.new((b[i][j], b[i][j + 1], b[i + 1][j + 1], b[i + 1][j]))
+    for i in range(ns):  # hub edge and tip edge
+        bm.faces.new((a[i][0], b[i][0], b[i + 1][0], a[i + 1][0]))
+        bm.faces.new((a[i][nt], a[i + 1][nt], b[i + 1][nt], b[i][nt]))
+    for j in range(nt):  # leading and trailing edges
+        bm.faces.new((a[0][j], a[0][j + 1], b[0][j + 1], b[0][j]))
+        bm.faces.new((a[ns][j], b[ns][j], b[ns][j + 1], a[ns][j + 1]))
+
+
+def _radial_wheel(name, diameter, length, blades, splitters, tip_ratio, exit_height, nose_ratio, wrap_deg,
+                  sweep_deg, bore, thickness, kind):
+    back_t = 0.07 * length
+    hub, tip, zb = _wheel_curves(diameter, length, tip_ratio, exit_height, nose_ratio, back_t)
+    r2 = diameter / 2
+    seg = 72
+    angles = [2 * math.pi * i / seg for i in range(seg)]
+    prof = [hub(i / 16) for i in range(17)]  # nose to rim along the hub line
+    rn, zn = prof[0]
+    bore_r = max(bore / 2, 1e-4)
+    rings = [_circle_ring(angles, z, r) for r, z in prof]
+    rings += [_circle_ring(angles, -length / 2, 0.97 * r2), _circle_ring(angles, -length / 2, bore_r),
+              _circle_ring(angles, zn, bore_r)]
+    obj = _lathe(rings, [1] * 16 + [1, 1, 2, 1], name, ["tooth_face", "hub", "bore"])
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    wrap, sweep = math.radians(wrap_deg), math.radians(sweep_deg)
+    pitch = 2 * math.pi / blades
+    first = len(bm.faces)
+    for k in range(blades):
+        base = k * pitch
+        _blade(bm, hub, tip, lambda s, t, b=base: b + wrap * (1 - s) ** 2 * (0.55 + 0.45 * t) - sweep * s ** 2,
+               0.0, thickness)
+        if splitters:
+            _blade(bm, hub, tip, lambda s, t, b=base + pitch / 2: b + wrap * (1 - s) ** 2 * (0.55 + 0.45 * t)
+                   - sweep * s ** 2, 0.38, thickness)
+    bm.faces.ensure_lookup_table()
+    for f in bm.faces[first:]:
+        f.material_index = 0
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(obj.data)
+    bm.free()
+    return _tag(obj, type=kind, diameter=diameter, length=length, blades=int(blades), splitters=bool(splitters),
+                tip_radius=r2, inducer_radius=r2 * tip_ratio, exit_height=exit_height, back_z=-length / 2,
+                pitch_radius=r2, period=[1, int(blades)])
+
+
+def compressor_wheel(diameter, length=None, blades=6, splitters=True, inducer_ratio=0.7, bore=None,
+                     backsweep=30.0, thickness=None, name="compressor_wheel"):
+    """A turbocharger's compressor wheel: a hub that flares from the nose to a back plate, with
+    `blades` full blades (and as many splitter blades starting part way along when `splitters`)
+    curved from the inducer at the nose to the rim, swept back by `backsweep` degrees at the exit.
+    diameter: at the rim (exducer); inducer_ratio: the blade tips' diameter at the nose over it.
+    Axis Z, the middle at the origin, the nose on +Z. Slots: "tooth_face" (blades), "hub", "bore"."""
+    length = length or 0.42 * diameter
+    return _radial_wheel(name, diameter, length, int(blades), splitters, inducer_ratio, 0.09 * diameter, 0.16, 75.0,
+                         backsweep * 0.6, bore if bore is not None else 0.1 * diameter,
+                         thickness or 0.012 * diameter, "compressor_wheel")
+
+
+def turbine_wheel(diameter, length=None, blades=11, exducer_ratio=0.86, bore=None, thickness=None,
+                  name="turbine_wheel"):
+    """A turbocharger's radial turbine wheel: exhaust enters at the rim and leaves along the axis
+    at the nose (the exducer, exducer_ratio of the rim diameter across), `blades` blades curved
+    only near the nose. Axis Z, the middle at the origin, the nose on +Z (place it facing away from
+    the compressor). Slots: "tooth_face" (blades), "hub", "bore"."""
+    length = length or 0.38 * diameter
+    return _radial_wheel(name, diameter, length, int(blades), False, exducer_ratio, 0.14 * diameter, 0.2, 45.0, 0.0,
+                         bore if bore is not None else 0.1 * diameter, thickness or 0.014 * diameter, "turbine_wheel")
+
+
+def _tube(bm, centres, frames, radii, k=20):
+    """A closed thick tube along a path: centres, a (u, v) frame per centre for its cross-section,
+    and (outer, inner) radii per centre. Ends closed by flat rings."""
+    outer, inner = [], []
+    for c, (u, v), (ro, ri) in zip(centres, frames, radii):
+        outer.append([bm.verts.new(c + (u * math.cos(2 * math.pi * j / k) + v * math.sin(2 * math.pi * j / k)) * ro)
+                      for j in range(k)])
+        inner.append([bm.verts.new(c + (u * math.cos(2 * math.pi * j / k) + v * math.sin(2 * math.pi * j / k)) * ri)
+                      for j in range(k)])
+    for rows, flip in ((outer, False), (inner, True)):
+        for i in range(len(rows) - 1):
+            for j in range(k):
+                q = (rows[i][j], rows[i][(j + 1) % k], rows[i + 1][(j + 1) % k], rows[i + 1][j])
+                bm.faces.new(tuple(reversed(q)) if flip else q)
+    for end in (0, len(outer) - 1):
+        for j in range(k):
+            bm.faces.new((outer[end][j], inner[end][j], inner[end][(j + 1) % k], outer[end][(j + 1) % k]))
+
+
+def _c_tube(bm, centres, frames, radii, openings, k=24):
+    """A thick tube whose section is a C open on its inner side (u = -1) by +-openings[i] radians:
+    a volute's scroll, open to the diffuser passage the air flows through. Closed at both ends."""
+    outer, inner = [], []
+    for c, (u, v), (ro, ri), phi in zip(centres, frames, radii, openings):
+        top = math.pi - phi
+        alphas = [-top + 2 * top * j / k for j in range(k + 1)]
+        outer.append([bm.verts.new(c + (u * math.cos(a) + v * math.sin(a)) * ro) for a in alphas])
+        inner.append([bm.verts.new(c + (u * math.cos(a) + v * math.sin(a)) * ri) for a in alphas])
+    n = len(outer)
+    for i in range(n - 1):
+        for j in range(k):
+            bm.faces.new((outer[i][j], outer[i][j + 1], outer[i + 1][j + 1], outer[i + 1][j]))
+            bm.faces.new((inner[i][j], inner[i + 1][j], inner[i + 1][j + 1], inner[i][j + 1]))
+        for j in (0, k):  # the C's two lips
+            bm.faces.new((outer[i][j], outer[i + 1][j], inner[i + 1][j], inner[i][j]))
+    for end in (0, n - 1):
+        for j in range(k):
+            bm.faces.new((outer[end][j], inner[end][j], inner[end][j + 1], outer[end][j + 1]))
+
+
+def volute(wheel_diameter, wheel_length, inlet_diameter, kind="compressor", wall=None, clearance=None,
+           exit_height=None, outlet_length=None, flanges=True, name="volute"):
+    """The snail housing round a radial wheel, in the wheel's own frame (place it where its wheel
+    is): a shroud that follows the blade tips with a small clearance and opens into an axial pipe at
+    the nose, a diffuser out to a scroll whose section grows all the way round, and a tangential
+    pipe off its big end; a back plate behind the wheel; flanges on both pipes. For a compressor air
+    comes in along the axis and leaves through the scroll; for a turbine ("turbine") exhaust comes in
+    through the scroll and leaves along the axis. Slots: "hub" (casting), "tooth_face" (flanges).
+    Its air paths (local points) are kept in obj["mg_gear"]["flows"]."""
+    mc = _mech()  # noqa: F841  (kept for symmetry with the gear tools)
+    r2, half = wheel_diameter / 2, wheel_length / 2
+    turbine = kind == "turbine"
+    tip_ratio = inlet_diameter / wheel_diameter
+    b2 = exit_height or (0.14 if turbine else 0.09) * wheel_diameter
+    t = wall or max(0.001, 0.035 * wheel_diameter)
+    c = clearance or max(0.0003, 0.008 * wheel_diameter)
+    back_t = 0.07 * wheel_length
+    hub, tip, zb = _wheel_curves(wheel_diameter, wheel_length, tip_ratio, b2, 0.16, back_t)
+    inlet_len = 0.35 * wheel_diameter
+    rd = 1.3 * r2  # where the diffuser meets the scroll
+    seg = 72
+    angles = [2 * math.pi * i / seg for i in range(seg)]
+    shroud = [tip(i / 12) for i in range(13)]
+    r_in = shroud[0][0] + c
+    z_dif = zb + b2 + c
+    inner = [(r_in, half + inlet_len)] + [(r + c, z + c) for r, z in shroud] + [(rd, z_dif)]
+    outer = [(rd, z_dif + t)] + [(r + c + t, z + c + t) for r, z in reversed(shroud)] + [(r_in + t, half + inlet_len)]
+    fl = 0.18 * wheel_diameter if flanges else 0.0
+    ft = 1.2 * t
+    if flanges:
+        outer = outer[:-1] + [(r_in + t, half + inlet_len - ft), (r_in + t + fl, half + inlet_len - ft),
+                              (r_in + t + fl, half + inlet_len)]
+    prof = inner + outer
+    shroud_obj = _lathe([_circle_ring(angles, z, r) for r, z in prof], [1] * len(prof), name,
+                        ["hub", "tooth_face"])
+    # the back plate behind the wheel, with a hole for the shaft
+    z0, z1 = -half - c - t, -half - c
+    hole = 0.22 * r2
+    plate = [(hole, z0), (rd + t, z0), (rd + t, z1), (hole, z1)]
+    bm = bmesh.new()
+    bm.from_mesh(shroud_obj.data)
+    plate_rings = [[bm.verts.new(p) for p in _circle_ring(angles, z, r)] for r, z in plate]
+    for j in range(4):
+        a, b = plate_rings[j], plate_rings[(j + 1) % 4]
+        for i in range(seg):
+            bm.faces.new((a[i], a[(i + 1) % seg], b[(i + 1) % seg], b[i]))
+    # the scroll: a tube round the diffuser whose section grows from the tongue to the big end
+    rho0, rho1 = (0.14 if turbine else 0.11) * r2, (0.5 if turbine else 0.42) * r2
+    zc = (z_dif + z1) / 2
+    steps, start = 54, math.radians(25)
+    centres, frames, radii, flow = [], [], [], []
+    for i in range(steps + 1):
+        th = start + (2 * math.pi - start) * i / steps
+        rho = rho0 + (rho1 - rho0) * (th - start) / (2 * math.pi - start)
+        rc = rd + rho - t
+        radial = Vector((math.cos(th), math.sin(th), 0.0))
+        centres.append(radial * rc + Vector((0, 0, zc)))
+        frames.append((radial, Vector((0, 0, 1))))
+        radii.append((rho, rho - t))
+        flow.append(radial * rc + Vector((0, 0, zc)))
+    # the scroll is open on its inner side to the diffuser passage between the front wall and the back
+    # plate, as a real volute is: air leaves the wheel through that passage into the scroll
+    half_gap = (z_dif - z1) / 2
+    openings = [math.asin(min(half_gap, 0.92 * r[0]) / r[0]) for r in radii]
+    _c_tube(bm, centres, frames, radii, openings)
+    end_c = centres[-1]
+    tangent = Vector((0.0, 1.0, 0.0))  # at the big end (angle 2 pi) the scroll runs along +Y
+    out_len = outlet_length or 0.9 * wheel_diameter
+    pipe = [end_c - tangent * (0.5 * t)]
+    for i in range(1, 5):
+        cpos = end_c + tangent * (out_len * i / 4)
+        pipe.append(cpos)
+        flow.append(cpos)
+    _tube(bm, pipe, [(Vector((1.0, 0, 0)), Vector((0, 0, 1)))] * len(pipe), [(rho1, rho1 - t)] * len(pipe))
+    centres, frames, radii = pipe, [(Vector((1.0, 0, 0)), Vector((0, 0, 1)))] * len(pipe), [(rho1, rho1 - t)] * len(pipe)
+    if flanges:  # a square-ish flange ring on the outlet's end
+        fc = centres[-1] - tangent * ft / 2
+        ring_c = [fc - tangent * ft / 2, fc + tangent * ft / 2]
+        _tube(bm, ring_c, [frames[-1]] * 2, [(rho1 + fl, rho1 - 0.5 * t)] * 2, k=24)  # inside the pipe's wall
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(shroud_obj.data)
+    bm.free()
+    beyond = 0.4 * wheel_diameter
+    axis_path = [(0.0, 0.0, half + inlet_len + beyond), (0.0, 0.0, half + 0.1 * wheel_length)]
+    scroll = [list(p) for p in flow] + [list(centres[-1] + tangent * beyond)]
+    into_wheel = [[r2 * 0.9 * math.cos(start), r2 * 0.9 * math.sin(start), zc]]
+    flows = ({"exhaust_in": [list(p) for p in reversed(scroll)] + into_wheel,
+              "exhaust": [list(p) for p in reversed(axis_path)]} if turbine else
+             {"intake": [list(p) for p in axis_path], "compressed": into_wheel + scroll})
+    flows = {k: [[round(v, 6) for v in p] for p in pts] for k, pts in flows.items()}
+    return _tag(shroud_obj, type="volute", kind=kind, wheel_diameter=wheel_diameter, clearance=c, wall=t,
+                outer_radius=rd + rho1 * 2, flows=flows, period=[1, 1])
+
+
+def bearing(bore, outer_diameter, width, balls=None, name="bearing"):
+    """A deep-groove ball bearing: inner and outer race with ball grooves, the balls on the pitch
+    circle and a cage between them. Axis Z, centred on the origin. Slots: "tooth_face" (races),
+    "hub" (cage), "bore" (balls). The races look the same at any angle, so the whole bearing turns at
+    the cage's speed (mg_gear "cage_ratio" of the shaft's) to show the balls running round."""
+    ri, ro = bore / 2, outer_diameter / 2
+    nums = _mech().bearing_numbers(bore, outer_diameter, balls)
+    pitch, ball, count = nums["pitch"], nums["ball"], nums["count"]
+    w2 = width / 2
+    seg = 64
+    angles = [2 * math.pi * i / seg for i in range(seg)]
+    groove = ball * 1.04
+    ins = [(ri, -w2), (pitch - ball * 0.55, -w2), (pitch - ball * 0.55, -ball * 0.75)]
+    ins += [(pitch - groove * math.cos(a), groove * math.sin(a)) for a in
+            (math.radians(d) for d in (-45, -25, 0, 25, 45))]
+    ins += [(pitch - ball * 0.55, ball * 0.75), (pitch - ball * 0.55, w2), (ri, w2)]
+    outs = [(ro, w2), (pitch + ball * 0.55, w2), (pitch + ball * 0.55, ball * 0.75)]
+    outs += [(pitch + groove * math.cos(a), groove * math.sin(a)) for a in
+             (math.radians(d) for d in (45, 25, 0, -25, -45))]
+    outs += [(pitch + ball * 0.55, -ball * 0.75), (pitch + ball * 0.55, -w2), (ro, -w2)]
+    races = [_lathe([_circle_ring(angles, z, r) for r, z in prof], [0] * len(prof), name + "_r" + str(i),
+                    ["tooth_face", "hub", "bore"]) for i, prof in enumerate((ins, outs))]
+    cage_h = ball * 0.5
+    cage = _lathe([_circle_ring(angles, -cage_h, pitch - ball * 0.25), _circle_ring(angles, -cage_h, pitch + ball * 0.25),
+                   _circle_ring(angles, cage_h, pitch + ball * 0.25), _circle_ring(angles, cage_h, pitch - ball * 0.25)],
+                  [1, 1, 1, 1], name + "_cage", ["tooth_face", "hub", "bore"])
+    pieces = races + [cage]
+    for k in range(count):
+        a = 2 * math.pi * k / count
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=ball)
+        bmesh.ops.translate(bm, vec=Vector((pitch * math.cos(a), pitch * math.sin(a), 0.0)), verts=bm.verts)
+        for f in bm.faces:
+            f.material_index = 2
+        pieces.append(_new_object(bm, f"{name}_ball{k}", ["tooth_face", "hub", "bore"], no_bevel=True))
+    obj = h.join(pieces, name)
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="bearing", bore=bore, outer_diameter=outer_diameter, width=width, balls=count,
+                pitch_radius=pitch, tip_radius=ro, cage_ratio=0.5 * (1 - ball / pitch), period=[1, count])
+
+
 def gear_pair_layout(module, teeth_a, teeth_b, pressure_angle=20.0, helix_angle=0.0, internal=False,
                      direction_deg=0.0, phase_a_deg=0.0):
     """Where the second gear of a meshing pair goes (metres in, metres out): the exact centre

@@ -119,7 +119,8 @@ try:
             elif which == "motion":
                 made = rig.render_motion(step["dir"], step.get("camera", "persp"), step.get("style", "explainer"),
                                          step.get("angle", "front34"), step.get("first"), step.get("last"),
-                                         step.get("colours"))
+                                         step.get("colours"), step.get("mode", "motion"), step.get("cut"),
+                                         step.get("plane", "auto"), step.get("offsets"))
                 result["outputs"].setdefault("motion_frames", []).append(made)
                 paths = made["files"]
             else:
@@ -308,11 +309,13 @@ def asset_views_step(out_dir, camera="persp", style="realistic", only=("views",)
 
 
 def motion_frames_step(out_dir, camera="persp", style="explainer", angle="front34", first=None, last=None,
-                       size=1024, samples=None, colours=None):
+                       size=1024, samples=None, colours=None, mode="motion", cut=None, plane="auto", offsets=None):
     """Transparent pictures of the opened model moving through its loop (bpy_lib.rig.render_motion),
-    frames first..last of the loop (all of them when left out), for the /v1 API's "motion"."""
+    frames first..last of the loop (all of them when left out), for the /v1 API's "motion"; mode
+    "cutaway" slices the parts in `cut` open first, "exploded" slides parts out by `offsets` and back."""
     return {"kind": "render", "set": "motion", "key": "motion", "dir": str(out_dir), "camera": camera, "style": style,
             "angle": angle, "first": first, "last": last, "size": int(size), "colours": colours or {},
+            "mode": mode, "cut": list(cut or []), "plane": plane, "offsets": offsets or {},
             "samples": int(samples or config.get("render", "samples", 96)),
             "label": f"render the motion frames {first or ''}-{last or ''}"}
 

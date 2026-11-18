@@ -58,6 +58,34 @@ Lengths in millimetres. **Required** fields must be there; the rest have sensibl
   some each side), `keyway`. A gear says `"on_shaft": "<shaft name>"`; gears on one shaft turn
   together (a compound gear).
 
+### Turbocharger: `compressor_wheel`, `turbine_wheel`, `volute`, `bearing`
+- `compressor_wheel` and `turbine_wheel`: **diameter** (the rim). Defaults follow real wheels: the
+  compressor has 6 blades and 6 splitters swept back 30°, the turbine 11 blades.
+- `volute`: the snail housing; **houses** names its wheel. It is built round that wheel, so you give
+  it no size.
+- `bearing`: on the shaft; bore, outer diameter and width follow the shaft unless you give them.
+- One `shaft` carries them front to back in the order you list them: compressor wheel, bearings,
+  turbine wheel. The wheels' noses point away from each other.
+
+```json
+{"parts": [
+  {"name": "shaft", "type": "shaft"},
+  {"name": "compressor", "type": "compressor_wheel", "diameter": 50, "on_shaft": "shaft"},
+  {"name": "bearing_front", "type": "bearing", "on_shaft": "shaft"},
+  {"name": "bearing_back", "type": "bearing", "on_shaft": "shaft"},
+  {"name": "turbine", "type": "turbine_wheel", "diameter": 45, "on_shaft": "shaft"},
+  {"name": "compressor_housing", "type": "volute", "houses": "compressor"},
+  {"name": "turbine_housing", "type": "volute", "houses": "turbine"}],
+ "rpm": 30}
+```
+
+Ask for `outputs: ["motion", "cutaway", "exploded"]` with `angle: "side"`: the cutaway slices both
+housings through the shaft so the wheels show spinning inside; the exploded view slides the parts
+apart along the shaft and back. `parts.json` has the air paths (`intake`, `compressed` on the
+compressor side; `exhaust_in`, `exhaust` on the turbine side) in picture pixels: draw them as arrows
+over the frames. A real turbo spins at 100 000 rpm or more; 20 to 40 rpm is easy to follow. The
+loop is a few turns long because the bearings' balls run round more slowly than the shaft.
+
 ### Connecting them
 - `meshes_with`: the gear(s) it meshes with (name the link once). Meshing gears need the same module
   and pressure angle.
@@ -71,7 +99,8 @@ Lengths in millimetres. **Required** fields must be there; the rest have sensibl
 
 | field | values | for |
 |---|---|---|
-| `outputs` | `motion`, `views`, `game`, `full` | `motion` is the loop; `views` the stills; `game`/`full` the 3D files |
+| `outputs` | `motion`, `cutaway`, `exploded`, `views`, `game`, `full` | `motion` is the loop; `cutaway` the loop with housings sliced open; `exploded` the parts sliding apart and back; `views` the stills; `game`/`full` the 3D files |
+| `cut` | `auto` (default), `top`, `side`, `front` | where a cutaway slices the housings: `auto` through the axis, the half nearest the camera removed |
 | `style` | `explainer` (recommended), `flat`, `realistic` | `explainer`: each part one clean saturated colour, soft light, crisp dark outline |
 | `angle` | `front` (default), `front34`, `side` | gears read best from the `front`; `front34` shows thickness but a big gear can hide a small one |
 | `camera` | `persp`, `ortho` | `ortho` for a flat, diagram-like look with no perspective |

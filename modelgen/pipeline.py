@@ -156,10 +156,10 @@ async def _run(project, request, changes, next_version=False):
         return {"ok": False, "error": "blender_missing"}
     proj = db.get_project(project)
     existing = db.versions(project)
-    sheet = None  # a mechanism the team builds (a part has no tool): every agent gets its sheet
+    sheet, custom = None, []  # a mechanism the team builds (a part has no tool): every agent gets its sheet
     made = await _try_parts(project, request, changes, next_version)
     if made is not None and made.get("team"):
-        sheet = made["sheet"]
+        sheet, custom = made["sheet"], made.get("custom") or []
     elif made is not None:
         return made
     if uses_remix(project, request, changes or next_version):
@@ -212,6 +212,8 @@ async def _run(project, request, changes, next_version=False):
         if changes:  # changes asked for before any version was built: they shape the first one
             request += f"\n\nThe person also asked for these changes: {changes}"
         spec = await _brief(project, request, sheet)
+        if sheet:
+            spec["mechanism_custom"] = custom
         db.update_project(project, spec=spec, status="planning")
         _handoff(project, "brief", "architect", f"spec: {spec.get('object', 'the model')}")
         if at.shell_template(spec=spec):
@@ -595,7 +597,7 @@ def with_tool_parts(plan, sheet):
                      "attaches_to": p.get("on_shaft") or ", ".join(p.get("meshes_with") or [])}
             plan.setdefault("parts", []).append(entry)
         entry["tool"] = p["type"]
-        entry["seed"] = mechanism.part_code(p, lay)
+        entry["seed"] = mechanism.part_code(p, lay, {q["name"]: q for q in sheet["parts"]})
     plan["reseed"] = sorted(set(plan.get("reseed") or []) | {p["name"] for p in sheet["parts"]})
     return plan
 
@@ -622,7 +624,8 @@ async def _run_parts(project, sheet, assumed, note=""):
         files.write(path, code)
     key = mechanism.key(sheet)
     record = {"sheet": sheet, "assumed": list(assumed or []), "key": key, "sizes_mm": mechanism.size_mm(sheet),
-              "pairs": mechanism.check_pairs(lay), "colours": sheet.get("colours") or mechanism.colours(sheet)}
+              "pairs": mechanism.check_pairs(lay), "colours": sheet.get("colours") or mechanism.colours(sheet),
+              "housings": mechanism.housings(sheet), "exploded": mechanism.exploded_offsets(sheet, lay)}
     files.write("spec.json", _json(spec))
     files.write("plan.json", _json({"kind": "parts", "parts": mechanism.plan_entries(sheet), "mechanism": sheet,
                                     "key": key}))
@@ -1201,7 +1204,16 @@ def _architect_prompt(spec):
     listed = (["## The real object's features (from the research): every one needs a part",
                *[f"{i}. {f}" for i, f in enumerate(features, 1)],
                "List each in `research_features` with the part that carries it.", ""] if features else [])
-    extra = "\n".join([*listed, *_family_lines(spec, "plan"), at.kits_reference(family)])
+    tooled = []
+    if spec.get("mechanism"):
+        names = [p["name"] for p in spec["mechanism"]["parts"]]
+        custom = [c.get("name") for c in spec.get("mechanism_custom") or []]
+        tooled = ["## Parts the part tools make (already in the plan: do not plan them again)",
+                  f"{', '.join(names)} are built by the part tools from the mechanism sheet, under exactly these "
+                  "names. Never add another entry for any of them under another name (no second shaft, wheel, "
+                  "gear, bearing or housing). Plan only the parts no tool makes"
+                  + (f": {', '.join(custom)}" if custom else "") + ", and use the names above in attaches_to.", ""]
+    extra = "\n".join([*listed, *tooled, *_family_lines(spec, "plan"), at.kits_reference(family)])
     return (f"Make the build plan for this spec.\n\n## Spec\n{_json(spec)}\n\n{extra}\n\n"
             f"## The helper library the builders use (as h)\n{at.helpers_reference()}")
 

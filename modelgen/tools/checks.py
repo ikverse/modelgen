@@ -143,6 +143,15 @@ def mesh_gates(report, pairs=None):
                                 "detail": "; ".join(centre_bad) or "every centre distance is the sheet's"}
     gates["speed_ratio"] = {"pass": not ratio_bad, "route": "motion",
                             "detail": "; ".join(ratio_bad) or "every part turns at the sheet's ratio and way round"}
+    housed = [r for r in (report or {}).get("pairs", []) if r.get("kind") == "housing" and r.get("found", True)]
+    if housed:
+        bad = []
+        for r in housed:
+            if r.get("max_depth_m", 0) > CLASH_DEPTH:
+                bad.append(f"the blades of {r['a']} pass {r['max_depth_m'] * 1000:.2f} mm into {r['b']} (moment "
+                           f"{r.get('worst_moment')})")
+        gates["blades_clear"] = {"pass": not bad, "route": "assembly",
+                                 "detail": "; ".join(bad) or "every wheel's blades clear its housing all the way round"}
     clashes = [c for c in (report or {}).get("clashes", []) if c.get("max_depth_m", 0) > CLASH_DEPTH]
     gates["no_clashes"] = {"pass": not clashes, "route": "assembly",
                            "detail": "; ".join(f"{c['a']} and {c['b']} pass {c['max_depth_m'] * 1000:.2f} mm into each "

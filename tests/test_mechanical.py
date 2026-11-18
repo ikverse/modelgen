@@ -343,6 +343,62 @@ def test_a_mechanism_job_builds_with_no_agent_and_reuses_the_same_numbers(api, m
     assert len(calls) == 1  # no second build, no caster
 
 
+# --- stage 2: the turbocharger --------------------------------------------------------------------------
+
+TURBO = {"parts": [
+    {"name": "shaft", "type": "shaft"},
+    {"name": "compressor", "type": "compressor_wheel", "diameter": 50, "on_shaft": "shaft"},
+    {"name": "bearing_front", "type": "bearing", "on_shaft": "shaft"},
+    {"name": "bearing_back", "type": "bearing", "on_shaft": "shaft"},
+    {"name": "turbine", "type": "turbine_wheel", "diameter": 45, "on_shaft": "shaft"},
+    {"name": "compressor_housing", "type": "volute", "houses": "compressor"},
+    {"name": "turbine_housing", "type": "volute", "houses": "turbine"}], "rpm": 30}
+
+
+def test_a_turbocharger_sheet_is_filled_in_once_and_checked():
+    sheet, assumed = mc.clean(TURBO)
+    assert mc.describe(sheet) == "turbocharger with housings" and sheet["driver"] == "shaft"
+    assert sum(a.startswith("shaft.diameter") for a in assumed) == 1
+    by = {p["name"]: p for p in sheet["parts"]}
+    assert by["compressor"]["bore"] == by["shaft"]["diameter"] == by["bearing_front"]["bore"]
+    with pytest.raises(mc.MechanismError, match="houses no wheel"):
+        mc.clean({"parts": [{"name": "v", "type": "volute"}]})
+    with pytest.raises(mc.MechanismError, match="not a compressor or turbine"):
+        mc.clean({"parts": [{"name": "g", "type": "spur_gear", "module": 2, "teeth": 20},
+                            {"name": "v", "type": "volute", "houses": "g"}]})
+    with pytest.raises(mc.MechanismError, match="no diameter"):
+        mc.clean({"parts": [{"name": "w", "type": "turbine_wheel"}]})
+
+
+def test_the_turbo_layout_faces_the_wheels_apart_and_houses_them():
+    sheet, _ = mc.clean(TURBO)
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    axis = mc._col(pl["shaft"]["rotation"], 2)
+    comp, turb = mc._col(pl["compressor"]["rotation"], 2), mc._col(pl["turbine"]["rotation"], 2)
+    assert mc._dot(comp, axis) > 0.99 and mc._dot(turb, axis) < -0.99  # noses point away from each other
+    assert pl["compressor_housing"]["centre"] == pl["compressor"]["centre"]
+    gap = abs(mc._dot(mc._sub(pl["turbine"]["centre"], pl["compressor"]["centre"]), axis))
+    assert 0.3 * 0.05 < gap < 1.3 * 0.05  # room for both scrolls, as close as a real turbo's wheels
+    kinds = {(p["a"], p["b"]): p["kind"] for p in lay["pairs"]}
+    assert kinds[("compressor", "compressor_housing")] == "housing"
+    off = mc.exploded_offsets(sheet, lay)
+    along = {n: mc._dot(v, axis) for n, v in off.items()}
+    assert along["shaft"] == 0 and along["compressor_housing"] > along["compressor"] > 0 > along["turbine"] \
+        > along["turbine_housing"]
+    assert mc.loop_turns(sheet) == 3  # wheels repeat every turn; the bearings' balls every three
+
+
+def test_a_blade_into_its_housing_fails_blades_clear():
+    report = {"moments": 12, "clashes": [], "pairs": [
+        {"a": "turbine", "b": "turbine_housing", "kind": "housing", "found": True, "max_depth_m": 0.0004,
+         "max_gap_m": 0.0, "worst_moment": 2}]}
+    gates = checks.mesh_gates(report)
+    assert not gates["blades_clear"]["pass"] and "turbine pass 0.40 mm into turbine_housing" in gates["blades_clear"]["detail"]
+    report["pairs"][0]["max_depth_m"] = 0.0
+    assert checks.mesh_gates(report)["blades_clear"]["pass"]
+
+
 # --- real Blender --------------------------------------------------------------------------------------
 
 KIT = '''from bpy_lib import kits as k
@@ -373,6 +429,18 @@ def build_bevel():
 
 def build_shaft():
     return k.shaft(0.008, 0.08, keyway=True, name="shaft")
+
+def build_compressor():
+    return k.compressor_wheel(0.05, bore=0.004, name="compressor")
+
+def build_turbine():
+    return k.turbine_wheel(0.045, bore=0.004, name="turbine")
+
+def build_volute():
+    return k.volute(0.05, 0.021, 0.035, name="volute")
+
+def build_bearing():
+    return k.bearing(0.004, 0.0104, 0.00312, name="bearing")
 '''
 
 
@@ -381,13 +449,17 @@ def test_every_gear_tool_makes_one_closed_solid_at_its_real_size(tmp_path):
     file = tmp_path / "kit.py"
     file.write_text(KIT, encoding="utf-8")
     names = ["spur", "helical", "herring", "holes", "spokes", "ring", "rack", "bevel", "shaft"]
-    result = blender.run_job([blender.part_step(n, file, func=f"build_{n}") for n in names] + [blender.measure_step()],
-                             timeout=600)
+    several = ["compressor", "turbine", "volute", "bearing"]  # closed solids that overlap (blades in a hub)
+    result = blender.run_job([blender.part_step(n, file, func=f"build_{n}") for n in names + several]
+                             + [blender.measure_step()], timeout=600)
     assert result.ok, result.traceback
     parts = {p["part"]: p for p in result.outputs["measure"]["parts"]}
-    for n in names:
-        assert parts[n]["non_manifold_edges"] == 0 and parts[n]["islands"] == 1, (n, parts[n])
-        assert parts[n]["triangles"] < 12000, (n, parts[n]["triangles"])
+    for n in names + several:
+        assert parts[n]["non_manifold_edges"] == 0, (n, parts[n])
+        assert parts[n]["islands"] == 1 or n in several, (n, parts[n])
+        assert parts[n]["triangles"] < 16000, (n, parts[n]["triangles"])
+    # the box across X is a little under the diameter: no blade tip lies exactly on X
+    assert 0.048 < parts["compressor"]["size"][0] <= 0.0501 and parts["compressor"]["islands"] == 13  # hub, 6 + 6
     tip = 2 * mc.circles(2.0, 12, shift=0.294)["tip"] / 1000
     assert abs(parts["spur"]["size"][0] - tip) < 0.0002 and abs(parts["spur"]["size"][2] - 0.016) < 1e-5
     assert abs(parts["ring"]["size"][0] - (2 * 62.5 + 12) / 1000) < 0.0005  # root diameter 125 mm + 6 modules
@@ -428,3 +500,29 @@ def test_a_real_12_24_pair_meshes_through_its_loop_and_renders_a_transparent_loo
         box = where[0]["parts"][1]["box_px"]
         cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
         assert im.getpixel((int(cx), int(box[1] + 0.2 * (box[3] - box[1]))))[3] == 255
+
+
+@pytest.mark.blender
+def test_a_real_turbocharger_clears_its_housings_and_renders_a_cutaway_and_an_exploded_view():
+    from PIL import Image
+    sheet, assumed = mc.clean(TURBO)
+    proj = db.create_project("turbo", "turbocharger", options={"mechanism": sheet, "assumed": assumed})
+    out = asyncio.run(pipeline._run_parts(proj["name"], sheet, assumed))
+    assert out["ok"] and out["passed"], out
+    folder = pipeline.version_dir(proj["name"], out["version"])
+    gates = json.loads((folder / "checks.json").read_text(encoding="utf-8"))["gates"]
+    assert gates["blades_clear"]["pass"] and gates["no_clashes"]["pass"]
+    assert asyncio.run(jobs.render_motion(proj["name"], out["version"], "explainer", "persp", "side", None,
+                                          "cutaway", "auto")) is None
+    cut = folder / "cutaway" / "explainer-persp"
+    info = json.loads((cut / "cutaway.json").read_text(encoding="utf-8"))
+    assert info["cut_parts"] == ["compressor_housing", "turbine_housing"]
+    flows = json.loads((cut / "parts.json").read_text(encoding="utf-8"))["flows"]
+    assert {f["name"] for f in flows} == {"intake", "compressed", "exhaust_in", "exhaust"}
+    with Image.open(cut / "frame_000.png") as im:
+        accent = sum(1 for px in im.convert("RGB").getdata() if px[0] > 220 and px[1] < 90 and 60 < px[2] < 140)
+    assert accent > 500  # the cut faces show in the accent colour
+    assert asyncio.run(jobs.render_motion(proj["name"], out["version"], "explainer", "persp", "side", None,
+                                          "exploded")) is None
+    ex = json.loads((folder / "exploded" / "explainer-persp" / "exploded.json").read_text(encoding="utf-8"))
+    assert ex["frames"] == 48 and ex["offsets_m"]["shaft"] == [0.0, 0.0, 0.0]

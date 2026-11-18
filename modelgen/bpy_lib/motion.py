@@ -165,8 +165,11 @@ def _hub(obj, axis):
     bpy.context.view_layer.update()
     ev = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
     m = ev.matrix_world
-    corners = [m @ Vector(c) for c in ev.bound_box]
-    centre = sum(corners, Vector()) / len(corners)
+    if obj.get(GEAR_KEY):  # a kit part is built round its own axis: its origin is on it (an odd blade count
+        centre = m.translation.copy()  # would put the box's middle off the axis and make it wobble)
+    else:
+        corners = [m @ Vector(c) for c in ev.bound_box]
+        centre = sum(corners, Vector()) / len(corners)
     best = 0.0
     for v in ev.data.vertices:
         d = m @ v.co - centre

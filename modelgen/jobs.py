@@ -24,7 +24,9 @@ from . import config, db, pipeline, runner, uploads
 from .tools import agent_tools as at
 from .tools import asset_catalog, blender, mechanism
 
-OUTPUTS = ("game", "full", "views", "motion")
+OUTPUTS = ("game", "full", "views", "motion", "exploded", "cutaway")
+SEQUENCES = ("motion", "exploded", "cutaway")  # picture sequences of a moving model
+CUTS = ("auto", "top", "side", "front")
 STYLES = ("realistic", "flat", "explainer")
 CAMERAS = ("persp", "ortho")
 ANGLES = ("front", "front34", "side")
@@ -37,7 +39,7 @@ VIEWS_SIZE = 1024
 VIEWS_TIMEOUT_S = 1800
 MAX_REFERENCES = 4
 DEFAULTS = {"outputs": ["game", "full"], "style": "realistic", "camera": "persp", "reuse": True,
-            "max_versions": 2, "min_score": 70, "angle": "front"}
+            "max_versions": 2, "min_score": 70, "angle": "front", "cut": "auto"}
 
 BASE_URL = None  # set by the server once it knows its port; file links are absolute so any program can fetch them
 _wake = None
@@ -143,6 +145,9 @@ def clean_request(payload):
     angle = payload.get("angle") or DEFAULTS["angle"]
     if angle not in ANGLES:
         raise JobError(f"angle must be one of {', '.join(ANGLES)}")
+    cut = payload.get("cut") or DEFAULTS["cut"]
+    if cut not in CUTS:
+        raise JobError(f"cut must be one of {', '.join(CUTS)}")
     colours = payload.get("colours") or {}
     if not isinstance(colours, dict):
         raise JobError('colours must be {"part name": "#rrggbb"}')
@@ -163,7 +168,7 @@ def clean_request(payload):
            "min_score": _number(payload.get("min_score", DEFAULTS["min_score"]), "min_score", 0, 100),
            "budget_usd": (None if payload.get("budget_usd") in (None, "") else
                           round(_number(payload["budget_usd"], "budget_usd", 0.01, 100), 2)),
-           "references": [str(r) for r in references], "angle": angle, "colours": colours}
+           "references": [str(r) for r in references], "angle": angle, "colours": colours, "cut": cut}
     if sheet:
         req["mechanism"], req["assumed"] = sheet, assumed
     return client, key, req
@@ -193,7 +198,7 @@ def _reference(ref):
 
 def _same(a, b):
     keys = ("object", "notes", "size", "outputs", "style", "camera", "reuse", "max_versions", "min_score",
-            "budget_usd", "references", "angle", "colours", "mechanism")
+            "budget_usd", "references", "angle", "colours", "mechanism", "cut")
     return all(a.get(k) == b.get(k) for k in keys)
 
 
@@ -246,7 +251,7 @@ def version_files(project, number, outputs=OUTPUTS, style=None, camera=None):
         exports = sorted(p for p in (folder / "exports").iterdir() if p.is_file()) if (folder / "exports").is_dir() else []
         found += exports + ([folder / "model.blend"] if (folder / "model.blend").is_file() else [])
         main["full"] = next((p for p in exports if p.suffix == ".glb"), None)
-    for output, index in (("views", "views.json"), ("motion", "motion.json")):
+    for output, index in [("views", "views.json")] + [(k, f"{k}.json") for k in SEQUENCES]:
         if output not in outputs:
             continue
         sets = ([folder / output / f"{style}-{camera}"] if style and camera else
@@ -633,12 +638,12 @@ async def _finish(job_id, project, number, source):
                                    **({"colours": colours} if colours else {}))
         if error:
             db.update_job(job_id, notes=_note(db.get_job(job_id), f"the angle pictures could not be made: {error}"))
-    if "motion" in req["outputs"]:
-        db.update_job(job_id, step="rendering the motion", project=project, version=number)
+    for kind in (k for k in SEQUENCES if k in req["outputs"]):
+        db.update_job(job_id, step=f"rendering the {kind} pictures", project=project, version=number)
         error = await render_motion(project, number, req["style"], req["camera"], req.get("angle", DEFAULTS["angle"]),
-                                    colours)
+                                    colours, kind, req.get("cut", DEFAULTS["cut"]))
         if error:
-            db.update_job(job_id, notes=_note(db.get_job(job_id), f"the motion pictures could not be made: {error}"))
+            db.update_job(job_id, notes=_note(db.get_job(job_id), f"the {kind} pictures could not be made: {error}"))
     if _cancelled(job_id):
         return
     db.update_job(job_id, status="done", step="", project=project, version=number, score=score, passed=passed,
@@ -699,19 +704,23 @@ def _loop_report(folder):
         return {}
 
 
-async def render_motion(project, number, style="explainer", camera="persp", angle="front34", colours=None):
-    """The model working, as a seamless loop of transparent pictures in v<n>\\motion\\<style>-<camera>:
-    frame_000.png ..., motion.json (frames, frame rate, how to repeat them) and parts.json (where each
-    part is in every frame). A loop of more than 24 frames is split over two Blender runs at once.
-    Returns None, or what went wrong."""
+async def render_motion(project, number, style="explainer", camera="persp", angle="front34", colours=None,
+                        kind="motion", cut="auto"):
+    """The model working, as transparent pictures in v<n>\\<kind>\\<style>-<camera>: frame_000.png ...,
+    <kind>.json (frames, frame rate, how to repeat them) and parts.json (where each part is in every
+    frame, and the air paths). kind "motion" is the seamless loop; "cutaway" the same loop with the
+    housings sliced open (cut: the plane); "exploded" the parts sliding apart along the shaft in
+    assembly order and back. More than 24 frames are split over two Blender runs at once. Returns
+    None, or what went wrong."""
     folder = pipeline.version_dir(project, number)
-    out = folder / "motion" / f"{style}-{camera}"
-    index = out / "motion.json"
+    out = folder / kind / f"{style}-{camera}"
+    index = out / f"{kind}.json"
     if index.is_file():
         try:
             old = json.loads(index.read_text(encoding="utf-8"))
-            if old.get("angle") == angle and (style != "explainer" or not colours
-                                              or all(old.get("colours", {}).get(k) == v for k, v in colours.items())):
+            if old.get("angle") == angle and old.get("cut", cut) == cut and (
+                    style != "explainer" or not colours
+                    or all(old.get("colours", {}).get(k) == v for k, v in colours.items())):
                 return None
         except ValueError:
             pass
@@ -721,9 +730,14 @@ async def render_motion(project, number, style="explainer", camera="persp", angl
     if not blend.is_file():
         return "this version has no .blend to render"
     report = _loop_report(folder)
-    if not report and not (folder / "motion.py").is_file():
+    record = _mechanism_record(project, number)
+    if kind in ("motion", "cutaway") and not report and not (folder / "motion.py").is_file():
         return "this model does not move; ask for views instead"
-    frames = int(report.get("frames") or 0)
+    if kind == "cutaway" and not record.get("housings"):
+        return "this model has no housing to cut open"
+    if kind == "exploded" and not record.get("exploded"):
+        return "an exploded view needs a mechanism built by the part tools"
+    frames = 48 if kind == "exploded" else int(report.get("frames") or 0)
     samples = max(16, int(config.get("render", "samples", 96)) // 2)
     if frames > 24:
         half = frames // 2
@@ -731,8 +745,9 @@ async def render_motion(project, number, style="explainer", camera="persp", angl
     else:
         runs = [(None, None)]
     steps = [blender.motion_frames_step(out, camera, style, angle, a, b, size=VIEWS_SIZE, samples=samples,
-                                        colours=colours) for a, b in runs]
-    with runner.acting("critic", project, f"rendering the motion of v{number}", "render") as act:
+                                        colours=colours, mode=kind, cut=record.get("housings"), plane=cut,
+                                        offsets=record.get("exploded")) for a, b in runs]
+    with runner.acting("critic", project, f"rendering the {kind} of v{number}", "render") as act:
         results = await asyncio.gather(*(blender.run_job_async([s], open_blend=blend, timeout=MOTION_TIMEOUT_S)
                                          for s in steps))
         act.ok = all(r.ok for r in results)
@@ -750,20 +765,28 @@ async def render_motion(project, number, style="explainer", camera="persp", angl
     fps = first.get("fps") or 24
     names = [f"frame_{i:03d}.png" for i in sorted(where)]
     (out / "parts.json").write_text(json.dumps(
-        {"size_px": first.get("size_px"), "frames": [{"frame": i, "file": f"frame_{i:03d}.png", "parts": where[i]}
-                                                     for i in sorted(where)]}, indent=1), encoding="utf-8")
-    record = {"style": style, "camera": camera, "angle": angle, "size_px": first.get("size_px"), "fps": fps,
-              "frames": count, "loop_seconds": round(count / fps, 4), "view": first.get("view"),
-              "repeat": f"play frame_000 to frame_{count - 1:03d} in order, then start again at frame_000: the "
-                        "loop is seamless (the frame after the last is the first)",
-              "mode": loop.get("mode", "spin"), "driver": loop.get("driver"),
-              "driver_rpm": loop.get("driver_rpm") or loop.get("driver_rpm_peak"),
-              "parts": loop.get("parts") or {}, "colours": first.get("colours") or {}, "files": names}
-    if loop.get("mode") == "spin" and loop.get("driver_turns"):
-        record["driver_turns_per_loop"] = loop["driver_turns"]
-        record["note"] = ("the loop is the shortest stretch after which every part looks as it started (a plain "
-                          "gear repeats every tooth), so it is short: repeat it as often as the scene needs")
-    if loop.get("note"):
-        record["warning"] = loop["note"]
-    index.write_text(json.dumps(record, indent=1), encoding="utf-8")
+        {"size_px": first.get("size_px"), "flows": first.get("flows") or [],
+         "frames": [{"frame": i, "file": f"frame_{i:03d}.png", "parts": where[i]} for i in sorted(where)]},
+        indent=1), encoding="utf-8")
+    info = {"kind": kind, "style": style, "camera": camera, "angle": angle, "size_px": first.get("size_px"),
+            "fps": fps, "frames": count, "loop_seconds": round(count / fps, 4), "view": first.get("view"),
+            "repeat": f"play frame_000 to frame_{count - 1:03d} in order, then start again at frame_000: the "
+                      "loop is seamless (the frame after the last is the first)",
+            "colours": first.get("colours") or {}, "files": names}
+    if kind == "exploded":
+        info["exploded"] = ("the parts slide apart along the shaft in assembly order (frame_000 assembled, "
+                            f"frame_{count // 2:03d} furthest apart) and back together")
+        info["offsets_m"] = record.get("exploded")
+    else:
+        info.update(mode=loop.get("mode", "spin"), driver=loop.get("driver"),
+                    driver_rpm=loop.get("driver_rpm") or loop.get("driver_rpm_peak"), parts=loop.get("parts") or {})
+        if loop.get("mode") == "spin" and loop.get("driver_turns"):
+            info["driver_turns_per_loop"] = loop["driver_turns"]
+            info["note"] = ("the loop is the shortest stretch after which every part looks as it started (a plain "
+                            "gear repeats every tooth), so it is short: repeat it as often as the scene needs")
+        if loop.get("note"):
+            info["warning"] = loop["note"]
+    if kind == "cutaway":
+        info["cut"], info["cut_parts"], info["cut_colour"] = cut, record.get("housings"), "#ff2e63"
+    index.write_text(json.dumps(info, indent=1), encoding="utf-8")
     return None

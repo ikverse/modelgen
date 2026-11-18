@@ -6,6 +6,7 @@ versions compare fairly. A car gets its own photo studio instead (add_car_lights
 strips its glossy paint reflects, a darker glossy floor and a lower turntable.
 """
 
+import json
 import math
 import os
 import tempfile
@@ -851,6 +852,9 @@ def _explainer_style(objs, colours=None):
         if not obj.data.materials:
             obj.data.materials.append(mat)
         for i in range(len(obj.data.materials)):
+            old = obj.data.materials[i]
+            if old is not None and old.get("mg_cut"):
+                continue  # a cutaway's cut faces keep their accent colour
             obj.data.materials[i] = mat
     _outline(max(1.5, bpy.context.scene.render.resolution_x / 420))
     scene = bpy.context.scene
@@ -975,13 +979,175 @@ def _project(cam, point, size):
     return [round(p.x * size, 1), round((1 - p.y) * size, 1)]
 
 
+CUT_COLOUR = "#ff2e63"   # the faces a cutaway slices open
+EXPLODED_FRAMES = 48     # out and back in two seconds
+
+
+def _cut_material():
+    mat = bpy.data.materials.get("_mg_cut")
+    if mat is None:
+        mat = bpy.data.materials.new("_mg_cut")
+        mat.use_nodes = True
+        nt = mat.node_tree
+        nt.nodes.clear()
+        out = nt.nodes.new("ShaderNodeOutputMaterial")
+        emit = nt.nodes.new("ShaderNodeEmission")
+        emit.inputs["Color"].default_value = (*_linear(CUT_COLOUR), 1.0)
+        nt.links.new(emit.outputs[0], out.inputs["Surface"])
+        mat.diffuse_color = (*_linear(CUT_COLOUR), 1.0)
+        mat["mg_cut"] = 1
+    return mat
+
+
+def _cut_open(objs, cam, plane="auto"):
+    """Slice housings open: the half of each nearest the camera (through its own axis) is cut away,
+    and the faces the cut leaves are a flat accent colour. plane "top", "side" or "front" cuts away
+    the half on that side instead."""
+    fixed = {"top": Vector((0, 0, 1)), "side": Vector((1, 0, 0)), "front": Vector((0, -1, 0))}
+    for obj in objs:
+        bpy.context.view_layer.update()
+        centre = obj.matrix_world.translation.copy()
+        axis = (obj.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
+        if plane in fixed:
+            n = fixed[plane]
+        else:
+            d = cam.location - centre
+            n = d - axis * d.dot(axis)
+            n = n.normalized() if n.length > 1e-6 * max(d.length, 1e-9) else Vector((0, 0, 1))
+        # slice with the plane and fill every cut opening: works piece by piece on a housing made of
+        # several overlapping solids, where a boolean cut would not
+        helpers.apply_modifiers(obj)
+        if not any(m is not None and m.get("mg_cut") for m in obj.data.materials):
+            obj.data.materials.append(_cut_material())
+        slot = next(i for i, m in enumerate(obj.data.materials) if m is not None and m.get("mg_cut"))
+        inv = obj.matrix_world.inverted()
+        co = inv @ centre
+        no = (obj.matrix_world.to_3x3().transposed() @ n).normalized()  # a normal into the part's own frame
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        # tag each separate solid before slicing (the slice can split one, a tube losing its end caps)
+        layer = bm.verts.layers.int.new("mg_piece")
+        bm.verts.index_update()
+        parent = list(range(len(bm.verts)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        for e in bm.edges:
+            a, b = find(e.verts[0].index), find(e.verts[1].index)
+            if a != b:
+                parent[a] = b
+        for v in bm.verts:
+            v[layer] = find(v.index)
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=co, plane_no=no,
+                               clear_outer=True)
+        # fill the cut outlines all together (they lie in one plane): an outline inside another is a
+        # hole, so a hollow scroll's wall shows as a ring (the cut also took its end caps away, so its
+        # two walls are no longer joined and cannot be told apart by what they are joined to)
+        from mathutils.geometry import tessellate_polygon
+        open_edges = [e for e in bm.edges if len(e.link_faces) == 1]
+        by_piece = {}
+        for e in open_edges:
+            # a vertex the slice made may carry no tag of its own: use the face it borders
+            f = e.link_faces[0]
+            tags = [v[layer] for v in f.verts]
+            by_piece.setdefault(max(set(tags), key=tags.count), []).append(e)
+        for edges in by_piece.values():
+            nxt = {}
+            for e in edges:
+                a, b = e.verts
+                nxt.setdefault(a, []).append(b)
+                nxt.setdefault(b, []).append(a)
+            loops, seen = [], set()
+            for start in nxt:
+                if start in seen:
+                    continue
+                loop, prev, cur = [start], None, start
+                seen.add(start)
+                while True:
+                    step = next((v for v in nxt[cur] if v is not prev and v not in seen), None)
+                    if step is None:
+                        break
+                    loop.append(step)
+                    seen.add(step)
+                    prev, cur = cur, step
+                if len(loop) >= 3:
+                    loops.append(loop)
+            if not loops:
+                continue
+            # in the cut plane: an outline inside another is a hole (a hollow scroll's wall section)
+            u = no.orthogonal().normalized()
+            w = no.cross(u)
+            flat2 = [[(v.co.dot(u), v.co.dot(w)) for v in loop] for loop in loops]
+
+            def inside(pt, poly):
+                x, y = pt
+                hit = False
+                for k in range(len(poly)):
+                    (x1, y1), (x2, y2) = poly[k], poly[k - 1]
+                    if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                        hit = not hit
+                return hit
+
+            within = {i: [j for j in range(len(loops)) if j != i and inside(flat2[i][0], flat2[j])]
+                      for i in range(len(loops))}  # the outlines each one lies inside
+            depth = {i: len(within[i]) for i in within}
+            holes = {i: [j for j in within if i in within[j] and depth[j] == depth[i] + 1] for i in within}
+            for i, loop in enumerate(loops):
+                if depth[i] % 2:
+                    continue  # a hole: filled as part of the ring round it
+                if holes[i]:
+                    for j in holes[i]:
+                        try:
+                            made = bmesh.ops.bridge_loops(bm, edges=[e for e in edges if e.verts[0] in loop
+                                                                      or e.verts[0] in loops[j]])
+                            for f in made.get("faces", []):
+                                f.material_index = slot
+                        except (ValueError, RuntimeError):
+                            for tri in tessellate_polygon([[v.co for v in loop], [v.co for v in loops[j]]]):
+                                both = loop + loops[j]
+                                bm.faces.new([both[t] for t in tri]).material_index = slot
+                else:
+                    try:
+                        bm.faces.new(loop).material_index = slot
+                    except ValueError:
+                        pass
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+
+
+def _flows_px(objs, cam, size):
+    """The air paths kept on housings (intake, compressed, exhaust...), in picture pixels, for the
+    Village to draw: they are not rendered."""
+    out = []
+    for obj in objs:
+        raw = obj.get(motion.GEAR_KEY)
+        try:
+            info = json.loads(raw) if raw else {}
+        except ValueError:
+            info = {}
+        for name, pts in (info.get("flows") or {}).items():
+            out.append({"name": name, "part": obj.get(helpers.PART_KEY) or obj.name,
+                        "points_px": [_project(cam, obj.matrix_world @ Vector(p), size) for p in pts]})
+    return out
+
+
 def render_motion(out_dir, camera_mode="persp", style="explainer", angle="front34", first=None, last=None,
-                  colours=None):
+                  colours=None, mode="motion", cut=None, plane="auto", offsets=None):
     """The model moving through its loop as transparent pictures frame_000.png ... from one angle
     ("front", "front34" or "side"), frames first..last of the loop (0-based, all when left out), so
     a long loop can be split over two Blender runs. Every frame is framed the same (the box the model
-    fills over the whole loop). Returns the files and, for each frame, where each part is: its colour,
-    its box in the picture and its centre (a gear's axis), for labels and arrows (parts.json)."""
+    fills over the whole loop). mode "cutaway" first slices the parts named in `cut` open (plane:
+    "auto", "top", "side" or "front"); mode "exploded" instead slides every part out by its offset
+    (metres, from the mechanism sheet) and back, over EXPLODED_FRAMES frames, the motion held at the
+    first frame. Returns the files and, for each frame, where each part is: its colour, its box in
+    the picture and its centre (a gear's axis), for labels and arrows (parts.json), and the air paths
+    in picture pixels."""
     os.makedirs(out_dir, exist_ok=True)
     objs = model_objects()
     if not objs:
@@ -998,27 +1164,50 @@ def render_motion(out_dir, camera_mode="persp", style="explainer", angle="front3
     cam.data.type = "ORTHO" if camera_mode == "ortho" else "PERSP"
     if style == "realistic" and scene.render.engine == "CYCLES":
         scene.cycles.samples = min(scene.cycles.samples, 48)
-    chosen = _apply_style(objs, style, colours) or {}
-    lo, hi = _loop_bounds(objs)
     az = ASSET_VIEWS.get(angle)
     if az is None:
         raise ValueError(f"angle must be one of front, front34, side (not {angle})")
     el = ASSET_ELEVATION.get(camera_mode, 15)
+    lo, hi = _loop_bounds(objs)
+    moves = {}
+    if mode == "exploded":
+        scene.frame_set(scene.frame_start)
+        for o in objs:
+            off = (offsets or {}).get(o.get(helpers.PART_KEY) or o.name)
+            if off:
+                moves[o.name] = (o, o.location.copy(), Vector(off))
+        for o, base, off in moves.values():
+            o.location = base + off
+        a, b = helpers.bounds(objs)
+        lo, hi = Vector(map(min, lo, a)), Vector(map(max, hi, b))
+        for o, base, off in moves.values():
+            o.location = base
     aim_box(cam, lo, hi, az, el)
+    if mode == "cutaway" and cut:
+        _cut_open([o for o in objs if (o.get(helpers.PART_KEY) or o.name) in set(cut)], cam, plane)
+    chosen = _apply_style(objs, style, colours) or {}
     view = {"azimuth_deg": az, "elevation_deg": el, "camera": camera_mode, "angle": angle}
     if cam.data.type == "ORTHO":
         view["pixels_per_metre"] = round(size / cam.data.ortho_scale, 2)
     else:
         view["lens_mm"], view["distance_m"] = LENS_MM, round((cam.location - (lo + hi) / 2).length, 4)
-    frames = scene.frame_end - scene.frame_start + 1
+    frames = EXPLODED_FRAMES if mode == "exploded" else scene.frame_end - scene.frame_start + 1
     start = 0 if first is None else max(0, int(first))
     stop = frames - 1 if last is None else min(frames - 1, int(last))
     groups = {}
     for o in objs:
         groups.setdefault(o.get(helpers.PART_KEY) or o.name, []).append(o)
+    scene.frame_set(scene.frame_start)
+    flows = _flows_px(objs, cam, size) if mode != "exploded" else []
     files, where = [], {}
     for i in range(start, stop + 1):
-        scene.frame_set(scene.frame_start + i)
+        if mode == "exploded":
+            f = 0.5 - 0.5 * math.cos(2 * math.pi * i / frames)  # out and back, easing at both ends
+            for o, base, off in moves.values():
+                o.location = base + off * f
+            bpy.context.view_layer.update()
+        else:
+            scene.frame_set(scene.frame_start + i)
         rows = []
         for name in sorted(groups):
             box = _picture_box(cam, groups[name], size)
@@ -1027,10 +1216,12 @@ def render_motion(out_dir, camera_mode="persp", style="explainer", angle="front3
                          "centre_px": _project(cam, origin, size)})
         where[i] = rows
         files.append(_render(os.path.join(out_dir, f"frame_{i:03d}.png")))
+    for o, base, off in moves.values():
+        o.location = base
     scene.frame_set(scene.frame_start)
     cam.data.type = "PERSP"
     return {"files": files, "parts": where, "size_px": size, "view": view, "frames": frames, "fps": scene.render.fps,
-            "colours": chosen, "loop": scene.get("mg_mechanism_loop")}
+            "colours": chosen, "loop": scene.get("mg_mechanism_loop"), "flows": flows, "mode": mode}
 
 
 # --- export -------------------------------------------------------------------------

@@ -37,6 +37,15 @@ Use real, typical values and keep them consistent:
 - The tools fill in what you leave out (width, bore, backlash, profile shift for small pinions) and
   list it; leave out what you have no reason to set.
 
+## A turbocharger
+One `shaft` carries, in this order (front to back): the `compressor_wheel`, two `bearing`s, the
+`turbine_wheel`; each wheel has a `volute` that `houses` it. Real sizes: a car turbo's compressor
+wheel 40 to 70 mm across, the turbine wheel about 0.85 to 0.95 of that; let the tools pick blade
+counts, lengths and bores. Drive the shaft at about 30 rpm for a learner (the real thing runs at
+100 000 rpm or more; say so in your notes). The tools make a complete turbocharger from these
+parts: do not list a centre (bearing) housing, an oil feed, a wastegate or a heat shield in
+`custom_parts` unless the request asks for that part by name; "its housings" are the volutes.
+
 ## Parts no tool makes
 If the request needs a part that is not one of the types (a gearbox housing, a bracket, a base
 plate, a hand crank), still put every part a tool makes in the sheet, and list the others in
