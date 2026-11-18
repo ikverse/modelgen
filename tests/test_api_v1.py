@@ -325,6 +325,16 @@ def test_a_model_that_never_passed_is_not_reused(api, fake_build, monkeypatch):
     assert out["status"] == "done" and out["source"] == "built" and len(fake_build["calls"]) == 1
 
 
+def test_the_model_search_leaves_out_models_that_never_passed(api):
+    made_before(score=40, passed=False)
+    good = made_before(score=88)
+    assert [m["name"] for m in api.get("/v1/models?q=fire hydrant").json()["models"]] == [good]
+    middling = made_before("garden bench", score=65, passed=False)
+    assert api.get("/v1/models?q=garden bench").json()["models"] == []
+    assert [m["name"] for m in api.get("/v1/models?q=garden bench&min_score=60").json()["models"]] == [middling]
+    assert api.get("/v1/models?q=bench&min_score=120").status_code == 400
+
+
 def test_reuse_follows_the_jobs_min_score(api, fake_build, monkeypatch):
     old = made_before(score=65, passed=False)
 

@@ -152,8 +152,9 @@ each output.
 - `GET /v1/jobs?client=village&status=queued,building&limit=50`: jobs, newest first.
 - `POST /v1/jobs/{id}/cancel`: takes a job out of the queue or stops its build (what was built is
   kept on ModelGen's page).
-- `GET /v1/models?q=fire hydrant&limit=10`: `{"models": [...], "ready_made": [...]}`. `models` are
-  accepted models that match, best first, each with `name`, `title`, `source`, `version`,
+- `GET /v1/models?q=fire hydrant&limit=10&min_score=70`: `{"models": [...], "ready_made": [...]}`.
+  `models` are accepted models that match and reach `min_score` (default `70`, as for a job; a
+  ready-made or part-tools model without a score needs to have passed its checks), best first, each with `name`, `title`, `source`, `version`,
   `score`, `passed`, `size_m`, `views` (the angle picture sets it has), `files` and `main`.
   `ready_made` are catalogue models not made yet; a job for that object makes one in a minute.
 - `GET /v1/models/{name}`: one accepted model with all its files.

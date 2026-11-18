@@ -427,14 +427,16 @@ def _model_info(proj, v, outputs=("game", "full")):
             "views": styles, **version_files(proj["name"], v["number"], outputs)}
 
 
-def find_models(q, limit=10):
-    """Accepted models that match the words, best first, and the ready-made catalogue's candidates
-    (made in about a minute when a job asks for one of them)."""
+def find_models(q, limit=10, min_score=DEFAULTS["min_score"]):
+    """Accepted models that match the words and reach min_score (or passed, when unscored), best
+    first, and the ready-made catalogue's candidates (made in about a minute when a job asks for one)."""
     head, mods = asset_catalog.object_words(q)
     wanted = _tokens(q)
     hits = []
     for m in _made_models():
         if head and asset_catalog._norm(head) not in m["words"]:
+            continue
+        if not _good_enough(m["version"], min_score):
             continue
         share = len(wanted & m["words"]) / max(len(wanted), 1)
         hits.append((share, m["version"].get("score") or 0, m))
