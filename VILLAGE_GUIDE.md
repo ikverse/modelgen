@@ -123,6 +123,86 @@ rod, piston, rings and cylinder off the crank in that order. A real engine idles
 10 to 30 rpm is easy to follow. ModelGen refuses a rod too short for its stroke and says how long it
 must be.
 
+### Fasteners: `bolt`, `nut`, `washer`
+- `bolt`: `diameter` (the M size, default 10) and `length`; the ISO coarse pitch and hexagon follow.
+- `nut` and `washer`: **on_bolt** names the bolt. The nut sits seated with five pitches of thread
+  below it; as the driver it screws four turns off and back on (`rpm` is its fastest speed). The
+  threads are true ISO helices: the nut's thread runs in the bolt's the whole way.
+
+### Spring: `spring`
+- `mean_diameter`, `wire_diameter`, `free_length`, `coils`, `kind` (`compression` or `extension`).
+- As the driver it is squeezed by `squeeze` (default 0.3 of its length) and let go, `rpm` times a
+  minute. ModelGen refuses a squeeze that would close the coils solid and says how far it can go.
+
+### Belt and chain drives: `pulley` + `belt`, `sprocket` + `chain`
+- `pulley`: **datum_diameter**, `grooves`, `section` (Z, A or B). `belt`: **on** `[driver, driven]`,
+  `centre_distance` (default the two diameters added). Both pulleys turn the same way, the driven
+  at driver diameter / driven diameter. A belt wrapping under 120° of the small pulley is refused.
+- `sprocket`: **teeth**, `pitch` (12.7 mm). `chain`: **on** `[driver, driven]`, `centre_distance`.
+  ModelGen moves the distance to the nearest one a whole, even number of links allows, and lists it
+  under `assumed`. The chain's rollers sit in the tooth gaps and run round with the sprockets.
+
+### Cam, follower, valve: `cam`, `follower`, `valve` (+ a `spring` on the valve)
+- `cam`: **base_diameter**, **lift**, `rise`, `dwell`, `fall` (degrees; cycloidal rise and fall).
+- `follower`: **on_cam**; `kind` `roller` or `flat`; it stands above the cam and rides it all the
+  way round (checked). `valve`: **on_cam**, **head_diameter**; it hangs under the cam with a bucket
+  tappet, opened downward as an overhead cam does; add `{"type": "spring", "on_valve": "valve"}` for
+  its spring, sized to the valve and squeezed as it opens. A cam that would jam a roller or undercut
+  it is refused.
+
+### Planetary set: `planetary_set`
+- **module**, **sun_teeth**, **planet_teeth**, `planets` (3), `fixed` (ring), `input` (sun). The
+  ring has sun + 2 × planet teeth. It comes back as the parts `<name>_sun`, `<name>_planet1`...,
+  `<name>_ring`, `<name>_carrier`. Every member turns by Willis's equation (sun in, ring held:
+  carrier = sun / (1 + ring / sun)), and the planets ride round on the carrier. Sun + ring teeth
+  must divide by the number of planets.
+
+### Worm drive: `worm` + `worm_wheel`
+- `worm`: **module** (axial), `starts`, `pitch_diameter` (10 × module), `hand`. `worm_wheel`:
+  **teeth**, **meshes_with** the worm. The wheel sits above the worm and turns starts / teeth of a
+  turn per worm turn; the worm must drive (a worm wheel cannot turn its worm).
+
+```json
+{"parts": [
+  {"name": "small", "type": "sprocket", "teeth": 18},
+  {"name": "big", "type": "sprocket", "teeth": 36},
+  {"name": "chain", "type": "chain", "on": ["small", "big"], "centre_distance": 400}],
+ "rpm": 20}
+```
+
+Look along the shafts (`angle: "front"`) for belts, chains, cams, planetary sets and worm drives;
+`"side"` shows a bolt and nut or a spring best. The exploded view slides nuts off past the bolt's
+tip, belts and chains off their wheels, followers away from their cams, a worm wheel up off its
+worm and a planetary set apart along its axis.
+
+### From your own design: `design`
+Send the design you drew instead of numbers, and ModelGen makes the 3D part that matches it:
+
+```json
+{"client": "village", "design": "C:\\...\\data\\library\\parts\\two-gears\\design.json",
+ "outputs": ["motion"], "style": "explainer", "angle": "front", "camera": "ortho"}
+```
+
+- `design` is the design's JSON itself or the full path of its `design.json`.
+- Every group whose filled outline is a toothed ring becomes a gear: the teeth counted from your
+  drawing, the bore and hub from the round shapes inside it, its colour your fill. Gears drawn
+  touching mesh at the angle you drew them; the largest gear's teeth start where you drew them.
+  Lines, shadows and anything not toothed are listed in `design.skipped` with the reason.
+- The scale: `design_module` (mm) or `design_mm_per_px`, else a standard module near half your drawn
+  module in pixels. Draw teeth that size: tip diameter = (teeth + 2) x module.
+- Your cast (people) have no part ModelGen's tools make: such a design is refused, naming each group.
+
+**Swapping your flat part for the 3D one.** Ask for `camera: "ortho"` and `angle: "front"`: the
+3D part then faces you exactly as drawn. The job answers `design.mm_per_px` and, for each part,
+`design.parts.<name>.centre_px` (where its centre is in your canvas) and `tip_radius_px`. In
+`motion/explainer-ortho/parts.json`, each frame gives that part's `centre_px` in the rendered
+picture, and `view.pixels_per_metre` in `motion.json` says the picture's scale. Scale the frames
+by `1000 / (mm_per_px x pixels_per_metre)` (picture pixels to your pixels), then move them so the
+largest gear's rendered centre lands on your `centre_px`: every gear then sits exactly over your
+flat one (tested: within 0.02 of your pixels). The largest gear is tooth on tooth with your
+drawing at the first frame; the gears it drives are turned to mesh with it, so draw them in mesh
+too or their teeth will sit a little round from yours.
+
 ### Connecting them
 - `meshes_with`: the gear(s) it meshes with (name the link once). Meshing gears need the same module
   and pressure angle.

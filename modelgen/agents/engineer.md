@@ -58,6 +58,19 @@ tools set the usual firing order. Drive the crank at 10 to 30 rpm for a learner.
 valves or a sump are parts no tool makes yet: list them in `custom_parts` only when the request
 asks for them by name.
 
+## Fasteners, springs, belts, chains, cams, planetary sets, worms
+- A `bolt` (its M `diameter`, `length`) with a `nut` and `washer` `on_bolt` it; a nut that screws
+  on and off is the driver.
+- A `spring` alone (mean and wire diameter, free length, coils) is squeezed as the driver.
+- Two `pulley`s (datum diameters) with a `belt` `on` both, the driver first; two `sprocket`s
+  (teeth; 12.7 mm pitch for a bicycle or small machine chain) with a `chain` `on` both.
+- A `cam` (base diameter, lift, rise/dwell/fall degrees) with a `follower` or a `valve` `on_cam`
+  it, and a `spring` `on_valve` for the valve; the cam drives.
+- A `planetary_set` (module, sun and planet teeth, which member is held and which driven) is one
+  entry; the tools make its sun, planets, ring and carrier.
+- A `worm` (module, starts) drives a `worm_wheel` (teeth) that `meshes_with` it.
+Give real, typical sizes; leave what you have no reason to set to the tools.
+
 ## Parts no tool makes
 If the request needs a part that is not one of the types (a gearbox housing, a bracket, a base
 plate, a hand crank), still put every part a tool makes in the sheet, and list the others in

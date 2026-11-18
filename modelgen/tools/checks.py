@@ -93,7 +93,8 @@ MESH_GAP = 0.15         # and come no further apart than this share of a module 
 CENTRE_TOL = 0.002      # the centre distance may be off by this share
 RATIO_TOL = 0.01        # the speed ratio by this share
 CLASH_DEPTH = 0.0002    # any other two parts may pass this far into each other (0.2 mm), no further
-PIN_TOL = 0.00015       # a rod's ends may stray this far off their pins between keyed frames (0.15 mm)
+CAM_TOL = 0.00025       # a follower may sit this far into or off its cam (the profile is a polygon): 0.25 mm
+PIN_TOL = 0.00015      # a rod's ends may stray this far off their pins between keyed frames (0.15 mm)
 
 
 def mesh_gates(report, pairs=None):
@@ -102,7 +103,7 @@ def mesh_gates(report, pairs=None):
     nothing else passes through anything while it moves. Returns {gate: {"pass", "detail",
     "route"}}; route is who fixes a failure: "assembly" (spacing, starting angle) or "motion"
     (ratio, direction)."""
-    rows = [r for r in (report or {}).get("pairs", []) if r.get("kind") in ("mesh", "rack")]
+    rows = [r for r in (report or {}).get("pairs", []) if r.get("kind") in ("mesh", "rack", "planet", "drive", "train")]
     gates = {}
     missing = [f"{r['a']}/{r['b']}" for r in rows if not r.get("found", True)]
     depth_bad, gap_bad, centre_bad, ratio_bad = [], [], [], []
@@ -121,7 +122,7 @@ def mesh_gates(report, pairs=None):
         if want and abs(r.get("centre_m", 0) - want) > max(CENTRE_TOL * want, 0.02 * m):
             centre_bad.append(f"{pair}: centre distance {r['centre_m'] * 1000:.3f} mm, the sheet says "
                               f"{want * 1000:.3f} mm")
-        if r["kind"] == "mesh" and r.get("ratio_expected"):
+        if r["kind"] in ("mesh", "drive", "train") and r.get("ratio_expected"):
             want_ratio = r["ratio_expected"] * (1 if r.get("same_direction_expected") else -1)
             got = r.get("ratio")
             if got is None or abs(got - want_ratio) > RATIO_TOL * abs(want_ratio):
@@ -154,6 +155,16 @@ def mesh_gates(report, pairs=None):
         gates["blades_clear"] = {"pass": not bad, "route": "assembly",
                                  "detail": "; ".join(bad) or "every wheel's blades clear its housing all the way round"}
     rows_all = [r for r in (report or {}).get("pairs", []) if r.get("found", True)]
+    cams = [r for r in rows_all if r.get("kind") == "cam"]
+    if cams:
+        bad = []
+        for r in cams:
+            if r.get("max_depth_m", 0) > CAM_TOL:
+                bad.append(f"{r['b']} digs {r['max_depth_m'] * 1000:.2f} mm into {r['a']} (moment {r.get('worst_moment')})")
+            if r.get("max_gap_m", 0) > CAM_TOL:
+                bad.append(f"{r['b']} lifts {r['max_gap_m'] * 1000:.2f} mm off {r['a']} (moment {r.get('worst_moment')})")
+        gates["follower_contact"] = {"pass": not bad, "route": "motion",
+                                     "detail": "; ".join(bad) or "every follower rides on its cam all the way round"}
     pinned = [r for r in rows_all if r.get("kind") in ("crank", "pin")]
     if pinned:
         bad = [f"{r['a']} comes {r['max_offset_m'] * 1000:.2f} mm off "

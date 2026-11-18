@@ -299,13 +299,13 @@ def mesh_report(pairs, moments=12, reach=None):
     worst = {}
     clashes = {}
     for k in range(moments):
-        t = first + span * k / moments
-        scene.frame_set(int(math.floor(t)), subframe=t - math.floor(t))
+        t = first + round(span * k / moments)  # whole frames: a chain's links are keyed frame by frame
+        scene.frame_set(int(t))
         bpy.context.view_layer.update()
         dg = bpy.context.evaluated_depsgraph_get()
         solids = {n: _solid(o, dg) for n, o in by.items()}
         for p in pairs:
-            if p["kind"] in ("shaft",) + ENGINE or p["a"] not in solids or p["b"] not in solids:
+            if p["kind"] in ("shaft", "drive", "train") + ENGINE or p["a"] not in solids or p["b"] not in solids:
                 continue
             m = p.get("module_m") or 0.002
             depth, gap = _depth_and_gap(solids[p["a"]], solids[p["b"]], reach or 2.5 * m)
@@ -353,11 +353,13 @@ def mesh_report(pairs, moments=12, reach=None):
             up = (tracked[p["b"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
             row["centre_m"] = round(abs((ca - cb).dot(up)), 6)
             row["metres_per_radian_expected"] = p.get("metres_per_radian")
-        elif p["kind"] == "mesh":
-            d = (cb - ca) - axis_a * (cb - ca).dot(axis_a)
-            row["centre_m"] = round(d.length, 6)
-            row["ratio_expected"] = p.get("ratio")
-            row["same_direction_expected"] = p.get("same_direction")
+        elif p["kind"] in ("mesh", "planet", "drive", "train"):
+            if p["kind"] in ("mesh", "planet"):
+                d = (cb - ca) - axis_a * (cb - ca).dot(axis_a)
+                row["centre_m"] = round(d.length, 6)
+            if p["kind"] != "planet":  # a planet rides round: its speed is the set's, checked as a train
+                row["ratio_expected"] = p.get("ratio")
+                row["same_direction_expected"] = p.get("same_direction")
         if p["kind"] != "shaft":
             row["centre_expected_m"] = p.get("centre_m")
             w = worst.get((p["a"], p["b"]), {})

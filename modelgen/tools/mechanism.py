@@ -262,6 +262,8 @@ GEAR_FIELDS = {
     "keyway": {"type": "boolean", "default": False, "about": "a key slot in the bore (a visible mark: the loop is a "
                                                               "whole turn)"},
     "colour": {"type": "string", "default": "the palette", "about": "#rrggbb for the explainer style"},
+    "phase": _f("deg", -360, 360, 0, "where a tooth's middle starts, counterclockwise from the right as seen (the "
+                                     "driving gear only; the others follow it in mesh)"),
 }
 LINK_FIELDS = {
     "meshes_with": {"type": "string or list", "about": "the part(s) this gear meshes with"},
@@ -380,8 +382,99 @@ TYPES = {
                  "fields": {"style": {"enum": ["liner", "block"], "default": "liner", "about": "liner or block"},
                             "wall": _f("mm", 0.5, 200, "0.08 x bore", "wall round the bore"),
                             "colour": GEAR_FIELDS["colour"]}},
+    # --- stage 4 -----------------------------------------------------------------------------------
+    "bolt": {"about": "a hexagon-head bolt with an ISO metric thread; stands still (a nut screws on it)",
+             "fields": {"diameter": _f("mm", 3, 36, 10, "nominal diameter (M size)"),
+                        "length": _f("mm", 5, 400, "4 x diameter", "under the head to the tip"),
+                        "pitch": _f("mm", 0.2, 6, "ISO coarse for the diameter", "thread pitch"),
+                        "colour": GEAR_FIELDS["colour"]}},
+    "nut": {"about": "a hexagon nut on a bolt (on_bolt); in motion it screws off and back on",
+            "fields": {"colour": GEAR_FIELDS["colour"]}},
+    "washer": {"about": "a plain washer on a bolt (on_bolt), under the nut", "fields": {"colour": GEAR_FIELDS["colour"]}},
+    "spring": {"about": "a helical spring of round wire; alone it is squeezed and let go, on a valve (on_valve) it "
+                        "closes the valve",
+               "fields": {"kind": {"enum": ["compression", "extension"], "default": "compression", "about": "kind"},
+                          "wire_diameter": _f("mm", 0.2, 50, "0.12 x mean diameter", "wire diameter"),
+                          "mean_diameter": _f("mm", 2, 500, 24, "coil diameter through the wire's middle"),
+                          "free_length": _f("mm", 3, 2000, "2.5 x mean diameter", "length unloaded"),
+                          "coils": _f("turns", 2, 60, 8, "turns of wire"),
+                          "squeeze": _f("share", 0.05, 0.9, 0.3, "how much shorter it gets when squeezed"),
+                          "colour": GEAR_FIELDS["colour"]}},
+    "pulley": {"about": "a V-belt pulley; two joined by a belt turn the same way at the ratio of their diameters",
+               "fields": {"datum_diameter": _f("mm", 20, 2000, None, "the belt's pitch diameter (required)"),
+                          "grooves": {"type": "integer", "min": 1, "max": 8, "default": 1, "about": "belts side by side"},
+                          "section": {"enum": ["Z", "A", "B"], "default": "A", "about": "V-belt section"},
+                          "bore": _f("mm", 0, 500, "0.2 x datum diameter", "shaft hole"),
+                          "colour": GEAR_FIELDS["colour"]}},
+    "belt": {"about": "a V-belt round two pulleys (on: [driver, driven])",
+             "fields": {"centre_distance": _f("mm", 10, 10000, "the two diameters added", "pulley centre to centre"),
+                        "colour": GEAR_FIELDS["colour"]}},
+    "sprocket": {"about": "a roller-chain sprocket; two joined by a chain turn the same way at their tooth ratio",
+                 "fields": {"teeth": {"type": "integer", "min": 9, "max": 120, "default": None,
+                                      "about": "teeth (required)"},
+                            "pitch": _f("mm", 4, 80, 12.7, "the chain's pitch (12.7: an 08B / ANSI 40 chain)"),
+                            "bore": _f("mm", 0, 500, "0.25 x pitch diameter", "shaft hole"),
+                            "colour": GEAR_FIELDS["colour"]}},
+    "chain": {"about": "a roller chain round two sprockets (on: [driver, driven]); its links run round them",
+              "fields": {"centre_distance": _f("mm", 10, 10000, "35 pitches", "sprocket centre to centre (set to "
+                                               "the nearest a whole, even number of links allows)"),
+                         "colour": GEAR_FIELDS["colour"]}},
+    "cam": {"about": "a disc cam; its follower (or valve) rises, dwells, falls and rests once a turn",
+            "fields": {"base_diameter": _f("mm", 5, 1000, None, "the cam's smallest diameter (required)"),
+                       "lift": _f("mm", 0.5, 500, None, "how far the follower rises (required)"),
+                       "rise": _f("deg", 20, 300, 120, "turn over which it rises (cycloidal)"),
+                       "dwell": _f("deg", 0, 300, 60, "turn it stays up"),
+                       "fall": _f("deg", 20, 300, 120, "turn over which it falls"),
+                       "width": _f("mm", 2, 500, "0.3 x base diameter", "thickness"),
+                       "bore": _f("mm", 0, 500, "0.25 x base diameter", "shaft hole"),
+                       "colour": GEAR_FIELDS["colour"]}},
+    "follower": {"about": "a translating cam follower (on_cam), above the cam: a roller or a flat face",
+                 "fields": {"kind": {"enum": ["roller", "flat"], "default": "roller", "about": "contact"},
+                            "roller_diameter": _f("mm", 2, 500, "0.4 x the cam's base diameter", "roller"),
+                            "colour": GEAR_FIELDS["colour"]}},
+    "valve": {"about": "a poppet valve with its bucket tappet, opened by a cam above it (on_cam)",
+              "fields": {"head_diameter": _f("mm", 5, 500, None, "head diameter (required)"),
+                         "stem_diameter": _f("mm", 1, 100, "0.2 x head diameter", "stem diameter"),
+                         "length": _f("mm", 10, 1000, "3.2 x head diameter", "tip to head face"),
+                         "colour": GEAR_FIELDS["colour"]}},
+    "planetary_set": {"about": "an epicyclic gear set: sun, planets on a carrier, ring; made as its own parts "
+                               "<name>_sun, <name>_planet1.., <name>_ring, <name>_carrier",
+                      "fields": {"module": GEAR_FIELDS["module"],
+                                 "sun_teeth": {"type": "integer", "min": 9, "max": 200, "default": None,
+                                               "about": "sun teeth (required)"},
+                                 "planet_teeth": {"type": "integer", "min": 9, "max": 200, "default": None,
+                                                  "about": "planet teeth (required)"},
+                                 "planets": {"type": "integer", "min": 2, "max": 8, "default": 3, "about": "planets"},
+                                 "fixed": {"enum": ["ring", "sun", "carrier"], "default": "ring",
+                                           "about": "the member held still"},
+                                 "input": {"enum": ["sun", "carrier", "ring"], "default": "sun",
+                                           "about": "the member the motion drives"},
+                                 "width": _f("mm", 0.5, 2000, "8 x module", "face width"),
+                                 "colour": GEAR_FIELDS["colour"]}},
+    "worm": {"about": "a worm (a screw that drives a worm wheel at right angles)",
+             "fields": {"module": _f("mm", 0.3, 50, None, "axial module (required)"),
+                        "starts": {"type": "integer", "min": 1, "max": 6, "default": 1, "about": "threads"},
+                        "pitch_diameter": _f("mm", 3, 2000, "10 x module", "pitch diameter"),
+                        "length": _f("mm", 5, 5000, "(11 + 0.06 x wheel teeth) x module", "thread length"),
+                        "hand": {"enum": ["right", "left"], "default": "right", "about": "thread hand"},
+                        "colour": GEAR_FIELDS["colour"]}},
+    "worm_wheel": {"about": "the gear a worm drives (meshes_with: the worm); turns starts / teeth per worm turn",
+                   "fields": {"teeth": {"type": "integer", "min": 18, "max": 200, "default": None,
+                                        "about": "teeth (required)"},
+                              "width": _f("mm", 1, 2000, "0.6 x the worm's pitch diameter", "face width"),
+                              "bore": _f("mm", 0, 2000, "0.25 x pitch diameter", "shaft hole"),
+                              "colour": GEAR_FIELDS["colour"]}},
 }
+TYPES["carrier"] = {"about": "a planetary set's planet carrier (made by planetary_set)",
+                    "fields": {"colour": GEAR_FIELDS["colour"]}}
 ENGINE = ("crankshaft", "connecting_rod", "piston", "piston_rings", "cylinder")
+STAGE4 = ("bolt", "nut", "washer", "spring", "pulley", "belt", "sprocket", "chain", "cam", "follower", "valve",
+          "worm", "worm_wheel", "carrier")
+LINK_FIELDS["on_bolt"] = {"type": "string", "about": "a nut or washer: its bolt"}
+LINK_FIELDS["on"] = {"type": "array", "about": "a belt or chain: the two pulleys or sprockets it runs round, the "
+                                                "driver first"}
+LINK_FIELDS["on_cam"] = {"type": "string", "about": "a follower or valve: its cam"}
+LINK_FIELDS["on_valve"] = {"type": "string", "about": "a spring: the valve it closes"}
 LINK_FIELDS["on_crank"] = {"type": "string", "about": "a connecting rod: its crankshaft"}
 LINK_FIELDS["on_rod"] = {"type": "string", "about": "a piston: its connecting rod"}
 LINK_FIELDS["on_piston"] = {"type": "string", "about": "piston rings: their piston"}
@@ -389,7 +482,8 @@ ENGINE_LINKS = ("crank", "pin", "ring", "liner")
 GEARS = ("spur_gear", "helical_gear", "ring_gear", "bevel_gear", "rack")
 EXTERNAL = ("spur_gear", "helical_gear")
 WHEELS = ("compressor_wheel", "turbine_wheel")
-ON_SHAFT = ("spur_gear", "helical_gear", "bevel_gear", "compressor_wheel", "turbine_wheel", "bearing")
+ON_SHAFT = ("spur_gear", "helical_gear", "bevel_gear", "compressor_wheel", "turbine_wheel", "bearing", "pulley",
+            "sprocket", "cam", "worm", "worm_wheel")
 LINK_FIELDS["houses"] = {"type": "string", "about": "a volute: the wheel it houses; a centre_housing: the shaft "
                                                     "it carries; a cylinder: its piston"}
 STILL = ("volute", "centre_housing", "cylinder")  # housings: they stand still round the parts that move
@@ -460,7 +554,7 @@ def _part(raw, i, assumed):
         raise MechanismError(f"part {name}: a name is letters, digits and _ only (up to 40)")
     where = f"part {name}: "
     fields = TYPES[kind]["fields"]
-    unknown = set(raw) - set(fields) - set(LINK_FIELDS) - {"name", "type", "driver"}
+    unknown = set(raw) - set(fields) - set(LINK_FIELDS) - {"name", "type", "driver", "_set"}
     if unknown:
         raise MechanismError(f"{where}unknown field(s) {', '.join(sorted(unknown))} for a {kind}")
     out = {"name": name, "type": kind}
@@ -510,6 +604,8 @@ def _part(raw, i, assumed):
             raise MechanismError(f"centre_housing {name} houses no shaft: give houses, the shaft's name")
     elif kind in ENGINE:
         _engine_part(raw, kind, name, where, out, take)
+    elif kind in STAGE4:
+        _stage4_part(raw, kind, name, where, out, take)
     elif kind == "bearing":
         take("bore", None, 1, 1000)
         take("outer_diameter", None, 3, 2000)
@@ -537,6 +633,7 @@ def _part(raw, i, assumed):
             take("hub_length", 0.0, 0, 3000)
             out["keyway"] = bool(raw.get("keyway", False))
         if kind in EXTERNAL:
+            take("phase", 0.0, -360, 360)
             take("shift", None, -1, 1.2)
             web = str(raw.get("web") or "solid").lower()
             if web not in ("solid", "holes", "spokes"):
@@ -612,6 +709,158 @@ def _engine_part(raw, kind, name, where, out, take):
         link("houses", "the piston's name")
 
 
+def _stage4_part(raw, kind, name, where, out, take):
+    """The fields of a fastener, spring, belt or chain drive, cam train or worm drive part."""
+    def link(key, what, many=False):
+        value = raw.get(key)
+        if many:
+            out[key] = _names(value)
+            if len(out[key]) != 2:
+                raise MechanismError(f"{kind} {name}: give {key}: [{what}], two names")
+        else:
+            out[key] = str(value or "") or None
+            if not out[key]:
+                raise MechanismError(f"{kind} {name} has no {key}: give {what}")
+
+    def choice(key, options, default):
+        value = str(raw.get(key) or default)
+        if value not in options:
+            raise MechanismError(f"{where}{key} must be one of {', '.join(options)}")
+        out[key] = value
+
+    def required(key, low, high, what, kind_=float):
+        if raw.get(key) in (None, ""):
+            raise MechanismError(f"{kind} {name} has no {key} ({what})")
+        out[key] = _num(raw, key, low, high, kind_, where)
+
+    if kind == "bolt":
+        take("diameter", 10.0, 3, 36)
+        take("length", None, 5, 400)
+        take("pitch", None, 0.2, 6)
+    elif kind in ("nut", "washer"):
+        link("on_bolt", "the bolt's name")
+    elif kind == "spring":
+        choice("kind", ("compression", "extension"), "compression")
+        take("mean_diameter", None, 2, 500)
+        take("wire_diameter", None, 0.2, 50)
+        take("free_length", None, 3, 2000)
+        take("coils", None, 2, 60)
+        take("squeeze", None, 0.05, 0.9)
+        out["on_valve"] = str(raw.get("on_valve") or "") or None
+    elif kind == "pulley":
+        required("datum_diameter", 20, 2000, "the belt's pitch diameter in mm")
+        take("grooves", 1, 1, 8, int)
+        choice("section", ("Z", "A", "B"), "A")
+        take("bore", None, 0, 500)
+    elif kind == "sprocket":
+        required("teeth", 9, 120, "how many teeth", int)
+        take("pitch", 12.7, 4, 80)
+        take("bore", None, 0, 500)
+    elif kind in ("belt", "chain"):
+        take("centre_distance", None, 10, 10000)
+        link("on", "the driver's and the driven's names", many=True)
+    elif kind == "cam":
+        required("base_diameter", 5, 1000, "the cam's smallest diameter in mm")
+        required("lift", 0.5, 500, "how far the follower rises, mm")
+        take("rise", 120.0, 20, 300)
+        take("dwell", 60.0, 0, 300)
+        take("fall", 120.0, 20, 300)
+        take("width", None, 2, 500)
+        take("bore", None, 0, 500)
+        if out["rise"] + out["dwell"] + out["fall"] > 360:
+            raise MechanismError(f"{where}rise + dwell + fall must be at most 360 degrees")
+    elif kind == "follower":
+        choice("kind", ("roller", "flat"), "roller")
+        take("roller_diameter", None, 2, 500)
+        link("on_cam", "the cam's name")
+    elif kind == "valve":
+        required("head_diameter", 5, 500, "the head's diameter in mm")
+        take("stem_diameter", None, 1, 100)
+        take("length", None, 10, 1000)
+        link("on_cam", "the cam's name")
+    elif kind == "worm":
+        required("module", 0.3, 50, "the axial module in mm")
+        take("starts", 1, 1, 6, int)
+        take("pitch_diameter", None, 3, 2000)
+        take("length", None, 5, 5000)
+        choice("hand", ("right", "left"), "right")
+    elif kind == "worm_wheel":
+        required("teeth", 18, 200, "how many teeth", int)
+        take("width", None, 1, 2000)
+        take("bore", None, 0, 2000)
+    elif kind == "carrier":
+        if not raw.get("_set"):
+            raise MechanismError(f"part {name}: a carrier comes with a planetary_set; ask for the planetary_set")
+        out["_set"] = raw["_set"]
+
+
+def _expand_planetary(items, assumed):
+    """Each planetary_set entry as its own parts: sun, planets (on the carrier's pins, spaced evenly),
+    ring and carrier. Returns the new list of raw parts and the sets' records."""
+    out, sets = [], []
+    for i, raw in enumerate(items):
+        if not isinstance(raw, dict) or str(raw.get("type") or "").lower() != "planetary_set":
+            out.append(raw)
+            continue
+        name = str(raw.get("name") or f"planetary_{i + 1}")
+        where = f"part {name}: "
+        unknown = set(raw) - set(TYPES["planetary_set"]["fields"]) - {"name", "type", "driver"}
+        if unknown:
+            raise MechanismError(f"{where}unknown field(s) {', '.join(sorted(unknown))} for a planetary_set")
+        for key in ("module", "sun_teeth", "planet_teeth"):
+            if raw.get(key) in (None, ""):
+                raise MechanismError(f"planetary_set {name} has no {key}")
+        m = _num(raw, "module", 0.3, 50, float, where)
+        zs = _num(raw, "sun_teeth", 9, 200, int, where)
+        zp = _num(raw, "planet_teeth", 9, 200, int, where)
+        n = _num(raw, "planets", 2, 8, int, where) if raw.get("planets") not in (None, "") else 3
+        zr = zs + 2 * zp
+        if (zs + zr) % n:
+            raise MechanismError(f"planetary_set {name}: {n} planets cannot be spaced evenly (sun + ring teeth, "
+                                 f"{zs + zr}, must divide by the number of planets)")
+        if (zs + zp) * m * math.sin(math.pi / n) <= m * (zp + 2) + 0.5:  # neighbouring planets' tips clear
+            raise MechanismError(f"planetary_set {name}: {n} planets of {zp} teeth do not fit round the sun")
+        fixed = str(raw.get("fixed") or "ring")
+        inp = str(raw.get("input") or "sun")
+        if fixed not in ("ring", "sun", "carrier") or inp not in ("sun", "carrier", "ring") or fixed == inp:
+            raise MechanismError(f"planetary_set {name}: fixed and input must be two different of sun, carrier, ring")
+        width = _num(raw, "width", 0.5, 2000, float, where) if raw.get("width") not in (None, "") else 8 * m
+        pin = round(max(1.0, 0.3 * m * zp), 2)
+        colour = raw.get("colour")
+        common = {"module": m, "width": width, **({"colour": colour} if colour else {})}
+        planets = [f"{name}_planet{k + 1}" for k in range(n)]
+        out.append({"name": f"{name}_sun", "type": "spur_gear", "teeth": zs, "meshes_with": planets, **common})
+        for k, pn in enumerate(planets):
+            out.append({"name": pn, "type": "spur_gear", "teeth": zp, "bore": pin + 0.2,
+                        "at": (90 + 360 * k / n + 180) % 360 - 180, **common})
+        out.append({"name": f"{name}_ring", "type": "ring_gear", "teeth": zr, "meshes_with": planets[0], **common})
+        out.append({"name": f"{name}_carrier", "type": "carrier", "_set": name})
+        sets.append({"name": name, "sun": f"{name}_sun", "planets": planets, "ring": f"{name}_ring",
+                     "carrier": f"{name}_carrier", "zs": zs, "zp": zp, "zr": zr, "fixed": fixed, "input": inp,
+                     "radius": m * (zs + zp) / 2, "pin": pin, "width": width, "driver": bool(raw.get("driver"))})
+        assumed.append(f"{name}: ring {zr} teeth (sun + 2 planets), {n} planets, {fixed} held, {inp} driven")
+    return out, sets
+
+
+def planetary_rates(ps):
+    """Each member's turns per turn of the input (Fractions): Willis's equation with the fixed member
+    at rest; each planet's absolute turn rate as well."""
+    zs, zr, zp = ps["zs"], ps["zr"], ps["zp"]
+    # (w_s - w_c) zs = -(w_r - w_c) zr  and  (w_p - w_c) zp = -(w_s - w_c) zs
+    w = {ps["fixed"]: Fraction(0), ps["input"]: Fraction(1)}
+    if "carrier" not in w:  # sun and ring known
+        ws, wr = w["sun"], w["ring"]
+        w["carrier"] = (ws * zs + wr * zr) / (zs + zr)
+    elif "sun" not in w:
+        wc, wr = w["carrier"], w["ring"]
+        w["sun"] = wc - (wr - wc) * Fraction(zr, zs)
+    else:
+        ws, wc = w["sun"], w["carrier"]
+        w["ring"] = wc - (ws - wc) * Fraction(zs, zr)
+    w["planet"] = w["carrier"] - (w["sun"] - w["carrier"]) * Fraction(zs, zp)
+    return w
+
+
 def clean(raw):
     """A mechanism request checked and completed: (sheet, assumed). Raises MechanismError with the
     field named when it cannot be built."""
@@ -620,9 +869,11 @@ def clean(raw):
     items = raw.get("parts")
     if not isinstance(items, list) or not items:
         raise MechanismError("mechanism.parts must be a list of at least one part")
-    if len(items) > 24:
-        raise MechanismError("mechanism.parts: at most 24 parts in one mechanism")
     assumed = []
+    items, sets = _expand_planetary(items, assumed)
+    if len(items) > 24:
+        raise MechanismError("mechanism.parts: at most 24 parts in one mechanism (a planetary set counts as its sun, "
+                             "planets, ring and carrier)")
     parts = [_part(p, i, assumed) for i, p in enumerate(items)]
     by = {}
     for p in parts:
@@ -660,6 +911,8 @@ def clean(raw):
             links.append({"kind": "case", "a": p["name"], "b": s["name"]})
         elif p["type"] in ENGINE:
             _engine_links(p, by, links)
+        elif p["type"] in STAGE4:
+            _stage4_links(p, by, links)
         elif p.get("houses"):
             w = by.get(p["houses"])
             if w is None or w["type"] not in WHEELS:
@@ -668,22 +921,44 @@ def clean(raw):
             if any(l["kind"] == "housing" and l["b"] == w["name"] for l in links):
                 raise MechanismError(f"wheel {w['name']} has two volutes")
             links.append({"kind": "housing", "a": p["name"], "b": w["name"]})
-        if p["type"] in WHEELS + ("bearing",) + STILL + ENGINE and p["meshes_with"]:
+        no_teeth = WHEELS + ("bearing",) + STILL + ENGINE + tuple(t for t in STAGE4 if t not in ("worm", "worm_wheel"))
+        if p["type"] in no_teeth and p["meshes_with"]:
             raise MechanismError(f"a {p['type']} ({p['name']}) has no teeth to mesh with")
     for link in [l for l in links if l["kind"] == "mesh"]:
+        kinds = {by[link["a"]]["type"], by[link["b"]]["type"]}
+        if kinds & {"worm", "worm_wheel"}:
+            if kinds != {"worm", "worm_wheel"}:
+                raise MechanismError(f"{link['a']} and {link['b']} cannot mesh: a worm meshes only with a worm wheel")
+            link["kind"] = "worm"
+            if by[link["a"]]["type"] == "worm_wheel":
+                link["a"], link["b"] = link["b"], link["a"]  # the worm first: it drives
+            continue
         _check_mesh(by[link["a"]], by[link["b"]])
     _check_no_loop(parts, links)
     _fill_bores_and_shafts(parts, links, assumed)
     _fill_pair_numbers(parts, links, by, assumed)
     _fill_centre_housings(parts, links, by, assumed)
     _fill_engine(parts, links, by, assumed)
+    _fill_stage4(parts, links, by, assumed)
     driver = raw.get("driver") or next((p["name"] for p in parts if p.get("driver")), None)
+    for ps in sets:
+        if driver in (None, "") or ps["driver"]:
+            driver = ps[ps["input"]]
     if driver in (None, ""):
-        driver = next((p["name"] for kinds in (("crankshaft",), GEARS[:4], ("shaft",), WHEELS, ("bearing",))
-                       for p in parts if p["type"] in kinds), parts[0]["name"])
+        first = (("crankshaft",), ("worm", "pulley", "sprocket", "cam", "nut", "spring"), GEARS[:4], ("shaft",), WHEELS,
+                 ("bearing",))
+        driver = next((p["name"] for kinds in first for p in parts if p["type"] in kinds), parts[0]["name"])
         assumed.append(f"driver = {driver}")
     if driver not in by:
         raise MechanismError(f"driver {driver} is not one of the parts")
+    if by[driver]["type"] in ("bolt", "washer", "belt", "chain", "follower", "valve", "worm_wheel") or (
+            by[driver]["type"] == "spring" and by[driver].get("on_valve")):
+        what = {"worm_wheel": "a worm wheel cannot drive its worm (the drive locks); name the worm"}.get(
+            by[driver]["type"], "it is moved by another part; name the part that drives")
+        raise MechanismError(f"driver {driver} is a {by[driver]['type'].replace('_', ' ')}: {what}")
+    if sets and any(by[driver]["name"] in (ps["sun"], ps["ring"], ps["carrier"], *ps["planets"]) and
+                    driver != ps[ps["input"]] for ps in sets):
+        raise MechanismError(f"driver {driver}: a planetary set is driven by its input member; set input instead")
     if by[driver]["type"] in ("rack",) + STILL:
         raise MechanismError(f"driver {driver} is a {by[driver]['type']} and cannot drive; name a gear, wheel or shaft")
     if by[driver]["type"] in ENGINE[1:]:
@@ -700,6 +975,12 @@ def clean(raw):
     for p in parts:
         p.pop("driver", None)
     sheet = {"parts": parts, "links": links, "driver": driver, "rpm": rpm, "direction": direction}
+    if sets:
+        sheet["planetary"] = sets
+        for ps in sets:  # the carrier's numbers from its set
+            c = by[ps["carrier"]]
+            c.update(radius=ps["radius"], planets=len(ps["planets"]), pin=ps["pin"], width=ps["width"])
+            by[ps["ring"]]["at"] = by[ps["planets"][0]].get("at", 90.0)  # round its first planet, on the sun
     sheet["colours"] = colours(sheet)
     lay = layout(sheet)  # also proves the parts can be placed
     for p in parts:
@@ -741,6 +1022,241 @@ def _engine_links(p, by, links):
         piston = target(p["houses"], "piston", "houses")["name"]
         once("liner", piston, "cylinders")
         links.append({"kind": "liner", "a": piston, "b": n})
+
+
+def _stage4_links(p, by, links):
+    t, n = p["type"], p["name"]
+
+    def target(name, kinds, verb):
+        q = by.get(name)
+        if q is None or q["type"] not in kinds:
+            raise MechanismError(f"{t} {n} {verb} {name}, which is not a {' or '.join(k.replace('_', ' ') for k in kinds)} "
+                                 "of this mechanism")
+        return q
+
+    def once(kind, a, what):
+        if any(l["kind"] == kind and l["a"] == a and by[l["b"]]["type"] == t for l in links):
+            raise MechanismError(f"{a} has two {what}")
+
+    if t in ("nut", "washer"):
+        bolt = target(p["on_bolt"], ("bolt",), "is on_bolt")["name"]
+        once("bolt", bolt, t + "s")
+        links.append({"kind": "bolt", "a": bolt, "b": n})
+    elif t in ("belt", "chain"):
+        wheel = "pulley" if t == "belt" else "sprocket"
+        a, b = (target(x, (wheel,), "runs on")["name"] for x in p["on"])
+        if a == b:
+            raise MechanismError(f"{t} {n} runs on {a} twice: give two different {wheel}s")
+        links += [{"kind": t, "a": n, "b": a}, {"kind": t, "a": n, "b": b}]
+    elif t in ("follower", "valve"):
+        cam = target(p["on_cam"], ("cam",), "is on_cam")["name"]
+        if any(l["kind"] == "cam" and l["a"] == cam for l in links):
+            raise MechanismError(f"cam {cam} has two followers")
+        links.append({"kind": "cam", "a": cam, "b": n})
+    elif t == "spring" and p.get("on_valve"):
+        valve = target(p["on_valve"], ("valve",), "is on_valve")["name"]
+        once("spring", valve, "springs")
+        links.append({"kind": "spring", "a": valve, "b": n})
+    elif t == "carrier":
+        links.append({"kind": "carrier", "a": n, "b": f"{p['_set']}_sun"})
+
+
+def cam_table(cam, kind, roller, samples=180):
+    """The radius from the cam's axis to its follower's contact (a roller's centre, a flat face) at
+    each of `samples` even turns of the cam, mm."""
+    base = cam["base_diameter"] / 2 + (roller / 2 if kind == "roller" else 0.0)
+    return [base + cam_motion(360.0 * i / samples, (0.0, cam["rise"]), cam["dwell"], cam["fall"], cam["lift"])[0]
+            for i in range(samples)]
+
+
+def _fill_stage4(parts, links, by, assumed):
+    """Real proportions for fasteners, springs, belt and chain drives, cams, valves and worm drives,
+    and the checks that each can work: a spring squeezed past its solid length, a belt wrapping too
+    little of its small pulley, a cam that would undercut its roller or jam it are refused."""
+    def note(p, key, value, why):
+        p[key] = value
+        assumed.append(f"{p['name']}.{key} = {value:g} ({why})")
+
+    def linked(kind, a, t=None):
+        return [by[l["b"]] for l in links if l["kind"] == kind and l["a"] == a and (t is None or by[l["b"]]["type"] == t)]
+
+    for p in parts:
+        t = p["type"]
+        if t == "bolt":
+            d = p["diameter"]
+            iso = METRIC.get(round(d)) if abs(d - round(d)) < 1e-9 else None
+            if p["pitch"] is None:
+                if not iso:
+                    raise MechanismError(f"bolt {p['name']}: {d:g} mm is not an ISO size ({', '.join(map(str, METRIC))});"
+                                         " give its pitch")
+                note(p, "pitch", iso[0], f"ISO coarse M{round(d)}")
+            p["across_flats"] = iso[1] if iso else round(1.6 * d, 2)
+            nut = linked("bolt", p["name"], "nut")
+            washer = linked("bolt", p["name"], "washer")
+            m = 0.84 * d
+            w = 0.2 * d if washer else 0.0
+            if p["length"] is None:
+                note(p, "length", round(4 * d, 1), "4 x diameter")
+            stick = 5 * p["pitch"]  # the thread left below the nut: it screws off this far and back
+            p["thread_length"] = round(min(p["length"], 2 * d + 6), 3)
+            if nut and p["thread_length"] < stick + m:
+                p["thread_length"] = round(min(p["length"], stick + m + p["pitch"]), 3)
+            if nut and p["length"] < stick + m + w + 0.1 * d:
+                raise MechanismError(f"bolt {p['name']}: {p['length']:g} mm is too short for its nut; make it at "
+                                     f"least {math.ceil(stick + m + w + 0.1 * d)} mm")
+            p["nut_at"] = round(-p["length"] + stick, 4) if nut else None  # the nut's bottom face, below the head
+        elif t == "spring" and not p.get("on_valve"):
+            if p["mean_diameter"] is None:
+                note(p, "mean_diameter", 24.0, "a hand-sized spring")
+            if p["wire_diameter"] is None:
+                note(p, "wire_diameter", round(0.12 * p["mean_diameter"], 2), "0.12 x mean diameter")
+            w = p["wire_diameter"]
+            if p["kind"] == "extension":
+                if p["coils"] is None:
+                    note(p, "coils", 14.0, "a close-wound extension spring")
+                p["free_length"] = round((p["coils"] + 1) * w * 1.02, 3)
+            else:
+                if p["coils"] is None:
+                    note(p, "coils", 8.0, "6 working turns and a closed end each side")
+                if p["free_length"] is None:
+                    note(p, "free_length", round(max(2.5 * p["mean_diameter"], (p["coils"] + 3) * w * 1.2), 2),
+                         "2.5 x mean diameter")
+            if p["squeeze"] is None:
+                note(p, "squeeze", 0.3, "squeezed to 0.7 of its length" if p["kind"] != "extension" else
+                     "pulled out by 0.3 of its length")
+            solid = (p["coils"] + 1) * w
+            if p["kind"] != "extension" and p["free_length"] * (1 - p["squeeze"]) < solid * 1.05:
+                most = max(0.0, 1 - solid * 1.05 / p["free_length"])
+                raise MechanismError(f"spring {p['name']}: squeezed that far its coils would touch (solid length "
+                                     f"{solid:g} mm); squeeze at most {most:.2f}")
+            if w >= 0.4 * p["mean_diameter"]:
+                raise MechanismError(f"spring {p['name']}: the wire is too thick for the coil (under 0.4 x mean diameter)")
+        elif t == "pulley":
+            if p["bore"] is None:
+                note(p, "bore", round(max(8.0, 0.2 * p["datum_diameter"])), "0.2 x datum diameter")
+        elif t == "sprocket":
+            R = sprocket_radius(p["pitch"], p["teeth"])
+            if p["bore"] is None:
+                note(p, "bore", float(max(6, round(0.25 * 2 * R))), "0.25 x pitch diameter")
+            p["hub"] = [round(min(2 * R - 1.6 * p["pitch"], max(p["bore"] * 1.7, p["bore"] + 10)), 2),
+                        round(0.6 * p["pitch"], 2)]
+        elif t == "cam":
+            if p["width"] is None:
+                note(p, "width", round(0.3 * p["base_diameter"], 2), "0.3 x base diameter")
+            if p["bore"] is None:
+                note(p, "bore", round(max(4.0, 0.25 * p["base_diameter"]), 1), "0.25 x base diameter")
+        elif t == "worm":
+            if p["pitch_diameter"] is None:
+                note(p, "pitch_diameter", round(10 * p["module"], 3), "10 x module")
+    for p in parts:
+        t = p["type"]
+        if t in ("belt", "chain"):
+            a, b = by[p["on"][0]], by[p["on"][1]]
+            if t == "belt":
+                for key in ("section", "grooves"):
+                    if a[key] != b[key]:
+                        raise MechanismError(f"belt {p['name']}: pulleys {a['name']} and {b['name']} have different {key}")
+                d1, d2 = a["datum_diameter"], b["datum_diameter"]
+                if p["centre_distance"] is None:
+                    note(p, "centre_distance", round(d1 + d2, 1), "the two diameters added")
+                C = p["centre_distance"]
+                if C <= (d1 + d2) / 2 + V_SECTIONS[a["section"]][0]:
+                    raise MechanismError(f"belt {p['name']}: the pulleys overlap at {C:g} mm")
+                wrap = 180 - 2 * math.degrees(math.asin(abs(d2 - d1) / (2 * C)))
+                if wrap < 120:
+                    need = abs(d2 - d1) / (2 * math.sin(math.radians(30)))
+                    raise MechanismError(f"belt {p['name']}: it wraps only {wrap:.0f} degrees of the small pulley (120 "
+                                         f"at least): make centre_distance at least {math.ceil(need)} mm")
+                p["section"], p["grooves"] = a["section"], a["grooves"]
+            else:
+                if abs(a["pitch"] - b["pitch"]) > 1e-9:
+                    raise MechanismError(f"chain {p['name']}: sprockets {a['name']} and {b['name']} have different "
+                                         "pitches")
+                pitch = a["pitch"]
+                wanted = p["centre_distance"] if p["centre_distance"] is not None else 35 * pitch
+                lay = chain_layout(pitch, a["teeth"], b["teeth"], wanted)
+                if p["centre_distance"] is None or abs(lay["centre"] - wanted) > 1e-6:
+                    assumed.append(f"{p['name']}.centre_distance = {lay['centre']:.2f} ({lay['links']} links, the "
+                                   f"nearest a whole, even number of links allows)")
+                p["centre_distance"] = round(lay["centre"], 4)
+                p["links"], p["pitch"] = lay["links"], pitch
+        elif t in ("follower", "valve"):
+            cam = by[p["on_cam"]]
+            if t == "follower":
+                if p["roller_diameter"] is None and p["kind"] == "roller":
+                    note(p, "roller_diameter", round(0.4 * cam["base_diameter"], 2), "0.4 x the cam's base diameter")
+                kind, roller = p["kind"], p["roller_diameter"] or 0.0
+            else:
+                if p["stem_diameter"] is None:
+                    note(p, "stem_diameter", round(0.2 * p["head_diameter"], 2), "0.2 x head diameter")
+                if p["length"] is None:
+                    note(p, "length", round(3.2 * p["head_diameter"], 1), "3.2 x head diameter")
+                kind, roller = "flat", 0.0
+            table = cam_table(cam, kind, roller)
+            n = len(table)
+            step = 2 * math.pi / n
+            slope = [(table[(i + 1) % n] - table[i - 1]) / (2 * step) for i in range(n)]
+            curve = [(table[(i + 1) % n] - 2 * table[i] + table[i - 1]) / step ** 2 for i in range(n)]
+            if kind == "roller":
+                worst = max(math.degrees(math.atan2(abs(s), r)) for s, r in zip(slope, table))
+                if worst > 35:
+                    raise MechanismError(f"cam {cam['name']}: the roller would be pushed at {worst:.0f} degrees and jam "
+                                         "(35 at most): make the rise longer or base_diameter bigger")
+                rho = min((r * r + s * s) ** 1.5 / max(r * r + 2 * s * s - r * c, 1e-9)
+                          for r, s, c in zip(table, slope, curve))
+                if rho <= roller / 2 + 0.5:
+                    raise MechanismError(f"cam {cam['name']}: the profile would undercut a {roller:g} mm roller: make "
+                                         "the roller smaller, the rise longer or base_diameter bigger")
+            else:
+                if min(r + c for r, c in zip(table, curve)) <= 0.5:
+                    raise MechanismError(f"cam {cam['name']}: a flat follower cannot follow this lift (the profile would "
+                                         "fold): make the rise longer or base_diameter bigger")
+                face = round(2 * max(abs(s) for s in slope) + 6, 2)
+                if t == "follower":
+                    p["face_diameter"] = face
+                else:
+                    p["bucket_diameter"] = round(max(1.1 * p["head_diameter"], face), 2)
+            p["table"] = [round(r, 5) for r in table]
+            p["contact_kind"] = kind
+        elif t == "spring" and p.get("on_valve"):
+            v = by[p["on_valve"]]
+            bucket = v.get("bucket_diameter") or 1.1 * v["head_diameter"]
+            if p["mean_diameter"] is None:
+                p["mean_diameter"] = round(0.62 * bucket, 2)
+            if p["wire_diameter"] is None:
+                p["wire_diameter"] = round(0.1 * p["mean_diameter"], 2)
+            installed = round(0.4 * v["length"], 2)
+            p["free_length"] = installed
+            if p["coils"] is None:
+                p["coils"] = float(max(5, round(installed / (0.35 * p["mean_diameter"]))))
+            lift = by[v["on_cam"]]["lift"]
+            solid = (p["coils"] + 1) * p["wire_diameter"]
+            if installed - lift < solid * 1.05:
+                raise MechanismError(f"spring {p['name']}: the valve's {lift:g} mm lift would squeeze it solid; ask for "
+                                     "less lift or a longer valve")
+            p["squeeze"] = round(lift / installed, 4)
+            assumed.append(f"{p['name']}: {p['mean_diameter']:g} mm coil of {p['wire_diameter']:g} mm wire, "
+                           f"{p['coils']:g} turns, {installed:g} mm fitted (sized to the valve)")
+        elif t == "worm_wheel":
+            worm = next((by[l["a"]] for l in links if l["kind"] == "worm" and l["b"] == p["name"]), None)
+            if worm is None:
+                raise MechanismError(f"worm_wheel {p['name']} meshes with no worm")
+            m = worm["module"]
+            if worm["length"] is None:
+                note(worm, "length", round((11 + 0.06 * p["teeth"]) * m * (1 + 0.15 * (worm["starts"] - 1)), 2),
+                     "(11 + 0.06 x wheel teeth) x module")
+            if p["width"] is None:
+                note(p, "width", round(0.6 * worm["pitch_diameter"], 2), "0.6 x the worm's pitch diameter")
+            if p["bore"] is None:
+                note(p, "bore", float(max(4, round(0.25 * m * p["teeth"]))), "0.25 x pitch diameter")
+            p["module"], p["lead_angle"] = m, round(math.degrees(math.atan2(worm["starts"] * m,
+                                                                            worm["pitch_diameter"])), 5)
+            p["hand"] = worm["hand"]
+            if worm["pitch_diameter"] < 2 * 1.2 * m + 2:
+                raise MechanismError(f"worm {worm['name']}: pitch_diameter too small for module {m:g}")
+    for p in parts:  # a worm with no wheel still needs a length
+        if p["type"] == "worm" and p["length"] is None:
+            note(p, "length", round(12 * p["module"], 2), "12 x module")
 
 
 def _fill_engine(parts, links, by, assumed):
@@ -1123,6 +1639,31 @@ def thread_radius(u, diameter, pitch, internal=False):
     return min(max(r + c, diameter / 2 - 0.5413 * pitch), diameter / 2 + 0.07 * pitch)
 
 
+# classical V-belt sections, mm: top width, height, groove spacing e, edge f, groove above and below
+# the datum line
+V_SECTIONS = {"Z": (10, 6, 12, 8, 2.0, 7.0), "A": (13, 8, 15, 10, 2.75, 8.7), "B": (17, 11, 19, 12.5, 3.5, 10.8)}
+
+
+def cam_motion(angle, rise=(0.0, 120.0), dwell_top=60.0, fall=120.0, lift=1.0):
+    """A cam follower's lift at the cam's angle (degrees): a cycloidal rise over rise[1] degrees from
+    rise[0], a dwell at full lift, a cycloidal fall, then rest. Returns (lift, d lift / d radian)."""
+    a = (angle - rise[0]) % 360.0
+    r, d, f = rise[1], dwell_top, fall
+
+    def cyc(x, span):  # 0..1 over the span, with its slope per radian
+        t = x / span
+        return t - math.sin(2 * math.pi * t) / (2 * math.pi), (1 - math.cos(2 * math.pi * t)) / math.radians(span)
+    if a < r:
+        s, ds = cyc(a, r)
+        return lift * s, lift * ds
+    if a < r + d:
+        return lift, 0.0
+    if a < r + d + f:
+        s, ds = cyc(a - r - d, f)
+        return lift * (1 - s), -lift * ds
+    return 0.0, 0.0
+
+
 def belt_path(r1, r2, centre, step):
     """An open belt round two circles (r1 at the origin, r2 at (centre, 0)): points along it about
     `step` apart, running clockwise (over the top from the first to the second), and its length."""
@@ -1161,17 +1702,18 @@ def chain_layout(pitch, z1, z2, centre):
     r1, r2 = sprocket_radius(pitch, z1), sprocket_radius(pitch, z2)
     d1, d2 = 2 * math.pi / z1, 2 * math.pi / z2
     best = None
-    for n_shift in (0, -1, 1, -2, 2):
-        c = centre
-        for _ in range(4):
+    tries = [(s, e1, e2) for s in (0, -1, 1, -2, 2) for e1 in (0, 1) for e2 in (0, 1)]
+    for n_shift, e1, e2 in tries:  # e1, e2: the seat half a tooth further round (the other parity)
+        c, n = centre, None
+        for _ in range(6):
             psi = math.pi / 2 + math.asin(max(-0.99, min(0.99, (r1 - r2) / c)))
-            m1 = math.floor((math.pi - psi) / (d1 / 2) + 1e-9)
+            m1 = math.floor((math.pi - psi) / (d1 / 2) + 1e-9) - e1
             a1 = math.pi - m1 * d1 / 2  # the top seat on sprocket 1, on the wrapped side of the span
-            m2 = math.floor(psi / (d2 / 2) + 1e-9)
+            m2 = math.floor(psi / (d2 / 2) + 1e-9) - e2
             a2 = m2 * d2 / 2
             dy = r2 * math.sin(a2) - r1 * math.sin(a1)
-            dist = math.hypot(c + r2 * math.cos(a2) - r1 * math.cos(a1), dy)
-            n = max(1, round(dist / pitch) + n_shift)
+            if n is None:  # the span's whole pitches: chosen once, from the distance asked for
+                n = max(1, round(math.hypot(c + r2 * math.cos(a2) - r1 * math.cos(a1), dy) / pitch) + n_shift)
             c_new = r1 * math.cos(a1) - r2 * math.cos(a2) + math.sqrt(max((n * pitch) ** 2 - dy ** 2, 0.0))
             if abs(c_new - c) < 1e-9:
                 break
@@ -1195,6 +1737,8 @@ def chain_layout(pitch, z1, z2, centre):
     slots += [(w2[0] + (w1[0] - w2[0]) * i / n, w2[1] + (w1[1] - w2[1]) * i / n, 1 if i == 0 else None)
               for i in range(n)]
     slots += [(r1 * math.cos(-a1 - i * d1), r1 * math.sin(-a1 - i * d1), 0) for i in range(k1)]
+    centres = [(0.0, 0.0), (c, 0.0)]
+    slots = [(x, y, s, centres[s] if s is not None else None) for x, y, s in slots]
     return {"centre": c, "slots": slots, "links": len(slots), "phase": [a1 % d1, a2 % d2],
             "radius": [r1, r2]}
 
@@ -1223,6 +1767,21 @@ def describe(sheet):
     kinds_present = {p["type"] for p in parts}
     if {"compressor_wheel", "turbine_wheel"} <= kinds_present:
         return "turbocharger" + (" with housings" if "volute" in kinds_present else "")
+    if sheet.get("planetary"):
+        ps = sheet["planetary"][0]
+        return f"planetary gear set {ps['zs']}/{ps['zp']}/{ps['zr']}"
+    named = [("worm", "worm drive"), ("chain", "chain drive"), ("belt", "belt drive"), ("valve", "cam and valve"),
+             ("follower", "cam and follower"), ("bolt", "bolt and nut" if "nut" in kinds_present else "bolt"),
+             ("spring", "spring")]
+    for kind, words in named:
+        if kind in kinds_present and len(parts) > 1 or (kind in kinds_present and kind in ("spring", "bolt")):
+            if kind == "worm" and "worm_wheel" in kinds_present:
+                w = next(p for p in parts if p["type"] == "worm_wheel")
+                s = next(p for p in parts if p["type"] == "worm")
+                return f"worm drive {s['starts']}:{w['teeth']}"
+            if kind == "spring" and len(parts) == 1:
+                return f"{parts[0]['kind']} spring"
+            return words
     if "crankshaft" in kinds_present:
         n = sum(p["type"] == "piston" for p in parts)
         if not n:
@@ -1313,6 +1872,9 @@ def gear_info(p):
         return {"pitch": None, "tip": None, "module": None, "teeth": None}
     if t == "crankshaft":
         return {"pitch": p["stroke"] / 2 * MM, "tip": crank_sweep(p) * MM, "module": None, "teeth": None}
+    if t in STAGE4:
+        r = stage4_radius(p)
+        return {"pitch": r, "tip": r, "module": None, "teeth": p.get("teeth")}
     m = p["module"] * MM
     if t == "rack":
         return {"pitch": None, "tip": None, "module": m, "teeth": p["teeth"]}
@@ -1323,6 +1885,28 @@ def gear_info(p):
                 t == "ring_gear", p.get("shortening") or 0)
     tip = p["rim_diameter"] * MM / 2 if t == "ring_gear" else c["tip"]
     return {"pitch": c["pitch"], "tip": tip, "module": m, "teeth": p["teeth"], "circles": c}
+
+
+def stage4_radius(p):
+    """How far a stage 4 part reaches from its own axis, metres (0 for what rides on another part)."""
+    t = p["type"]
+    if t == "pulley":
+        r = p["datum_diameter"] / 2 + V_SECTIONS[p["section"]][4]
+    elif t == "sprocket":
+        r = sprocket_radius(p["pitch"], p["teeth"]) + 0.4 * p["pitch"]
+    elif t == "cam":
+        r = p["base_diameter"] / 2 + p["lift"]
+    elif t == "worm":
+        r = p["pitch_diameter"] / 2 + p["module"]
+    elif t == "worm_wheel":
+        r = p["module"] * (p["teeth"] + 2) / 2
+    elif t in ("bolt", "nut"):
+        r = (p.get("across_flats") or 1.6 * p.get("diameter", 10)) / math.sqrt(3)
+    elif t == "spring" and not p.get("on_valve"):
+        r = (p["mean_diameter"] + p["wire_diameter"]) / 2
+    else:
+        return 0.0
+    return r * MM
 
 
 def crank_sweep(c):
@@ -1337,6 +1921,15 @@ def _extent(p, info):
         return (len(p["throw_angles"]) * p["spacing"] / 2 + 1.5 * p["journal_width"]) * MM
     if p["type"] in ENGINE:
         return 0.0
+    if p["type"] == "pulley":
+        e, f = V_SECTIONS[p["section"]][2:4]
+        return ((p["grooves"] - 1) * e + 2 * f) / 2 * MM
+    if p["type"] == "sprocket":
+        return (0.29 * p["pitch"] + p["hub"][1]) * MM
+    if p["type"] == "worm":
+        return (p["length"] or 0) / 2 * MM
+    if p["type"] in STAGE4:
+        return (p.get("width") or 0) / 2 * MM
     if p["type"] == "shaft":
         return (p["length"] or 0) * MM / 2
     if p["type"] in WHEELS:
@@ -1369,6 +1962,8 @@ def layout(sheet):
                 g["shortening"] = max(g.get("shortening") or 0.0, geo["shortening"])
     place = {}
     order = []
+    sets_of = {n: ps["name"] for ps in sheet.get("planetary") or []
+               for n in (ps["sun"], ps["ring"], ps["carrier"], *ps["planets"])}
 
     def put(name, centre, rot, phase=0.0):
         place[name] = {"centre": centre, "rotation": rot, "phase": phase}
@@ -1381,8 +1976,8 @@ def layout(sheet):
         axis = _col(rot, 2)
         for other, pl in place.items():
             o = by[other]
-            if other == partner or o["type"] == "shaft":
-                continue
+            if other == partner or o["type"] == "shaft" or (sets_of.get(name) and sets_of.get(name) == sets_of.get(other)):
+                continue  # the members of one planetary set are meant to be in each other's way
             d = _sub(centre, pl["centre"])
             if abs(_dot(d, axis)) > _extent(p, None) + _extent(o, None) + 0.0005:
                 continue
@@ -1396,7 +1991,9 @@ def layout(sheet):
                 return True
         return False
 
-    roots = [sheet["driver"]] + [p["name"] for p in sheet["parts"] if p["name"] != sheet["driver"]]
+    # a planetary set is laid out from its sun, a nut and washer from their bolt
+    suns = [ps["sun"] for ps in sheet.get("planetary") or []] + [p["name"] for p in sheet["parts"] if p["type"] == "bolt"]
+    roots = suns + [sheet["driver"]] + [p["name"] for p in sheet["parts"] if p["name"] != sheet["driver"]]
     for root in roots:
         if root in place or by[root]["type"] == "centre_housing":  # placed last, between its shaft's wheels
             continue
@@ -1406,8 +2003,9 @@ def layout(sheet):
             centre = _v(_rough_span(place, by)[1] + 0.3 * r + r + 0.005, 0, 0)
         else:
             centre = _v(0, 0, 0)
-        rot = BEVEL_FRONT if p["type"] == "bevel_gear" else IDENTITY if p["type"] == "rack" else FRONT
-        put(root, centre, rot, 0.0)
+        rot = BEVEL_FRONT if p["type"] == "bevel_gear" else IDENTITY if p["type"] in ("rack", "bolt", "spring") \
+            else _rot_from_axis([1.0, 0.0, 0.0]) if p["type"] == "worm" else FRONT
+        put(root, centre, rot, math.radians(p.get("phase") or 0.0))
         queue = [root]
         while queue:
             cur = queue.pop(0)
@@ -1420,6 +2018,8 @@ def layout(sheet):
                     put(other, list(place[cur]["centre"]), place[cur]["rotation"], 0.0)
                 elif l["kind"] in ENGINE_LINKS:
                     _place_engine(l, by, place, put, links)
+                elif l["kind"] in STAGE4_LINKS:
+                    _place_stage4(l, cur, other, by, place, put)
                 else:
                     _place_mesh(cur, other, by, place, put, taken)
                 queue.append(other)
@@ -1435,6 +2035,11 @@ def layout(sheet):
         if l["kind"] in ENGINE_LINKS:
             pairs.append(_engine_pair(l, by, place))
             continue
+        if l["kind"] in STAGE4_LINKS:
+            pair = _stage4_pair(l, by, place, pairs)
+            if pair:
+                pairs.append(pair)
+            continue
         if l["kind"] == "shaft":
             pairs.append({"a": l["a"], "b": l["b"], "kind": "shaft"})
             continue
@@ -1443,6 +2048,16 @@ def layout(sheet):
                           "clearance_m": wheel_clearance(b["diameter"]) * MM})
             continue
         pairs.append(_pair_numbers(a, b, place))
+    for ps in sheet.get("planetary") or []:  # planets ride round: their mesh is checked, the set's ratio as a whole
+        members = {ps["sun"], ps["ring"], *ps["planets"]}
+        for pair in pairs:
+            if pair["kind"] == "mesh" and {pair["a"], pair["b"]} <= members:
+                pair["kind"] = "planet"
+        rates = planetary_rates(ps)
+        out = next(k for k in ("carrier", "ring", "sun") if k not in (ps["fixed"], ps["input"]))
+        ratio = rates[out]
+        pairs.append({"a": ps[ps["input"]], "b": ps[out], "kind": "train", "ratio": float(abs(ratio)),
+                      "same_direction": ratio > 0})
     return {"place": place, "order": order, "pairs": pairs}
 
 
@@ -1452,6 +2067,8 @@ def _radius(p):
         return (p["diameter"] or 10) * MM / 2
     if p["type"] in STILL or p["type"] in ENGINE[1:]:
         return 0.0  # placed round its wheel, shaft or crank, never in anyone's way
+    if p["type"] in STAGE4:
+        return stage4_radius(p)
     info = gear_info(p)
     return info["tip"] or (p["teeth"] + 1) * math.pi * info["module"] / 2
 
@@ -1551,6 +2168,94 @@ def _place_engine(l, by, place, put, links):
     else:  # the cylinder round its piston
         e = place[a_name]["engine"]
         put(b_name, _add(e["axis_point"], _mul(e["up"], by[b_name]["bottom"] * MM)), place[a_name]["rotation"], 0.0)
+
+
+STAGE4_LINKS = ("bolt", "belt", "chain", "cam", "spring", "worm", "carrier")
+UP = [0.0, 0.0, 1.0]
+
+
+def _upright(z, x=(1.0, 0.0, 0.0)):
+    """A rotation whose local Z is z and local X is x (perpendicular to it)."""
+    return _cols(list(x), _cross(z, list(x)), z)
+
+
+def valve_spring_place(valve, spring):
+    """Where a valve's spring stands in the valve's own frame, mm: its top just under the bucket, its
+    foot (the seat in the head) its fitted length further down the stem."""
+    top = 0.35 * valve["bucket_diameter"] + 0.5 if valve.get("bucket_diameter") else 0.385 * valve["head_diameter"] + 0.5
+    return top, top + spring["free_length"]
+
+
+def _place_stage4(l, cur, other, by, place, put):
+    k = l["kind"]
+    if k == "bolt":  # the nut screwed on, seated; the washer between it and the work
+        bolt, part = by[l["a"]], by[l["b"]]
+        pl = place[bolt["name"]]
+        axis = _col(pl["rotation"], 2)
+        if part["type"] == "nut":
+            z = bolt["nut_at"]
+            put(part["name"], _add(pl["centre"], _mul(axis, z * MM)), pl["rotation"],
+                2 * math.pi * (z / bolt["pitch"]) % (2 * math.pi))  # its thread in the bolt's
+        else:
+            z = (bolt["nut_at"] + 0.84 * bolt["diameter"]) if bolt["nut_at"] is not None else -0.2 * bolt["diameter"]
+            put(part["name"], _add(pl["centre"], _mul(axis, z * MM)), pl["rotation"], 0.0)
+    elif k in ("belt", "chain"):
+        drive = by[l["a"]]
+        a, b = drive["on"]
+        ref = a if a in place else b
+        rot = place[ref]["rotation"]
+        x = _col(rot, 0)
+        c = drive["centre_distance"] * MM
+        ca = place[a]["centre"] if a in place else _sub(place[b]["centre"], _mul(x, c))
+        for name, centre in ((a, ca), (b, _add(ca, _mul(x, c)))):
+            if name not in place:
+                put(name, centre, rot, 0.0)
+        if k == "chain":  # each sprocket turned so a tooth gap waits where its chain's roller sits
+            lay = chain_layout(drive["pitch"], by[a]["teeth"], by[b]["teeth"], drive["centre_distance"])
+            place[a]["phase"], place[b]["phase"] = lay["phase"]
+        if drive["name"] not in place:
+            put(drive["name"], list(ca), rot, 0.0)
+    elif k == "cam":  # a follower above its cam, a valve below (an overhead cam opens it downward)
+        cam, f = by[l["a"]], by[l["b"]]
+        pl = place[cam["name"]]
+        d = UP if f["type"] == "follower" else _mul(UP, -1)
+        x = _col(pl["rotation"], 2)  # the roller's axle (the follower's local X) parallel to the cam's shaft
+        put(f["name"], _add(pl["centre"], _mul(d, f["table"][0] * MM)), _upright(d, x), 0.0)
+        if f["type"] == "valve":
+            pl["phase"] = math.pi  # the rise starts at the cam's point facing its follower: here, below
+    elif k == "spring":
+        valve, spring = by[l["a"]], by[l["b"]]
+        pv = place[valve["name"]]
+        d = _col(pv["rotation"], 2)
+        top, foot = valve_spring_place(valve, spring)
+        put(spring["name"], _add(pv["centre"], _mul(d, foot * MM)), _upright(_mul(d, -1), _col(pv["rotation"], 0)), 0.0)
+    elif k == "worm":
+        worm, wheel = by[l["a"]], by[l["b"]]
+        pl = place[worm["name"]]
+        a = (worm["pitch_diameter"] + worm["module"] * wheel["teeth"]) / 2 * MM
+        put(wheel["name"], _add(pl["centre"], _mul(UP, a)), FRONT, -math.pi / 2 + math.pi / wheel["teeth"])
+    elif k == "carrier":
+        put(other, list(place[cur]["centre"]), place[cur]["rotation"], 0.0)
+
+
+def _stage4_pair(l, by, place, pairs):
+    k = l["kind"]
+    if k in ("belt", "chain"):
+        drive = by[l["a"]]
+        if any(p.get("drive") == drive["name"] for p in pairs):
+            return None
+        a, b = (by[n] for n in drive["on"])
+        size = (lambda p: p["datum_diameter"]) if k == "belt" else (lambda p: p["teeth"])
+        return {"a": a["name"], "b": b["name"], "kind": "drive", "drive": drive["name"], "ratio": size(a) / size(b),
+                "same_direction": True}
+    if k == "cam":
+        return {"a": l["a"], "b": l["b"], "kind": "cam", "module_m": 0.002}
+    if k == "worm":
+        worm, wheel = by[l["a"]], by[l["b"]]
+        a = (worm["pitch_diameter"] + worm["module"] * wheel["teeth"]) / 2 * MM
+        return {"a": worm["name"], "b": wheel["name"], "kind": "mesh", "module_m": worm["module"] * MM, "centre_m": a,
+                "ratio": worm["starts"] / wheel["teeth"], "same_direction": worm["hand"] == "left"}
+    return None
 
 
 def _engine_pair(l, by, place):
@@ -1814,9 +2519,13 @@ def speeds(sheet):
             if cur not in (pair["a"], pair["b"]):
                 continue
             other = pair["b"] if pair["a"] == cur else pair["a"]
-            if other in rates or other in racks or pair["kind"] in ("housing",) + ENGINE_LINKS:
+            if other in rates or other in racks or pair["kind"] in ("housing", "cam", "planet", "train") + ENGINE_LINKS:
                 continue
-            if pair["kind"] == "shaft":
+            if pair["kind"] in ("drive",) or (pair["kind"] == "mesh" and "teeth" not in by[pair["a"]]):
+                ratio = Fraction(pair["ratio"]).limit_denominator(100000)  # a belt, chain or worm drive
+                step = ratio if pair["a"] == cur else 1 / ratio
+                rates[other] = rates[cur] * step * (1 if pair["same_direction"] else -1)
+            elif pair["kind"] == "shaft":
                 rates[other] = rates[cur] * Fraction(_cage(by[other])).limit_denominator(1000) \
                     / Fraction(_cage(by[cur])).limit_denominator(1000)
             elif pair["kind"] == "rack":
@@ -1827,9 +2536,18 @@ def speeds(sheet):
                 step = ratio if pair["a"] == cur else 1 / ratio
                 rates[other] = rates[cur] * step * (1 if pair["same_direction"] else -1)
             todo.append(other)
+    for ps in sheet.get("planetary") or []:  # Willis: each member from the input, the planets their own
+        w = planetary_rates(ps)
+        base = rates.get(ps[ps["input"]], Fraction(1))
+        for key in ("sun", "ring", "carrier"):
+            rates[ps[key]] = base * w[key]
+        for pn in ps["planets"]:
+            rates[pn] = base * w["planet"]
     periods = {}
     for name in rates:
         periods[name] = period(by[name])
+    for ps in sheet.get("planetary") or []:  # the carrier must come back to its start: planets swap places
+        periods[ps["carrier"]] = Fraction(1)
     return {"rates": rates, "periods": periods, "racks": racks}
 
 
@@ -1845,8 +2563,14 @@ def _cage(p):
 def period(p):
     """A part's picture period in its own turns (Fraction)."""
     t = p["type"]
-    if t == "crankshaft":  # the pistons come back to the top once a turn
+    if t in ("crankshaft", "cam", "spring", "carrier"):  # once a turn (a carrier: see speeds)
         return Fraction(1)
+    if t in ("bolt", "nut"):
+        return Fraction(1, 6)
+    if t == "pulley":
+        return Fraction(1, 72)
+    if t == "worm":
+        return Fraction(1, p["starts"])
     if t == "shaft":
         return Fraction(1) if p.get("keyway") else Fraction(1, 8)
     if t in WHEELS:
@@ -1906,6 +2630,8 @@ def part_code(p, lay=None, by=None):
         call = (f"k.volute(wheel_diameter={_m(w.get('diameter', 50))}, wheel_length={_m(w.get('length', 20))}, "
                 f"inlet_diameter={_m(inlet)}, kind={'turbine' if turbine else 'compressor'!r}, "
                 f"wall={_m(p['wall']) if p.get('wall') else None}, flanges={bool(p['flanges'])}, name={n!r})")
+    elif t in STAGE4:
+        call = _stage4_call(p, by or {})
     elif t == "crankshaft":
         call = (f"k.crankshaft(stroke={_m(p['stroke'])}, crankpin_diameter={_m(p['crankpin_diameter'])}, "
                 f"journal_diameter={_m(p['journal_diameter'])}, pin_width={_m(p['pin_width'])}, "
@@ -1965,6 +2691,65 @@ def part_code(p, lay=None, by=None):
             f"def build():\n    return {call}\n")
 
 
+def _stage4_call(p, by):
+    """The kit call that builds a stage 4 part from its numbers (metres)."""
+    t, n = p["type"], p["name"]
+    if t == "bolt":
+        return (f"k.bolt({_m(p['diameter'])}, {_m(p['length'])}, pitch={_m(p['pitch'])}, "
+                f"across_flats={_m(p['across_flats'])}, thread_length={_m(p['thread_length'])}, name={n!r})")
+    if t in ("nut", "washer"):
+        b = by[p["on_bolt"]]
+        if t == "nut":
+            return (f"k.nut({_m(b['diameter'])}, pitch={_m(b['pitch'])}, across_flats={_m(b['across_flats'])}, "
+                    f"name={n!r})")
+        return f"k.washer({_m(b['diameter'])}, name={n!r})"
+    if t == "spring":
+        return (f"k.spring({_m(p['wire_diameter'])}, {_m(p['mean_diameter'])}, {_m(p['free_length'])}, "
+                f"{p['coils']}, kind={p['kind']!r}, name={n!r})")
+    if t == "pulley":
+        return (f"k.pulley({_m(p['datum_diameter'])}, grooves={p['grooves']}, section={p['section']!r}, "
+                f"bore={_m(p['bore'])}, name={n!r})")
+    if t == "belt":
+        a, b = (by[x] for x in p["on"])
+        return (f"k.belt({_m(a['datum_diameter'] / 2)}, {_m(b['datum_diameter'] / 2)}, {_m(p['centre_distance'])}, "
+                f"section={p['section']!r}, grooves={p['grooves']}, name={n!r})")
+    if t == "sprocket":
+        return (f"k.sprocket({_m(p['pitch'])}, {p['teeth']}, bore={_m(p['bore'])}, "
+                f"hub=({_m(p['hub'][0])}, {_m(p['hub'][1])}), name={n!r})")
+    if t == "chain":
+        a, b = (by[x] for x in p["on"])
+        return (f"k.chain({_m(p['pitch'])}, [(x * 0.001, y * 0.001, s, (c[0] * 0.001, c[1] * 0.001) if c else None) "
+                f"for x, y, s, c in k._mech().chain_layout({p['pitch']}, {a['teeth']}, {b['teeth']}, "
+                f"{p['centre_distance']})['slots']], name={n!r})")
+    if t == "cam":
+        f = next((q for q in by.values() if q.get("on_cam") == n), None)
+        table = f["table"] if f else cam_table(p, "roller", 0.0)
+        kind = f["contact_kind"] if f else "roller"
+        roller = (f.get("roller_diameter") or 0.0) / 2 if f and kind == "roller" else 0.0
+        return (f"k.cam({[_m(r) for r in table]}, kind={kind!r}, roller={_m(roller)}, width={_m(p['width'])}, "
+                f"bore={_m(p['bore'])}, name={n!r})")
+    if t == "follower":
+        cam = by[p["on_cam"]]
+        if p["kind"] == "roller":
+            return (f"k.follower('roller', roller={_m(p['roller_diameter'] / 2)}, stem={_m(0.2 * cam['base_diameter'])}, "
+                    f"length={_m(1.6 * cam['base_diameter'])}, width={_m(0.8 * cam['width'])}, name={n!r})")
+        return (f"k.follower('flat', stem={_m(0.2 * cam['base_diameter'])}, length={_m(1.6 * cam['base_diameter'])}, "
+                f"face={_m(p['face_diameter'])}, name={n!r})")
+    if t == "valve":
+        return (f"k.valve({_m(p['head_diameter'])}, {_m(p['stem_diameter'])}, {_m(p['length'])}, "
+                f"bucket={_m(p['bucket_diameter'])}, name={n!r})")
+    if t == "worm":
+        return (f"k.worm({_m(p['module'])}, {p['starts']}, {_m(p['pitch_diameter'])}, {_m(p['length'])}, "
+                f"hand={p['hand']!r}, name={n!r})")
+    if t == "worm_wheel":
+        mn = p["module"] * math.cos(math.radians(p["lead_angle"]))
+        return (f"k.helical_gear({_m(mn)}, {p['teeth']}, {_m(p['width'])}, bore={_m(p['bore'])}, "
+                f"helix_angle={p['lead_angle']}, hand={p['hand']!r}, name={n!r})")
+    if t == "carrier":
+        return (f"k.carrier({_m(p['radius'])}, {p['planets']}, {_m(p['pin'])}, {_m(p['width'])}, name={n!r})")
+    raise MechanismError(f"no tool builds a {t}")
+
+
 def assembly_code(sheet, lay):
     places = {n: {"centre": [round(v, 7) for v in pl["centre"]],
                   "rotation": [[round(v, 7) for v in row] for row in pl["rotation"]],
@@ -1990,7 +2775,11 @@ METALS = {"spur_gear": (0.62, 0.63, 0.65), "helical_gear": (0.66, 0.6, 0.48), "r
           "compressor_wheel": (0.8, 0.81, 0.83), "turbine_wheel": (0.42, 0.4, 0.38), "volute": (0.52, 0.53, 0.55),
           "bearing": (0.72, 0.73, 0.75), "centre_housing": (0.46, 0.47, 0.49), "crankshaft": (0.6, 0.6, 0.62),
           "connecting_rod": (0.55, 0.56, 0.58), "piston": (0.78, 0.78, 0.8), "piston_rings": (0.35, 0.35, 0.37),
-          "cylinder": (0.5, 0.5, 0.52)}
+          "cylinder": (0.5, 0.5, 0.52), "bolt": (0.55, 0.56, 0.58), "nut": (0.6, 0.61, 0.63),
+          "washer": (0.7, 0.71, 0.73), "spring": (0.35, 0.36, 0.4), "pulley": (0.4, 0.42, 0.45),
+          "belt": (0.08, 0.08, 0.09), "sprocket": (0.5, 0.5, 0.52), "chain": (0.45, 0.45, 0.47),
+          "cam": (0.62, 0.62, 0.64), "follower": (0.7, 0.7, 0.72), "valve": (0.75, 0.74, 0.7),
+          "worm": (0.62, 0.63, 0.65), "worm_wheel": (0.7, 0.55, 0.3), "carrier": (0.5, 0.52, 0.55)}
 
 
 def materials_code(sheet):
@@ -2018,8 +2807,11 @@ def motion_code(sheet, lay):
     by = {p["name"]: p for p in sheet["parts"]}
     reverse = sheet["direction"] == "clockwise"  # a positive turn is counterclockwise seen from the front
     lines = ['"""The mechanism turning: the driver at its speed, every other part from it through the meshes."""',
-             "from bpy_lib import motion as m", "", "", "def animate(parts):",
-             f"    m.spin(parts[{sheet['driver']!r}][0], rpm={sheet['rpm']}, reverse={reverse})"]
+             "from bpy_lib import motion as m", "", "", "def animate(parts):"]
+    own = _own_motion(sheet, lay, by, reverse)  # a nut, a spring or a planetary set moves itself
+    if own:
+        return "\n".join(lines + own) + "\n"
+    lines.append(f"    m.spin(parts[{sheet['driver']!r}][0], rpm={sheet['rpm']}, reverse={reverse})")
     done, todo = {sheet["driver"]}, [sheet["driver"]]
     while todo:
         cur = todo.pop(0)
@@ -2031,9 +2823,13 @@ def motion_code(sheet, lay):
                 continue
             done.add(other)
             todo.append(other)
-            if pair["kind"] in ("housing",) + ENGINE_LINKS:
-                continue  # a volute stands still round its wheel; the crank drives its rods below
-            if pair["kind"] == "shaft":
+            if pair["kind"] in ("housing", "cam", "train", "planet") + ENGINE_LINKS:
+                continue  # a volute stands still round its wheel; the crank and the cam drive theirs below
+            if pair["kind"] == "drive" or (pair["kind"] == "mesh" and by[cur]["type"] == "worm"):
+                ratio = pair["ratio"] if pair["a"] == cur else 1 / pair["ratio"]
+                lines.append(f"    m.mesh_drive(parts[{cur!r}][0], parts[{other!r}][0], ratio={round(ratio, 9)}, "
+                             f"same_direction={pair['same_direction']})")
+            elif pair["kind"] == "shaft":
                 ratio = _cage(by[other]) / _cage(by[cur])
                 lines.append(f"    m.mesh_drive(parts[{cur!r}][0], parts[{other!r}][0], ratio={round(ratio, 9)}, "
                              "same_direction=True)")
@@ -2049,7 +2845,40 @@ def motion_code(sheet, lay):
         pin = [round(v, 7) for v in pair["pin_local_m"]]
         lines.append(f"    m.crank_slider(parts[{pair['b']!r}][0], parts[{rod!r}][0], parts[{piston!r}][0], pin={pin}, "
                      f"length={round(pair['length_m'], 7)}, followers={followers})")
+    for p in sheet["parts"]:
+        if p["type"] == "chain":  # its links run on from the first sprocket's turning
+            first = by[p["on"][0]]
+            lines.append(f"    m.chain_drive(parts[{p['name']!r}][0], parts[{first['name']!r}][0], teeth={first['teeth']})")
+        if p["type"] in ("follower", "valve"):
+            spring = next((q for q in sheet["parts"] if q.get("on_valve") == p["name"]), None)
+            table = [round(r * MM, 7) for r in p["table"]]
+            extra = (f", spring=parts[{spring['name']!r}][0], spring_length={_m(spring['free_length'])}"
+                     if spring else "")
+            lines.append(f"    m.cam_drive(parts[{p['on_cam']!r}][0], parts[{p['name']!r}][0], table={table}{extra})")
     return "\n".join(lines) + "\n"
+
+
+def _own_motion(sheet, lay, by, reverse):
+    """The motion of a mechanism driven by a part that does not simply turn: a nut screwing off and
+    on, a spring squeezed and let go, or a planetary set (every member at once)."""
+    d = by[sheet["driver"]]
+    rpm = sheet["rpm"]
+    if d["type"] == "nut":
+        b = by[d["on_bolt"]]
+        return [f"    m.screw(parts[{d['name']!r}][0], pitch={_m(b['pitch'])}, travel={_m(4 * b['pitch'])}, rpm={rpm})"]
+    if d["type"] == "spring":
+        return [f"    m.squash(parts[{d['name']!r}][0], share={d['squeeze']}, rpm={rpm}, "
+                f"stretch={d['kind'] == 'extension'})"]
+    for ps in sheet.get("planetary") or []:
+        if sheet["driver"] == ps[ps["input"]]:
+            w = planetary_rates(ps)
+            turns = loop_turns(sheet)
+            planets = "[" + ", ".join(f"parts[{n!r}][0]" for n in ps["planets"]) + "]"
+            return [f"    m.planetary(parts[{ps['sun']!r}][0], parts[{ps['ring']!r}][0], parts[{ps['carrier']!r}][0], "
+                    f"{planets}, rates={{'sun': {float(w['sun'])}, 'ring': {float(w['ring'])}, "
+                    f"'carrier': {float(w['carrier'])}, 'planet': {float(w['planet'])}}}, rpm={rpm}, "
+                    f"reverse={reverse}, turns={float(turns)})"]
+    return None
 
 
 def scripts(sheet):
@@ -2089,6 +2918,8 @@ def exploded_offsets(sheet, lay=None):
     crank = next((p for p in sheet["parts"] if p["type"] == "crankshaft"), None)
     if crank:  # an engine comes apart upwards, as in a workshop manual: rod, piston, rings, cylinder
         return _engine_exploded(sheet, lay, by, crank)
+    if any(p["type"] in STAGE4 for p in sheet["parts"]):
+        return _stage4_exploded(sheet, lay, by)
     shaft = next((p["name"] for p in sheet["parts"] if p["type"] == "shaft"), sheet["driver"])
     axis = _col(lay["place"][shaft]["rotation"], 2)
     housed = {p["houses"]: p["name"] for p in sheet["parts"] if p.get("houses")}
@@ -2115,6 +2946,41 @@ def exploded_offsets(sheet, lay=None):
     for name in lifted:  # the centre housing rises off the bearings it carries, so they show
         out[name] = [0.0, 0.0, round(0.75 * size, 6)]
     del housed
+    return out
+
+
+def _stage4_exploded(sheet, lay, by):
+    """Fasteners slide off down the bolt, belts and chains off their wheels towards the viewer,
+    followers and valves away from their cams, a worm wheel up off its worm, a planetary set apart
+    along its axis (carrier back, planets and ring forward)."""
+    pl = lay["place"]
+    size = max([2 * _radius(p) for p in sheet["parts"]] + [0.02])
+    step = 0.35 * size
+    out = {p["name"]: [0.0, 0.0, 0.0] for p in sheet["parts"]}
+
+    def along(name, axis_of, k):
+        out[name] = [round(v, 6) for v in _mul(_col(pl[axis_of]["rotation"], 2), k * step)]
+
+    for p in sheet["parts"]:
+        t = p["type"]
+        if t in ("nut", "washer"):  # off past the bolt's tip, the nut furthest
+            bolt = by[p["on_bolt"]]
+            d, L, pitch = bolt["diameter"], bolt["length"], bolt["pitch"]
+            mm = 5 * pitch + 0.84 * d + (0.6 * L if t == "nut" else 0.2 * d + 0.25 * L)
+            out[p["name"]] = [round(v, 6) for v in _mul(_col(pl[bolt["name"]]["rotation"], 2), -mm * MM)]
+        elif t in ("belt", "chain"):
+            along(p["name"], p["on"][0], 1.2)
+        elif t in ("follower", "valve"):
+            along(p["name"], p["name"], 1.0)
+        elif t == "spring" and p.get("on_valve"):
+            out[p["name"]] = [round(v, 6) for v in _mul(_col(pl[p["on_valve"]]["rotation"], 2), 0.5 * step)]
+        elif t == "worm_wheel":
+            out[p["name"]] = [0.0, 0.0, round(step, 6)]
+    for ps in sheet.get("planetary") or []:
+        along(ps["carrier"], ps["sun"], -1.2)
+        for n in ps["planets"]:
+            along(n, ps["sun"], 1.2)
+        along(ps["ring"], ps["sun"], 2.4)
     return out
 
 

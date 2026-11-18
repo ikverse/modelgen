@@ -106,6 +106,7 @@ If this call fails, ModelGen is not running: fall back to something else. Do not
 | `cut` | `auto` | cutaway: the half of each housing nearest the camera is cut away through its axis; or `top`, `side`, `front` |
 | `colours` | the palette | explainer colour per part, `{"wheel": "#2e86ab"}` |
 | `mechanism` | | a mechanical part or mechanism by its numbers (see Mechanisms); `object` may then be left out |
+| `design` | | a Village vector design to match in 3D, instead of `mechanism` (see From a Village design) |
 | `reuse` | `true` | use a model made before when one fits |
 | `max_versions` | `2` | 1 to 5 |
 | `min_score` | `70` | 0 to 100: the score `passed` needs (the page shows it divided by 10) |
@@ -165,7 +166,9 @@ A job can carry `mechanism`: the parts by their engineering numbers. When every 
 (`spur_gear`, `helical_gear`, `ring_gear`, `rack`, `bevel_gear`, `shaft`, `compressor_wheel`,
 `turbine_wheel`, `volute` (with `houses`: its wheel), `bearing`, `centre_housing` (with `houses`: its
 shaft), `crankshaft`, `connecting_rod` (`on_crank`), `piston` (`on_rod`), `piston_rings`
-(`on_piston`), `cylinder` (`houses`: its piston); `GET /v1/parts` has them all), ModelGen
+(`on_piston`), `cylinder` (`houses`: its piston), `bolt`, `nut` and `washer` (`on_bolt`), `spring`,
+`pulley` and `belt` (`on`: two pulleys), `sprocket` and `chain` (`on`: two sprockets), `cam`, `follower`
+and `valve` (`on_cam`), `planetary_set`, `worm` and `worm_wheel`; `GET /v1/parts` has them all), ModelGen
 builds it straight from the tools with no agents, in about 1 to 3 minutes, and `source` is
 `part_tools`. The same numbers asked for again return the stored model at once (`existing`, no
 agent). A request in plain words that names a mechanical part ("two gears, the small one drives the
@@ -188,6 +191,18 @@ a finished job also has `mechanism: {key, sizes_mm, colours}`.
 The checks stand in for a critic: every part a closed solid, on the floor, and the mesh check
 measured at 12 moments across the loop (meshing teeth never cut into each other or float apart,
 centre distances and speed ratios as the sheet says, nothing else passes through anything).
+
+### From a Village design
+
+Instead of `mechanism`, a job can send `design`: one of the Village's vector designs (the JSON
+object, or the full path of its `design.json` on this PC). Each group whose filled outline is a
+toothed ring becomes a spur gear with its teeth counted from the drawing, its bore and hub from the
+round shapes inside it and its colour from its fill; gears drawn touching mesh at the angle drawn,
+and the largest gear's teeth start where they are drawn. `design_module` (mm) or `design_mm_per_px`
+sets the scale (default: a standard module near half the drawn one in pixels). The job then
+answers with `design: {mm_per_px, parts: {name: {design_part, teeth, centre_px, tip_radius_px,
+module_mm, colour}}, skipped: [{part, why}], unconnected}`. A design with nothing the part tools make
+(a person, a background) is refused with 400 and the reason for each group.
 
 ## Files
 

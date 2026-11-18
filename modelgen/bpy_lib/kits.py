@@ -2678,6 +2678,390 @@ def spring(wire_diameter, mean_diameter, free_length, coils, kind="compression",
                 coils=n, solid_length=round((n + 1) * w, 7), period=[1, 1])
 
 
+# --- belts and chains ----------------------------------------------------------------------------------
+#
+# A pulley or sprocket turns about its local Z, centred on the origin. A belt or chain lies in its own
+# local XY plane round two wheels: the first's centre at the origin, the second's at (centre, 0).
+
+def pulley(datum_diameter, grooves=1, section="A", bore=0.0, name="pulley"):
+    """A V-belt pulley (classical sections Z, A, B): `grooves` grooves at 38 degrees, the belt's datum
+    (pitch) line at datum_diameter. Axis Z, centred. Slots: "tooth_face" (grooves), "hub" (body),
+    "bore"."""
+    mc = _mech()
+    top, height, e, f, above, below = mc.V_SECTIONS[section]
+    s = 0.001
+    top, height, e, f, above, below = top * s, height * s, e * s, f * s, above * s, below * s
+    rd = datum_diameter / 2
+    r_out, r_bot = rd + above, rd - below
+    width = (max(1, int(grooves)) - 1) * e + 2 * f
+    t19 = math.tan(math.radians(19))
+    w_datum = top - 2 * (height * 0.34) * math.tan(math.radians(20))  # the belt's width at its datum line
+    prof = [(max(bore / 2, 0.0005), -width / 2), (r_out, -width / 2)]
+    slots = [1, 1]
+    for g in range(max(1, int(grooves))):
+        zc = -width / 2 + f + g * e
+        w_out = w_datum + 2 * above * t19
+        w_bot = max(0.0005, w_datum - 2 * below * t19)
+        prof += [(r_out, zc - w_out / 2), (r_bot, zc - w_bot / 2), (r_bot, zc + w_bot / 2), (r_out, zc + w_out / 2)]
+        slots += [0, 0, 0, 1]
+    prof += [(r_out, width / 2), (max(bore / 2, 0.0005), width / 2)]
+    slots += [1, 2]
+    angles = [2 * math.pi * i / 72 for i in range(72)]
+    obj = _lathe([_circle_ring(angles, z, r) for r, z in prof], slots, name, ENGINE_SLOTS)
+    return _tag(obj, type="pulley", datum_radius=rd, pitch_radius=rd, grooves=int(grooves), section=section,
+                width=width, tip_radius=r_out, period=[1, 72])
+
+
+def belt(datum_r1, datum_r2, centre, section="A", grooves=1, name="belt"):
+    """A V-belt (or several side by side) round two pulleys' datum circles, as it lies in their
+    grooves: a 40 degree trapezoid section, its datum line on the circles. Slots: "hub"."""
+    mc = _mech()
+    top, height, e, f, above, below = (v * 0.001 for v in mc.V_SECTIONS[section])
+    pts, _ = mc.belt_path(datum_r1, datum_r2, centre, 0.004)
+    t20 = math.tan(math.radians(20))
+    up = 0.34 * height  # the datum line this far below the belt's top
+    w_datum = top - 2 * up * t20 - 0.0002  # a hair narrower than the groove: it wedges, never cuts in
+    section_pts = [(up, w_datum / 2 + up * t20), (up, -(w_datum / 2 + up * t20)),
+                   (up - height, -(w_datum / 2 - (height - up) * t20)), (up - height, w_datum / 2 - (height - up) * t20)]
+    width = (max(1, int(grooves)) - 1) * e + 2 * f
+    verts, faces = [], []
+    n = len(pts)
+    for g in range(max(1, int(grooves))):
+        zc = -width / 2 + f + g * e
+        base = len(verts)
+        for i, (x, y) in enumerate(pts):
+            xa, ya = pts[(i - 1) % n]
+            xb, yb = pts[(i + 1) % n]
+            tx, ty = xb - xa, yb - ya
+            ln = math.hypot(tx, ty) or 1.0
+            nx, ny = -ty / ln, tx / ln  # outward for a clockwise loop
+            for out, across in section_pts:
+                verts.append((x + nx * out, y + ny * out, zc + across))
+        for i in range(n):
+            j = (i + 1) % n
+            for k in range(4):
+                a, b = base + i * 4 + k, base + i * 4 + (k + 1) % 4
+                c, d = base + j * 4 + (k + 1) % 4, base + j * 4 + k
+                faces.append((a, b, c, d))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.materials.append(_slot("hub"))
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me)
+    bm.free()
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="belt", section=section, centre=centre, period=[1, 1])
+
+
+def _sprocket_outline(pitch, teeth, roller, samples=24):
+    """A sprocket's outline (ISO 606 style): a seat round each roller's place on the pitch circle,
+    flanks opening outward, the tip circle; a gap centred at angle 0. Points counterclockwise."""
+    mc = _mech()
+    R = mc.sprocket_radius(pitch, teeth)
+    ri = 0.505 * roller + 0.069 * (roller * 1000) ** (1 / 3) * 0.001
+    r_tip = R + 0.5 * pitch * (1.25 - roller / pitch) * 0.8
+    t = math.tan(math.radians(22))
+    step = 2 * math.pi / teeth
+    pts = []
+    for i in range(teeth * samples):
+        th = 2 * math.pi * i / (teeth * samples)
+        k = round(th / step)
+        dth = th - k * step  # the angle from the nearest gap's middle
+        lo, hi = 0.0, r_tip
+        for _ in range(40):  # the radius where this ray first enters the gap (seat circle or flaring channel)
+            mid = (lo + hi) / 2
+            u, v = mid * math.cos(dth), mid * math.sin(dth)
+            inside = (u - R) ** 2 + v ** 2 <= ri ** 2 or (u >= R and abs(v) <= ri + (u - R) * t)
+            if inside:
+                hi = mid
+            else:
+                lo = mid
+        # nothing in the way below the seat: the ray reaches the tip circle unless it met the gap
+        r = hi if hi < r_tip - 1e-9 else r_tip
+        pts.append((r * math.cos(th), r * math.sin(th)))
+    return pts, R, r_tip
+
+
+def sprocket(pitch, teeth, roller=None, width=None, bore=0.0, hub=None, name="sprocket"):
+    """A roller-chain sprocket: `teeth` teeth for a chain of `pitch` (rollers `roller` across, default
+    0.625 pitch), tooth width `width` (default 0.58 pitch), a hub (diameter, length) when given, the
+    bore. A tooth gap is centred at angle 0. Axis Z, centred. Slots: "tooth_face", "hub", "bore"."""
+    roller = roller or 0.625 * pitch
+    width = width or 0.58 * pitch
+    pts, R, r_tip = _sprocket_outline(pitch, teeth, roller)
+    rings = [_outline_ring(pts, -width / 2), _outline_ring(pts, width / 2)]
+    pieces = [_lathe(rings + [_circle_ring([2 * math.pi * i / 48 for i in range(48)], width / 2, 0.0005),
+                              _circle_ring([2 * math.pi * i / 48 for i in range(48)], -width / 2, 0.0005)],
+                     [0, 1, 1, 1], name, ENGINE_SLOTS)]
+    if hub:
+        pieces.append(_slab(_circle2(0.0, 0.0, hub[0] / 2, 48), -width / 2 - hub[1], width / 2 - 0.0002, 1,
+                            name + "_hub"))
+    holes = [_slab(_circle2(0.0, 0.0, bore / 2, 40), -1.0, 1.0, 2, name + "_bore")] if bore else []
+    obj = _fuse(pieces, name, holes) if len(pieces) > 1 or holes else pieces[0]
+    return _tag(obj, type="sprocket", pitch=pitch, teeth=int(teeth), pitch_radius=R, tip_radius=r_tip,
+                period=[1, int(teeth)])
+
+
+def _chain_points(slots, phase):
+    """Each roller's centre with the chain moved on by `phase` of a pitch (0..1): along the straight
+    spans in a line, round a sprocket by angle about its centre (staying on its pitch circle)."""
+    n = len(slots)
+    out = []
+    for k in range(n):
+        a, b = slots[k], slots[(k + 1) % n]
+        if a[2] is not None and a[2] == b[2] and a[3] is not None:
+            cx, cy = a[3]
+            a0 = math.atan2(a[1] - cy, a[0] - cx)
+            a1 = math.atan2(b[1] - cy, b[0] - cx)
+            d = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
+            r = math.hypot(a[0] - cx, a[1] - cy)
+            ang = a0 + d * phase
+            out.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        else:
+            out.append((a[0] + (b[0] - a[0]) * phase, a[1] + (b[1] - a[1]) * phase))
+    return out
+
+
+def chain(pitch, slots, roller=None, inner_width=None, phases=6, name="chain"):
+    """A roller chain on its slots (mechanism.chain_layout's, each (x, y, sprocket or None, its centre
+    or None)): a roller at each, inner and outer plate pairs alternating, pins through. Shape keys
+    "phase1".."phase<phases>" hold the chain moved on by that share of a pitch (the last is a whole
+    pitch); motion.chain_drive blends them as its sprocket turns. Slots: "hub" (plates), "tooth_face"
+    (rollers)."""
+    d1 = roller or 0.625 * pitch
+    b1 = inner_width or 0.62 * pitch
+    hp, tp, dp = 0.92 * pitch, 0.12 * pitch, 0.31 * pitch
+    n = len(slots)
+
+    def plate_outline(length):
+        pts = [(length + hp / 2 * math.cos(a), hp / 2 * math.sin(a)) for a in
+               (math.radians(d) for d in (-90, -45, 0, 45, 90))]
+        pts.append((length / 2, 0.36 * hp))
+        pts += [(hp / 2 * math.cos(a), hp / 2 * math.sin(a)) for a in (math.radians(d) for d in (90, 135, 180, 225, 270))]
+        pts.append((length / 2, -0.36 * hp))
+        return pts
+
+    faces, slot_of = [], []
+
+    def prism_faces(base, m, slot):
+        for i in range(m):
+            j = (i + 1) % m
+            faces.append((base + i, base + j, base + m + j, base + m + i))
+            slot_of.append(slot)
+        faces.append(tuple(base + i for i in reversed(range(m))))
+        faces.append(tuple(base + m + i for i in range(m)))
+        slot_of.extend([slot, slot])
+
+    def verts_at(phase):
+        c = _chain_points(slots, phase)
+        out = []
+        for k in range(n):
+            (x0, y0), (x1, y1) = c[k], c[(k + 1) % n]
+            ang = math.atan2(y1 - y0, x1 - x0)
+            ca, sa = math.cos(ang), math.sin(ang)
+            outline = plate_outline(math.hypot(x1 - x0, y1 - y0))
+            inner = k % 2 == 0
+            z_in = b1 / 2 + (0.0 if inner else tp)
+            for side in (-1, 1):
+                z0, z1 = side * z_in, side * (z_in + tp)
+                for z in (min(z0, z1), max(z0, z1)):
+                    out += [(x0 + px * ca - py * sa, y0 + px * sa + py * ca, z) for px, py in outline]
+            ring = [(d1 / 2 * math.cos(2 * math.pi * i / 8), d1 / 2 * math.sin(2 * math.pi * i / 8)) for i in range(8)]
+            for z in (-b1 / 2 + 0.0001, b1 / 2 - 0.0001):
+                out += [(x0 + px, y0 + py, z) for px, py in ring]
+            pin = [(dp / 2 * math.cos(2 * math.pi * i / 6), dp / 2 * math.sin(2 * math.pi * i / 6)) for i in range(6)]
+            reach = b1 / 2 + 2 * tp + 0.12 * pitch
+            for z in (-reach, reach):
+                out += [(x0 + px, y0 + py, z) for px, py in pin]
+        return out
+
+    per = 12 * 4 + 16 + 12
+    for k in range(n):
+        base = k * per
+        prism_faces(base, 12, 1)
+        prism_faces(base + 24, 12, 1)
+        prism_faces(base + 48, 8, 0)
+        prism_faces(base + 64, 6, 1)
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts_at(0.0), [], faces)
+    me.materials.append(_slot("tooth_face"))
+    me.materials.append(_slot("hub"))
+    me.materials.append(_slot("bore"))
+    for poly, s in zip(me.polygons, slot_of):
+        poly.material_index = s
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me)
+    bm.free()
+    obj.shape_key_add(name="Basis", from_mix=False)
+    for j in range(1, phases + 1):
+        key = obj.shape_key_add(name=f"phase{j}", from_mix=False)
+        for v, co in zip(key.data, verts_at(j / phases)):
+            v.co = co
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="chain", pitch=pitch, links=n, phases=int(phases), period=[1, 1])
+
+
+# --- cams, followers, valves --------------------------------------------------------------------------
+#
+# A cam turns about its local Z; at angle 0 its point that faces +Y (towards the follower) is the
+# start of the rise. A follower's axis is its local Z pointing away from the cam, its origin at the
+# point that touches the cam (a roller's centre for a roller follower) when the lift is 0.
+
+def cam(lift_table, kind="roller", roller=0.0, width=0.012, bore=0.0, samples=180, name="cam"):
+    """A disc cam from its follower's lift: lift_table is the radius from the cam's axis to the
+    follower's contact point (a roller's centre, or the flat face) at `samples` even angles (from
+    mechanism.cam_pitch). "roller": the profile is the pitch curve offset inward by the roller's
+    radius; "flat": the envelope of the follower's face. Axis Z, centred. Slots: "tooth_face"
+    (the profile), "hub", "bore"."""
+    m = len(lift_table)
+    pts = []
+    for i in range(m):
+        th = 2 * math.pi * i / m
+        r = lift_table[i]
+        rp, rn = lift_table[(i + 1) % m], lift_table[i - 1]
+        dr = (rp - rn) / (2 * (2 * math.pi / m))  # d(radius)/d(angle)
+        a = math.pi / 2 - th  # the cam turns counterclockwise: its point at angle a faces the follower at th
+        er = (math.cos(a), math.sin(a))
+        et = (math.sin(a), -math.cos(a))  # the direction of increasing th along the profile
+        if kind == "flat":  # the face touches where the line's envelope is: r e_r + r' e_t
+            pts.append((r * er[0] + dr * et[0], r * er[1] + dr * et[1]))
+        else:
+            px, py = r * er[0], r * er[1]
+            tx, ty = dr * er[0] + r * et[0], dr * er[1] + r * et[1]
+            ln = math.hypot(tx, ty) or 1.0
+            nx, ny = ty / ln, -tx / ln
+            if nx * px + ny * py < 0:
+                nx, ny = -nx, -ny
+            pts.append((px - nx * roller, py - ny * roller))
+    if sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1])) < 0:
+        pts = list(reversed(pts))  # counterclockwise, as _slab wants
+    body = _slab(pts, -width / 2, width / 2, 0, name)
+    holes = [_slab(_circle2(0.0, 0.0, bore / 2, 40), -width, width, 2, name + "_bore")] if bore else []
+    obj = _cut(body, holes, slot="bore") if holes else body
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="cam", kind=kind, width=width, period=[1, 1])
+
+
+def follower(kind="roller", roller=0.008, stem=0.008, length=0.06, face=0.03, width=0.012, name="follower"):
+    """A translating cam follower: a stem along its local Z from the contact end; "roller": a roller
+    (radius `roller`) on a pin in a fork at the origin; "flat": a flat disc face `face` across at the
+    origin; "knife": a rounded point. Slots: "tooth_face" (contact), "hub" (stem), "bore" (pin)."""
+    pieces = []
+    if kind == "roller":
+        r = _slab(_circle2(0.0, 0.0, roller, 40), -width / 2 + 0.0004, width / 2 - 0.0004, 0, name + "_roller")
+        _along(r, "X")
+        pieces.append(r)
+        for side in (-1, 1):
+            fork = _slab([(-roller * 0.5, -0.0015), (roller * 0.5, -0.0015), (roller * 0.5, 0.0015),
+                          (-roller * 0.5, 0.0015)], 0.0, roller * 1.6, 1, name + "_fork")
+            fork.data.transform(Matrix.Rotation(math.pi / 2, 4, "Z"))
+            fork.data.transform(Matrix.Translation((side * (width / 2 + 0.0015), 0.0, 0.0)))
+            pieces.append(fork)
+        pin = _slab(_circle2(0.0, 0.0, 0.3 * roller, 16), -width / 2 - 0.004, width / 2 + 0.004, 2, name + "_pin")
+        _along(pin, "X")
+        pieces.append(pin)
+        base = roller * 1.4
+        pieces.append(_slab([(-width / 2 - 0.003, -0.6 * roller), (width / 2 + 0.003, -0.6 * roller),
+                             (width / 2 + 0.003, 0.6 * roller), (-width / 2 - 0.003, 0.6 * roller)],
+                            base, base + 0.25 * roller, 1, name + "_yoke"))
+        pieces.append(_slab(_circle2(0.0, 0.0, stem / 2, 24), base + 0.2 * roller, length, 1, name + "_stem"))
+        obj = h.join(pieces, name)
+    else:  # flat-faced: a mushroom face on the stem
+        pieces.append(_slab(_circle2(0.0, 0.0, face / 2, 48), 0.0, 0.15 * face, 0, name + "_face"))
+        pieces.append(_slab(_circle2(0.0, 0.0, stem / 2, 24), 0.1 * face, length, 1, name + "_stem"))
+        obj = _fuse(pieces, name)
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="follower", kind=kind, roller=roller, length=length, period=[1, 1])
+
+
+def valve(head_diameter, stem_diameter, length, seat_angle=45.0, bucket=None, name="valve"):
+    """A poppet valve with its bucket tappet: the bucket (a cup `bucket` across, default 1.1 x head)
+    at the origin where the cam presses, the stem down local +Z to the head at `length`, a 45 degree
+    seat face, the margin and the flat face. Slots: "tooth_face" (seat face), "hub" (stem, head),
+    "bore" (the bucket)."""
+    rh, rs = head_diameter / 2, stem_diameter / 2
+    margin = 0.06 * head_diameter
+    seat_h = (rh - 1.8 * rs) * math.tan(math.radians(90 - seat_angle)) * 0.35
+    angles = [2 * math.pi * i / 48 for i in range(48)]
+    prof = [(0.0005, 0.0), (rs, 0.0), (rs, length - margin - seat_h - 0.25 * head_diameter),
+            (1.8 * rs, length - margin - seat_h), (rh, length - margin), (rh, length), (0.0005, length)]
+    stem = _lathe([_circle_ring(angles, z, r) for r, z in prof], [1, 1, 1, 0, 1, 1, 1], name, ENGINE_SLOTS)
+    bd = bucket or 1.1 * head_diameter
+    cup = _slab(_circle2(0.0, 0.0, bd / 2, 48), 0.0, 0.35 * bd, 2, name + "_bucket")  # its face at the origin
+    obj = _fuse([stem, cup], name)
+    return _tag(obj, type="valve", head_diameter=head_diameter, length=length, bucket=bd, period=[1, 1])
+
+
+# --- planetary sets and worms -----------------------------------------------------------------------
+
+def carrier(radius, planets, pin_diameter, width, plate=None, bore=0.0, name="carrier"):
+    """A planet carrier: a plate behind the planets (-Z side) reaching each planet's pin at
+    `radius`, the pins standing +Z through the planets' bores, a boss on its axis. Axis Z. Slots:
+    "hub" (plate), "bore" (pins)."""
+    t = plate or 0.35 * width
+    arm = 1.3 * pin_diameter
+    pts = []
+    for k in range(int(planets)):
+        a = 2 * math.pi * k / planets
+        pts += _circle2(radius * math.cos(a), radius * math.sin(a), arm, 16)
+    pts += _circle2(0.0, 0.0, 0.45 * radius, 24)
+    outline = _hull(pts)
+    z0 = -width / 2 - 0.0012 - t
+    pieces = [_slab(outline, z0, z0 + t, 1, name)]
+    for k in range(int(planets)):
+        a = 2 * math.pi * k / planets
+        pieces.append(_slab(_circle2(radius * math.cos(a), radius * math.sin(a), pin_diameter / 2, 24),
+                            z0 + 0.5 * t, width / 2 + 0.001, 2, name + "_pin"))
+    holes = [_slab(_circle2(0.0, 0.0, bore / 2, 32), -1.0, 1.0, 2, name + "_bore")] if bore else []
+    obj = _fuse(pieces, name, holes)
+    return _tag(obj, type="carrier", radius=radius, planets=int(planets), period=[1, int(planets)])
+
+
+def worm(module, starts, pitch_diameter, length, pressure_angle=20.0, hand="right", bore=0.0, name="worm"):
+    """A cylindrical worm: `starts` threads of axial module `module` (an axial section is a rack of
+    that module and pressure angle), pitch diameter, length along local Z, chamfered ends. Right hand
+    unless hand="left". Axis Z, centred. Slots: "tooth_face" (threads), "hub" (ends)."""
+    rp = pitch_diameter / 2
+    r_tip, r_root = rp + module, rp - 1.2 * module
+    p_ax = math.pi * module
+    lead = starts * p_ax * (1 if hand != "left" else -1)
+    tan_a = math.tan(math.radians(pressure_angle))
+    angles = [2 * math.pi * i / 48 for i in range(48)]
+    rings = []
+    n = max(8, int(length / (p_ax / 10)))
+    for i in range(n + 1):
+        z = -length / 2 + length * i / n
+        end = min(1.0, (min(z + length / 2, length / 2 - z)) / (0.6 * module))
+
+        def radius(a, z=z, end=end):
+            x = (z - lead * a / (2 * math.pi)) % p_ax
+            x = x - p_ax if x > p_ax / 2 else x  # axial distance from the nearest tooth's middle
+            r = rp + (p_ax / 4 - abs(x)) / tan_a
+            r = min(r_tip, max(r_root, r))
+            return r_root + (r - r_root) * end
+        rings.append(_circle_ring(angles, z, radius))
+    inner = bore / 2 if bore else 0.0005
+    rs = 0.6 * r_root  # the plain shaft the thread is cut on, running on past it each side
+    e = 0.6 * pitch_diameter
+    thread = rings
+    rings = [_circle_ring(angles, -length / 2 - e, inner), _circle_ring(angles, -length / 2 - e, rs),
+             _circle_ring(angles, -length / 2, rs)] + thread + \
+            [_circle_ring(angles, length / 2, rs), _circle_ring(angles, length / 2 + e, rs),
+             _circle_ring(angles, length / 2 + e, inner)]
+    slots = [1, 1, 1] + [0] * (len(thread) - 1) + [1, 1, 1, 2]
+    obj = _lathe(rings, slots, name, ENGINE_SLOTS)
+    return _tag(obj, type="worm", module=module, starts=int(starts), pitch_radius=rp, tip_radius=r_tip,
+                length=length, hand=hand, period=[1, int(starts)])
+
+
 def gear_pair_layout(module, teeth_a, teeth_b, pressure_angle=20.0, helix_angle=0.0, internal=False,
                      direction_deg=0.0, phase_a_deg=0.0):
     """Where the second gear of a meshing pair goes (metres in, metres out): the exact centre

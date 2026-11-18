@@ -87,8 +87,9 @@ class ModelGen:
 
     def request(self, object, **options):
         """Queue a job; returns it at once. options: notes, size {w, d, h, unit}, references,
-        request_key, outputs, style, camera, angle, colours, mechanism, reuse, max_versions,
-        min_score, budget_usd. object may be None when a mechanism is given."""
+        request_key, outputs, style, camera, angle, colours, mechanism, design, design_module,
+        design_mm_per_px, reuse, max_versions, min_score, budget_usd. object may be None when a
+        mechanism or a design is given."""
         body = {"client": self.client, **options}
         if object:
             body["object"] = object
@@ -104,6 +105,14 @@ class ModelGen:
         "teeth": 12, "meshes_with": "wheel"}, {"name": "wheel", "type": "spur_gear", "module": 2,
         "teeth": 24}], "rpm": 20}, outputs=["motion", "game"], style="explainer")."""
         job = self.request(None, mechanism=mechanism, **options)
+        return job if job["status"] in FINISHED else self.wait(job["id"], timeout, poll)
+
+    def design(self, design, timeout=1800, poll=5, **options):
+        """The 3D part matching one of the Village's vector designs (its JSON object, or the full path of
+        its design.json on this PC), waited for. Gears in it are matched tooth for tooth; the job's
+        "design" says the scale (mm_per_px), what each part came from, and what could not be matched.
+        options as for request, plus design_module (mm) or design_mm_per_px to set the scale."""
+        job = self.request(None, design=design, **options)
         return job if job["status"] in FINISHED else self.wait(job["id"], timeout, poll)
 
     def job(self, job_id):

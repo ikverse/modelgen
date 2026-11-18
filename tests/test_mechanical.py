@@ -142,7 +142,7 @@ def test_a_mechanism_is_filled_in_and_every_value_is_listed():
                 {"name": "b", "type": "spur_gear", "module": 2.5, "teeth": 30}]}, "different module"),
     ({"parts": [{"name": "a", "type": "spur_gear", "module": 2, "teeth": 20, "meshes_with": "c"}]},
      "no part named c"),
-    ({"parts": [{"name": "a", "type": "worm", "module": 2, "teeth": 20}]}, "unknown type"),
+    ({"parts": [{"name": "a", "type": "flywheel", "module": 2, "teeth": 20}]}, "unknown type"),
     ({"parts": [{"name": "s", "type": "spur_gear", "module": 2, "teeth": 52, "meshes_with": "r"},
                 {"name": "r", "type": "ring_gear", "module": 2, "teeth": 60}]}, "more teeth"),
     ({"parts": [{"name": "a", "type": "spur_gear", "module": 2, "teeth": 20, "meshes_with": ["b", "c"]},
@@ -550,6 +550,231 @@ def test_the_engine_gates_catch_a_rod_off_its_pin_and_a_piston_out_of_its_cylind
     assert not gates["piston_in_liner"]["pass"] and "rises 3.00 mm out of the top" in gates["piston_in_liner"]["detail"]
 
 
+# --- stage 4: the remaining parts --------------------------------------------------------------------------
+
+FASTENERS = {"parts": [{"name": "bolt", "type": "bolt", "diameter": 10, "length": 50},
+                       {"name": "nut", "type": "nut", "on_bolt": "bolt"},
+                       {"name": "washer", "type": "washer", "on_bolt": "bolt"}], "driver": "nut", "rpm": 30}
+BELT = {"parts": [{"name": "p1", "type": "pulley", "datum_diameter": 80},
+                  {"name": "p2", "type": "pulley", "datum_diameter": 160},
+                  {"name": "belt", "type": "belt", "on": ["p1", "p2"]}]}
+CHAIN = {"parts": [{"name": "s1", "type": "sprocket", "teeth": 18}, {"name": "s2", "type": "sprocket", "teeth": 36},
+                   {"name": "chain", "type": "chain", "on": ["s1", "s2"], "centre_distance": 400}]}
+CAM = {"parts": [{"name": "cam", "type": "cam", "base_diameter": 40, "lift": 10},
+                 {"name": "f", "type": "follower", "on_cam": "cam"}]}
+VALVE = {"parts": [{"name": "cam", "type": "cam", "base_diameter": 36, "lift": 9, "rise": 110, "dwell": 20, "fall": 110},
+                   {"name": "valve", "type": "valve", "head_diameter": 32, "on_cam": "cam"},
+                   {"name": "spring", "type": "spring", "on_valve": "valve"}]}
+PLANETARY = {"parts": [{"name": "ps", "type": "planetary_set", "module": 2, "sun_teeth": 24, "planet_teeth": 24}],
+             "rpm": 20}
+WORM = {"parts": [{"name": "worm", "type": "worm", "module": 2},
+                  {"name": "wheel", "type": "worm_wheel", "teeth": 30, "meshes_with": "worm"}], "rpm": 60}
+
+
+def test_a_nut_sits_on_its_bolts_thread_and_screws_off_and_back():
+    sheet, assumed = mc.clean(FASTENERS)
+    assert "bolt.pitch = 1.5 (ISO coarse M10)" in assumed and mc.describe(sheet) == "bolt and nut"
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    assert abs(pl["nut"]["centre"][2] - (-0.050 + 5 * 0.0015)) < 1e-9  # five pitches of thread left below it
+    assert abs(pl["nut"]["phase"] - (2 * math.pi * (-42.5 / 1.5)) % (2 * math.pi)) < 1e-9  # its thread in the bolt's
+    assert abs(pl["washer"]["centre"][2] - (pl["nut"]["centre"][2] + 0.0084)) < 1e-9
+    assert "m.screw(parts['nut'][0], pitch=0.0015, travel=0.006, rpm=30.0)" in mc.scripts(sheet)[0]["motion.py"]
+    off = mc.exploded_offsets(sheet, lay)
+    assert off["nut"][2] < off["washer"][2] < 0 == off["bolt"][2]
+    with pytest.raises(mc.MechanismError, match="too short for its nut"):
+        mc.clean({**FASTENERS, "parts": [{**FASTENERS["parts"][0], "length": 12}] + FASTENERS["parts"][1:]})
+    with pytest.raises(mc.MechanismError, match="not an ISO size"):
+        mc.clean({"parts": [{"name": "b", "type": "bolt", "diameter": 11}]})
+
+
+def test_a_spring_is_never_squeezed_solid():
+    sheet, assumed = mc.clean({"parts": [{"name": "s", "type": "spring"}]})
+    s = sheet["parts"][0]
+    assert s["free_length"] * (1 - s["squeeze"]) > (s["coils"] + 1) * s["wire_diameter"]
+    assert "m.squash(parts['s'][0], share=0.3" in mc.scripts(sheet)[0]["motion.py"]
+    with pytest.raises(mc.MechanismError, match="squeeze at most"):
+        mc.clean({"parts": [{"name": "s", "type": "spring", "squeeze": 0.8}]})
+
+
+def test_a_belt_turns_its_pulleys_the_same_way_at_the_diameter_ratio():
+    sheet, assumed = mc.clean(BELT)
+    lay = mc.layout(sheet)
+    assert abs(lay["place"]["p2"]["centre"][0] - 0.240) < 1e-9 and lay["place"]["belt"]["centre"] == [0.0, 0.0, 0.0]
+    drive = next(p for p in lay["pairs"] if p["kind"] == "drive")
+    assert drive["ratio"] == 0.5 and drive["same_direction"]
+    assert "m.mesh_drive(parts['p1'][0], parts['p2'][0], ratio=0.5, same_direction=True)" in \
+        mc.scripts(sheet)[0]["motion.py"]
+    with pytest.raises(mc.MechanismError, match="wraps only"):
+        mc.clean({"parts": [{"name": "p1", "type": "pulley", "datum_diameter": 60},
+                            {"name": "p2", "type": "pulley", "datum_diameter": 400},
+                            {"name": "belt", "type": "belt", "on": ["p1", "p2"], "centre_distance": 250}]})
+
+
+@pytest.mark.parametrize("z1, z2, centre", [(18, 18, 300), (18, 36, 400), (13, 42, 350), (17, 25, 250)])
+def test_a_chain_closes_with_every_link_one_pitch_and_an_even_count(z1, z2, centre):
+    lay = mc.chain_layout(12.7, z1, z2, centre)
+    s = lay["slots"]
+    links = [math.dist(s[i][:2], s[(i + 1) % len(s)][:2]) for i in range(len(s))]
+    assert lay["links"] % 2 == 0 and max(abs(d - 12.7) for d in links) < 1e-9
+    assert abs(lay["centre"] - centre) < 6.35  # within half a pitch of the distance asked for
+    for i, (x, y, k, c) in enumerate(s):  # every roller on a sprocket sits on its pitch circle, in a tooth gap
+        if k is not None:
+            r = mc.sprocket_radius(12.7, (z1, z2)[k])
+            assert abs(math.hypot(x - c[0], y - c[1]) - r) < 1e-9
+            gap = (math.atan2(y - c[1], x - c[0]) - lay["phase"][k]) / (2 * math.pi / (z1, z2)[k])
+            assert abs(gap - round(gap)) < 1e-9
+
+
+def test_a_chain_drive_sheet_moves_its_chain_with_the_first_sprocket():
+    sheet, assumed = mc.clean(CHAIN)
+    assert any("90 links" in a for a in assumed)
+    motion = mc.scripts(sheet)[0]["motion.py"]
+    assert "m.chain_drive(parts['chain'][0], parts['s1'][0], teeth=18)" in motion
+    assert "ratio=0.5, same_direction=True" in motion
+
+
+def test_a_cam_lifts_its_follower_by_the_cycloidal_law_and_refuses_one_that_would_jam():
+    sheet, assumed = mc.clean(CAM)
+    f = sheet["parts"][1]
+    assert f["table"][0] == 28.0 and abs(max(f["table"]) - 38.0) < 1e-6  # base 20 + roller 8, + the 10 mm lift
+    assert mc.cam_motion(60, lift=10)[0] == pytest.approx(5.0)  # half the lift half way up the rise
+    lay = mc.layout(sheet)
+    assert abs(lay["place"]["f"]["centre"][2] - 0.028) < 1e-9
+    assert "m.cam_drive(parts['cam'][0], parts['f'][0], table=[0.028," in mc.scripts(sheet)[0]["motion.py"]
+    with pytest.raises(mc.MechanismError, match="jam"):
+        mc.clean({"parts": [{"name": "cam", "type": "cam", "base_diameter": 20, "lift": 25, "rise": 40},
+                            {"name": "f", "type": "follower", "on_cam": "cam"}]})
+
+
+def test_a_valve_hangs_under_its_cam_with_a_spring_sized_to_its_lift():
+    sheet, assumed = mc.clean(VALVE)
+    by = {p["name"]: p for p in sheet["parts"]}
+    lay = mc.layout(sheet)
+    assert lay["place"]["valve"]["centre"][2] < 0 and abs(lay["place"]["cam"]["phase"] - math.pi) < 1e-12
+    spring = by["spring"]
+    assert spring["free_length"] - 9 > (spring["coils"] + 1) * spring["wire_diameter"]
+    assert "spring=parts['spring'][0]" in mc.scripts(sheet)[0]["motion.py"]
+    assert mc.describe(sheet) == "cam and valve"
+
+
+def test_a_planetary_set_turns_by_willis_and_spaces_its_planets_evenly():
+    sheet, assumed = mc.clean(PLANETARY)
+    names = {p["name"] for p in sheet["parts"]}
+    assert names == {"ps_sun", "ps_planet1", "ps_planet2", "ps_planet3", "ps_ring", "ps_carrier"}
+    w = mc.planetary_rates(sheet["planetary"][0])
+    assert w["carrier"] == Fraction(24, 96) and w["ring"] == 0  # sun in, ring held: 1 + 72/24 = 4 to 1
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    assert max(abs(v) for v in pl["ps_ring"]["centre"]) < 1e-12 and max(abs(v) for v in pl["ps_carrier"]["centre"]) < 1e-12
+    assert all(abs(math.dist(pl[f"ps_planet{k}"]["centre"], [0, 0, 0]) - 0.048) < 1e-9 for k in (1, 2, 3))
+    train = next(p for p in lay["pairs"] if p["kind"] == "train")
+    assert train["ratio"] == 0.25 and train["same_direction"]
+    assert mc.describe(sheet) == "planetary gear set 24/24/72" and mc.loop_turns(sheet) == 4
+    with pytest.raises(mc.MechanismError, match="spaced evenly"):
+        mc.clean({"parts": [{"name": "ps", "type": "planetary_set", "module": 2, "sun_teeth": 25, "planet_teeth": 24}]})
+
+
+def test_a_worm_drives_its_wheel_one_tooth_a_turn_from_below():
+    sheet, assumed = mc.clean(WORM)
+    lay = mc.layout(sheet)
+    assert abs(lay["place"]["wheel"]["centre"][2] - 0.040) < 1e-9  # (20 + 60) / 2 above the worm's axis
+    pair = lay["pairs"][0]
+    assert pair["ratio"] == pytest.approx(1 / 30) and not pair["same_direction"]
+    assert mc.describe(sheet) == "worm drive 1:30"
+    with pytest.raises(mc.MechanismError, match="worm wheel cannot drive"):
+        mc.clean({**WORM, "driver": "wheel"})
+    with pytest.raises(mc.MechanismError, match="meshes only with a worm wheel"):
+        mc.clean({"parts": [{"name": "worm", "type": "worm", "module": 2},
+                            {"name": "g", "type": "spur_gear", "module": 2, "teeth": 30, "meshes_with": "worm"}]})
+
+
+# --- stage 5: the Village's 2D designs in ----------------------------------------------------------------
+
+def _drawn_gear(cx, cy, teeth, module_px, turn_deg=0.0):
+    """A gear's outline as the Village draws one: a path of straight-flanked teeth, y pointing down."""
+    tip, root = module_px * (teeth + 2) / 2, module_px * (teeth - 2.5) / 2
+    pitch = 2 * math.pi / teeth
+    pts = []
+    for k in range(teeth):
+        base = math.radians(turn_deg) + k * pitch
+        for f, r in ((-0.5, root), (-0.3, root), (-0.16, tip), (0.16, tip), (0.3, root)):
+            a = base + f * pitch
+            pts.append([round(cx + r * math.cos(a), 3), round(cy - r * math.sin(a), 3)])
+    return pts
+
+
+def village_gears():
+    """A Village vector design of a 24-tooth gear driving a 12-tooth pinion (drawn up and to the right of
+    it, at 20 degrees), each with a bore and the big one a hub, plus a shadow and a label line."""
+    m = 5.0
+    a, b = (140.0, 150.0), (140 + 90 * math.cos(math.radians(20)), 150 - 90 * math.sin(math.radians(20)))
+    return {"kind": "vector", "label": "two gears for the gear-ratio video", "canvas": {"width": 400, "height": 300},
+            "palette": {"A": "#000000", "B": "#e4572e", "C": "#2a1c2c", "D": "#f2c14e", "E": "#ffffff",
+                        "F": "#b8442a"},
+            "parts": [
+                {"name": "shadow", "shapes": [{"type": "ellipse", "cx": 180, "cy": 260, "rx": 120, "ry": 6,
+                                               "fill": "A", "opacity": 0.35}], "pivot": [180, 260], "z": 0},
+                {"name": "big gear", "shapes": [
+                    {"type": "path", "points": _drawn_gear(*a, 24, m, 5.0), "fill": "B", "stroke": "C", "width": 2},
+                    {"type": "ellipse", "cx": a[0], "cy": a[1], "rx": 22, "ry": 22, "fill": "F"},
+                    {"type": "ellipse", "cx": a[0], "cy": a[1], "rx": 8, "ry": 8, "fill": "E"}],
+                 "pivot": list(a), "z": 1},
+                {"name": "pinion", "shapes": [
+                    {"type": "path", "points": _drawn_gear(*b, 12, m, 3.0), "fill": "D", "stroke": "C", "width": 2},
+                    {"type": "circle", "cx": b[0], "cy": b[1], "r": 6, "fill": "E"}], "pivot": list(b), "z": 2},
+                {"name": "label", "shapes": [{"type": "line", "points": [[40, 280], [360, 280]], "stroke": "C",
+                                              "width": 2}], "pivot": [200, 280], "z": 3}]}
+
+
+def test_a_village_gear_design_becomes_the_matching_mechanism():
+    from modelgen.tools import design as dz
+    raw, report = dz.to_mechanism(village_gears())
+    by = {p["name"]: p for p in raw["parts"]}
+    assert set(by) == {"big_gear", "pinion"} and raw["driver"] == "big_gear"
+    assert by["big_gear"]["teeth"] == 24 and by["pinion"]["teeth"] == 12
+    assert by["big_gear"]["module"] == 2.5 and report["mm_per_px"] == pytest.approx(0.5, rel=1e-3)  # 5 px teeth
+    assert by["big_gear"]["meshes_with"] == ["pinion"] and abs(by["pinion"]["at"] - 20) < 0.5
+    assert by["big_gear"]["bore"] == 8.0 and by["pinion"]["bore"] == 6.0 and by["big_gear"]["hub_diameter"] == 22.0
+    assert by["big_gear"]["colour"] == "#e4572e" and by["pinion"]["colour"] == "#f2c14e"
+    assert abs((by["big_gear"]["phase"] - 5.0 + 7.5) % 15 - 7.5) < 0.6  # a drawn tooth's middle, 15 degrees apart
+    assert {s["part"] for s in report["skipped"]} == {"shadow", "label"}
+    sheet, assumed = mc.clean(raw)
+    lay = mc.layout(sheet)
+    pin = lay["place"]["pinion"]["centre"]
+    assert abs(math.degrees(math.atan2(pin[2], pin[0])) - 20) < 0.5  # placed where it is drawn
+    assert abs(math.hypot(pin[0], pin[2]) * 1000 - 45.0) < 0.6  # 90 px apart at 0.5 mm a px (plus profile shift)
+    raw2, report2 = dz.to_mechanism(village_gears(), module=4)
+    assert raw2["parts"][0]["module"] == 4 and report2["mm_per_px"] == pytest.approx(0.8, rel=1e-3)
+
+
+def test_a_design_with_no_part_the_tools_make_is_refused_with_the_reason(api):
+    from modelgen.tools import design as dz
+    person = {"kind": "vector", "canvas": {"width": 220, "height": 278}, "palette": {"B": "#5c6276"},
+              "parts": [{"name": "leg_r", "shapes": [{"type": "path", "points": [[89, 166], [111, 166], [108, 262],
+                                                                                 [92, 262], ["q", 90, 220, 89, 166]],
+                                                      "fill": "B"}]},
+                        {"name": "head", "shapes": [{"type": "ellipse", "cx": 110, "cy": 60, "rx": 22, "ry": 26,
+                                                     "fill": "B"}]}]}
+    with pytest.raises(dz.DesignError, match="no part in this design is one the tools make"):
+        dz.to_mechanism(person)
+    r = api.post("/v1/jobs", json={"client": "village", "design": person}, headers=api.headers)
+    assert r.status_code == 400 and "design: no part in this design" in r.json()["detail"]
+    r = api.post("/v1/jobs", json={"client": "village", "design": village_gears(), "mechanism": PAIR},
+                 headers=api.headers)
+    assert r.status_code == 400 and "not both" in r.json()["detail"]
+
+
+def test_a_job_can_send_a_village_design_and_gets_the_match_back(api):
+    r = api.post("/v1/jobs", json={"client": "village", "design": village_gears(), "outputs": ["motion"]},
+                 headers=api.headers)
+    assert r.status_code in (200, 202), r.text
+    job = r.json()
+    assert job["object"] == "spur gear pair 24/12"
+    assert job["design"]["mm_per_px"] == pytest.approx(0.5, rel=1e-3) and job["design"]["parts"]["pinion"]["teeth"] == 12
+    assert any(a.startswith("from the design: big_gear has 24 teeth") for a in job["assumed"])
+
+
 # --- real Blender --------------------------------------------------------------------------------------
 
 KIT = '''from bpy_lib import kits as k
@@ -613,6 +838,40 @@ def build_liner():
 
 def build_block():
     return k.cylinder(0.08, 0.135, style="block", name="block")
+
+def build_bolt():
+    return k.bolt(0.010, 0.040, name="bolt")
+
+def build_nut():
+    return k.nut(0.010, name="nut")
+
+def build_washer():
+    return k.washer(0.010, name="washer")
+
+def build_spring():
+    return k.spring(0.003, 0.024, 0.060, 8, name="spring")
+
+def build_pulley():
+    return k.pulley(0.1, grooves=2, section="A", bore=0.02, name="pulley")
+
+def build_belt():
+    return k.belt(0.05, 0.1, 0.3, grooves=2, name="belt")
+
+def build_sprocket():
+    return k.sprocket(0.0127, 18, bore=0.016, hub=(0.04, 0.01), name="sprocket")
+
+def build_cam():
+    table = [0.028 + k._mech().cam_motion(2 * i, lift=0.008)[0] for i in range(180)]
+    return k.cam(table, kind="roller", roller=0.008, bore=0.012, name="cam")
+
+def build_valve():
+    return k.valve(0.032, 0.006, 0.1, name="valve")
+
+def build_carrier():
+    return k.carrier(0.036, 3, 0.008, 0.016, name="carrier")
+
+def build_worm():
+    return k.worm(0.003, 1, 0.03, 0.06, name="worm")
 '''
 
 
@@ -621,8 +880,9 @@ def test_every_gear_tool_makes_one_closed_solid_at_its_real_size(tmp_path):
     file = tmp_path / "kit.py"
     file.write_text(KIT, encoding="utf-8")
     names = ["spur", "helical", "herring", "holes", "spokes", "ring", "rack", "bevel", "shaft", "centre", "crank",
-             "rod", "liner", "block"]
-    several = ["compressor", "turbine", "volute", "bearing", "piston", "rings"]  # several closed solids
+             "rod", "liner", "block", "bolt", "nut", "washer", "spring", "pulley", "sprocket", "cam", "valve", "carrier",
+             "worm"]
+    several = ["compressor", "turbine", "volute", "bearing", "piston", "rings", "belt"]  # several closed solids
     result = blender.run_job([blender.part_step(n, file, func=f"build_{n}") for n in names + several]
                              + [blender.measure_step()], timeout=600)
     assert result.ok, result.traceback
@@ -640,6 +900,24 @@ def test_every_gear_tool_makes_one_closed_solid_at_its_real_size(tmp_path):
     assert parts["piston"]["islands"] == 2 and parts["rings"]["islands"] == 3  # piston and pin; three rings
     assert abs(parts["piston"]["size"][0] - 0.08) < 0.0002 and abs(parts["rings"]["size"][0] - 0.08) < 0.0001
     assert abs(parts["liner"]["size"][2] - 0.135) < 1e-6 and abs(parts["block"]["size"][2] - 0.135) < 1e-6
+    assert abs(parts["nut"]["size"][0] - 0.016) < 0.0002  # M10: 16 mm across flats
+    assert abs(parts["bolt"]["size"][2] - (0.040 + 0.0065)) < 0.0002 and abs(parts["washer"]["size"][0] - 0.02) < 1e-4
+    assert abs(parts["spring"]["size"][2] - 0.060) < 0.0005
+
+
+@pytest.mark.blender
+@pytest.mark.parametrize("raw, gate", [(FASTENERS, "no_clashes"), (BELT, "speed_ratio"), (CHAIN, "no_clashes"),
+                                       (CAM, "follower_contact"), (VALVE, "follower_contact"),
+                                       (PLANETARY, "teeth_clear"), (WORM, "teeth_clear")],
+                         ids=["fasteners", "belt", "chain", "cam", "valve", "planetary", "worm"])
+def test_every_stage_4_drive_builds_and_runs_with_every_check_passed(raw, gate):
+    sheet, assumed = mc.clean(raw)
+    proj = db.create_project(mc.describe(sheet), mc.describe(sheet), options={"mechanism": sheet, "assumed": assumed})
+    out = asyncio.run(pipeline._run_parts(proj["name"], sheet, assumed))
+    folder = pipeline.version_dir(proj["name"], out["version"])
+    gates = json.loads((folder / "checks.json").read_text(encoding="utf-8"))["gates"]
+    assert out["ok"] and out["passed"], {k: v for k, v in gates.items() if not v["pass"]}
+    assert gate in gates and gates[gate]["pass"]
 
 
 @pytest.mark.blender

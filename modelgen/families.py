@@ -281,7 +281,10 @@ _ORDER = ["scene", "vehicle", "building", "device", "furniture", "container", "c
 _MECHANICAL_FIRST = re.compile(r"\b(gears?|gearbox(es)?|cogs?|cogwheels?|sprockets?|pistons?|crank ?shafts?|"
                                r"crankshafts?|cam ?shafts?|camshafts?|turbochargers?|superchargers?|turbos?|"
                                r"differentials?|connecting rods?|flywheels?|pinions?|impellers?|"
-                               r"compressor wheels?|bearings?|transmissions?)\b", re.IGNORECASE)
+                               r"compressor wheels?|bearings?|transmissions?|pulleys?|belt drives?|roller chains?|"
+                               r"chain drives?|worm (gears?|drives?|wheels?)|planetary|epicyclic|cam followers?|"
+                               r"cams? and followers?|poppet valves?|valve springs?|coil springs?|compression springs?|"
+                               r"extension springs?|hex bolts?|bolts? and nuts?|nuts? and bolts?)\b", re.IGNORECASE)
 
 
 def mechanical_word(text):

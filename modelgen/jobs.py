@@ -23,6 +23,7 @@ from pathlib import Path
 from . import config, db, pipeline, runner, uploads
 from .tools import agent_tools as at
 from .tools import asset_catalog, blender, mechanism
+from .tools import design as design_tools
 
 OUTPUTS = ("game", "full", "views", "motion", "exploded", "cutaway")
 SEQUENCES = ("motion", "exploded", "cutaway")  # picture sequences of a moving model
@@ -108,12 +109,20 @@ def clean_request(payload):
     """The job's settings from a POST /v1/jobs body, with the defaults filled in. Raises JobError."""
     if not isinstance(payload, dict):
         raise JobError("send a JSON object")
-    sheet, assumed = None, []
+    sheet, assumed, matched = None, [], None
+    if payload.get("design") not in (None, "", {}):
+        if payload.get("mechanism") not in (None, "", {}):
+            raise JobError("give design or mechanism, not both (the design is turned into the mechanism)")
+        raw, matched = _design_mechanism(payload)
+        payload = {**payload, "mechanism": raw}
     if payload.get("mechanism") not in (None, "", {}):
         try:
             sheet, assumed = mechanism.clean(payload["mechanism"])
         except mechanism.MechanismError as exc:
-            raise JobError(f"mechanism: {exc}")
+            raise JobError(f"mechanism{' (from the design)' if matched else ''}: {exc}")
+        if matched:
+            assumed = [f"from the design: {n} has {p['teeth']} teeth, module {p['module_mm']:g} mm "
+                       f"({matched['mm_per_px']:g} mm a pixel)" for n, p in matched["parts"].items()] + assumed
     obj = " ".join(str(payload.get("object") or "").split())
     if not obj and sheet:
         obj = mechanism.describe(sheet)
@@ -171,7 +180,36 @@ def clean_request(payload):
            "references": [str(r) for r in references], "angle": angle, "colours": colours, "cut": cut}
     if sheet:
         req["mechanism"], req["assumed"] = sheet, assumed
+    if matched:
+        req["design_match"] = matched
     return client, key, req
+
+
+def _design_mechanism(payload):
+    """A Village vector design (the object itself, or the full path of its design.json on this PC) read
+    into a mechanism, with design_module (mm) or design_mm_per_px setting the scale when given."""
+    raw = payload["design"]
+    if isinstance(raw, str):
+        path = Path(raw)
+        if not path.is_absolute() or not path.is_file():
+            raise JobError(f"design: no file at {raw[:200]} (send the design's JSON, or the full path of its "
+                           "design.json on this PC)")
+        if path.stat().st_size > design_tools.MAX_BYTES:
+            raise JobError("design: the file is over 2 MB")
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            raise JobError("design: the file is not JSON")
+    if len(json.dumps(raw)) > design_tools.MAX_BYTES:
+        raise JobError("design: over 2 MB")
+    module = payload.get("design_module")
+    scale = payload.get("design_mm_per_px")
+    try:
+        return design_tools.to_mechanism(
+            raw, module=None if module in (None, "") else _number(module, "design_module", 0.3, 50),
+            mm_per_px=None if scale in (None, "") else _number(scale, "design_mm_per_px", 0.001, 1000))
+    except design_tools.DesignError as exc:
+        raise JobError(f"design: {exc}")
 
 
 def _reference(ref):
@@ -311,6 +349,8 @@ def public(job):
         if record:
             out["mechanism"] = {"key": record.get("key"), "sizes_mm": record.get("sizes_mm"),
                                 "colours": record.get("colours")}
+    if job["request"].get("design_match"):
+        out["design"] = job["request"]["design_match"]
     return out
 
 

@@ -337,6 +337,234 @@ def _write_sliders(last):
     scene.frame_set(1)
 
 
+def _own_loop(frames, info):
+    """A motion that sets its own loop (a screw, a squeeze, a planetary set): the loop is fixed now."""
+    frames = int(max(MIN_LOOP_FRAMES, min(MAX_LOOP_FRAMES, frames)))
+    _S["seconds"] = frames / _S["fps"]
+    _S["fixed"] = True
+    _apply_loop()
+    info.update(frames=frames, seconds=round(frames / _S["fps"], 4), fps=_S["fps"])
+    _S["mechanism"] = info
+    return frames
+
+
+def _key_matrix(obj, matrix, frame, prev):
+    """Key an object's location and rotation at a frame to a world matrix (no parent); returns the
+    Euler angles, kept continuous with the frame before."""
+    obj.rotation_mode = "XYZ"
+    loc, rot, _ = matrix.decompose()
+    e = rot.to_euler("XYZ", prev) if prev is not None else rot.to_euler("XYZ")
+    obj.location, obj.rotation_euler = loc, e
+    obj.keyframe_insert("location", frame=frame)
+    obj.keyframe_insert("rotation_euler", frame=frame)
+    return e
+
+
+def _linear(obj):
+    for i in range(3):
+        _set_linear(obj, "location", i)
+        _set_linear(obj, "rotation_euler", i)
+        _set_linear(obj, "scale", i)
+
+
+def screw(nut, pitch, travel, rpm):
+    """A nut screwing off its bolt by `travel` metres and back on, turning one pitch's worth for each
+    pitch it moves (right-handed: it backs off down its own -Z), at `rpm` at the fastest."""
+    turns = travel / pitch
+    rps = float(rpm) / 60.0
+    frames = round(math.pi * turns / rps * _S["fps"])  # turns (1 - cos)/2: its peak speed is pi turns per loop
+    _S.setdefault("screws", []).append({"obj": nut, "pitch": float(pitch), "travel": float(travel)})
+    return _own_loop(frames, {"mode": "screw", "driver": nut.name, "turns_each_way": round(turns, 4),
+                              "travel_m": round(travel, 6)})
+
+
+def _write_screws(last):
+    for s in _S.get("screws") or []:
+        obj = s["obj"]
+        m0 = obj.matrix_world.copy()
+        axis = (m0.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        prev = None
+        for f in range(1, last + 2):
+            t = (f - 1) / last
+            down = s["travel"] * (1 - math.cos(2 * math.pi * t)) / 2
+            turn = -2 * math.pi * down / s["pitch"]  # its thread stays in the bolt's
+            m = Matrix.Translation(-axis * down) @ Matrix.Translation(m0.translation) @ \
+                Matrix.Rotation(turn, 4, axis) @ Matrix.Translation(-m0.translation) @ m0
+            prev = _key_matrix(obj, m, f, prev)
+        _linear(obj)
+        _S["animated"][obj.name] = {"screw_m": round(s["travel"], 6)}
+
+
+def squash(spring, share, rpm, stretch=False):
+    """A spring squeezed by `share` of its length (pulled out by it when stretch) and let go, `rpm`
+    times a minute, its foot (the origin) still."""
+    frames = round(60.0 / float(rpm) * _S["fps"])
+    _S.setdefault("squashes", []).append({"obj": spring, "share": float(share) * (-1 if stretch else 1)})
+    return _own_loop(frames, {"mode": "squeeze", "driver": spring.name, "share": float(share)})
+
+
+def _write_squashes(last):
+    for s in _S.get("squashes") or []:
+        obj = s["obj"]
+        base = obj.scale.copy()
+        for f in range(1, last + 2):
+            t = (f - 1) / last
+            obj.scale = Vector((base.x, base.y, base.z * (1 - s["share"] * (1 - math.cos(2 * math.pi * t)) / 2)))
+            obj.keyframe_insert("scale", frame=f)
+        obj.scale = base
+        _linear(obj)
+        _S["animated"][obj.name] = {"squeeze": abs(s["share"])}
+
+
+def _turned(obj, m0, axis):
+    """How far an object has turned about `axis` (world) since the matrix m0, radians in (-pi, pi]."""
+    ref = m0.to_3x3() @ Vector((1.0, 0.0, 0.0))
+    now = obj.matrix_world.to_3x3() @ Vector((1.0, 0.0, 0.0))
+    ref, now = (ref - axis * ref.dot(axis)).normalized(), (now - axis * now.dot(axis)).normalized()
+    return math.atan2(axis.dot(ref.cross(now)), ref.dot(now))
+
+
+def _unwrapped_turns(obj, last):
+    """Each frame's total turn of a part about its own axis since frame 1 (radians, counterclockwise
+    about its local Z positive), unwrapped."""
+    scene = bpy.context.scene
+    scene.frame_set(1)
+    m0 = obj.matrix_world.copy()
+    axis = (m0.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+    out, total, prev = [], 0.0, 0.0
+    for f in range(1, last + 2):
+        scene.frame_set(f)
+        a = _turned(obj, m0, axis)
+        d = (a - prev + math.pi) % (2 * math.pi) - math.pi
+        total += d
+        prev = a
+        out.append(total)
+    scene.frame_set(1)
+    return out
+
+
+def chain_drive(chain, sprocket, teeth):
+    """A roller chain's links running round with `sprocket` (its first sprocket, `teeth` teeth): one
+    pitch for each tooth the sprocket turns. The chain's shape keys (kits.chain) are blended frame by
+    frame."""
+    _S.setdefault("chains", []).append({"chain": chain, "sprocket": sprocket, "teeth": int(teeth)})
+
+
+def _write_chains(last):
+    for c in _S.get("chains") or []:
+        obj = c["chain"]
+        keys = obj.data.shape_keys
+        if keys is None:
+            continue
+        names = [k.name for k in keys.key_blocks][1:]  # phase1..phaseN
+        n = len(names)
+        turns = _unwrapped_turns(c["sprocket"], last)
+        for f in range(1, last + 2):
+            phase = (-turns[f - 1] / (2 * math.pi) * c["teeth"]) % 1.0  # it runs on as its sprocket turns clockwise
+            x = phase * n
+            j, t = int(math.floor(x)), x - math.floor(x)
+            weights = [0.0] * n
+            if j == 0:
+                weights[0] = t
+            else:
+                weights[j - 1] = 1 - t
+                if j < n:
+                    weights[j] = t
+            for name, w in zip(names, weights):
+                block = keys.key_blocks[name]
+                block.value = w
+                block.keyframe_insert("value", frame=f)
+        if keys.animation_data and keys.animation_data.action:
+            for fc in _fcurves(keys.animation_data.action):
+                for kp in fc.keyframe_points:
+                    kp.interpolation = "CONSTANT"
+        _S["animated"][obj.name] = {"chain_runs_with": c["sprocket"].name}
+
+
+def cam_drive(cam, follower, table, spring=None, spring_length=None):
+    """A follower (or valve) lifted by its cam: `table` is the radius from the cam's axis to the
+    follower's contact at even turns of the cam (counterclockwise about its local Z from frame 1); the
+    follower moves along its own local Z (away from the cam) by the radius less the first. A spring
+    on a valve is squeezed by as much (its foot, the origin, still)."""
+    _S.setdefault("cams", []).append({"cam": cam, "obj": follower, "table": list(table), "spring": spring,
+                                      "spring_length": spring_length})
+
+
+def _write_cams(last):
+    for c in _S.get("cams") or []:
+        obj, table = c["obj"], c["table"]
+        n = len(table)
+        turns = _unwrapped_turns(c["cam"], last)
+        rest = obj.matrix_world.translation.copy()
+        d = (obj.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        spring = c["spring"]
+        sbase = spring.scale.copy() if spring is not None else None
+        top = 0.0
+        for f in range(1, last + 2):
+            x = (turns[f - 1] / (2 * math.pi)) % 1.0 * n
+            i = int(math.floor(x))
+            r = table[i % n] + (table[(i + 1) % n] - table[i % n]) * (x - i)
+            lift = r - table[0]
+            top = max(top, lift)
+            obj.location = rest + d * lift
+            obj.keyframe_insert("location", frame=f)
+            if spring is not None:
+                spring.scale = Vector((sbase.x, sbase.y, sbase.z * (1 - lift / c["spring_length"])))
+                spring.keyframe_insert("scale", frame=f)
+        obj.location = rest
+        _linear(obj)
+        if spring is not None:
+            spring.scale = sbase
+            _linear(spring)
+        _S["animated"][obj.name] = {"lift_m": round(top, 6)}
+
+
+def planetary(sun, ring, carrier, planets, rates, rpm, reverse=False, turns=1.0):
+    """A planetary set: each member turning at `rates` (turns per turn of the input, from Willis's
+    equation; "planet" each planet's own turn in the world) with the input at `rpm`, the planets
+    carried round by the carrier. The loop is `turns` turns of the input (every member back where it
+    began)."""
+    rps = float(rpm) / 60.0
+    frames = round(float(turns) / rps * _S["fps"])
+    _S.setdefault("planetaries", []).append({"sun": sun, "ring": ring, "carrier": carrier, "planets": list(planets),
+                                             "rates": dict(rates), "sign": -1.0 if reverse else 1.0,
+                                             "turns": float(turns)})
+    return _own_loop(frames, {"mode": "planetary", "driver": sun.name, "input_turns": float(turns),
+                              "rates": {k: round(v, 6) for k, v in rates.items()}})
+
+
+def _write_planetaries(last):
+    for s in _S.get("planetaries") or []:
+        c0 = s["carrier"].matrix_world.copy()
+        axis = (c0.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        centre = c0.translation.copy()
+        members = [(s["sun"], s["rates"]["sun"], False), (s["ring"], s["rates"]["ring"], False),
+                   (s["carrier"], s["rates"]["carrier"], False)] + [(p, s["rates"]["planet"], True) for p in s["planets"]]
+        rest = {o.name: o.matrix_world.copy() for o, _, _ in members}
+        prev = {}
+        for f in range(1, last + 2):
+            t = (f - 1) / last
+            input_angle = s["sign"] * 2 * math.pi * s["turns"] * t
+            carry = Matrix.Translation(centre) @ Matrix.Rotation(input_angle * s["rates"]["carrier"], 4, axis) @ \
+                Matrix.Translation(-centre)
+            for obj, rate, rides in members:
+                m0 = rest[obj.name]
+                spin = input_angle * rate
+                own = Matrix.Translation(m0.translation) @ Matrix.Rotation(spin, 4, axis) @ \
+                    Matrix.Translation(-m0.translation)
+                if rides:  # carried round the sun's axis; its own turn in the world on top, about its own centre
+                    moved = carry @ m0
+                    own = Matrix.Translation(moved.translation) @ Matrix.Rotation(
+                        spin - input_angle * s["rates"]["carrier"], 4, axis) @ Matrix.Translation(-moved.translation)
+                    m = own @ moved
+                else:
+                    m = own @ m0
+                prev[obj.name] = _key_matrix(obj, m, f, prev.get(obj.name))
+        for obj, _, _ in members:
+            _linear(obj)
+            _S["animated"][obj.name] = {"planetary": True}
+
+
 def _pitch_point(driver, driven, gd, ge):
     """Where two meshing gears' pitch circles touch."""
     a = _gear_axis(driver)
@@ -390,7 +618,8 @@ def _resolve_drives():
     part ends where it began, the shortest such stretch of at least half a second) or swing mode (a
     rack in the train: the driver turns back and forth so the rack stays in mesh)."""
     root = next((s for s in _S["spins"] if any(d["driver"] is s["obj"] for d in _S["drives"])
-                 or any(sl["crank"] is s["obj"] for sl in _S.get("sliders") or [])), None)
+                 or any(sl["crank"] is s["obj"] for sl in _S.get("sliders") or [])
+                 or any(c["cam"] is s["obj"] for c in _S.get("cams") or [])), None)
     if root is None:
         raise ValueError("spin the first driver with spin(obj, rpm=...) before mesh_drive")
     rates = {root["obj"].name: Fraction(1)}
@@ -626,7 +855,7 @@ def _finalize():
         return
     _S["written"] = True
     bpy.context.scene.frame_set(1)
-    if _S["drives"] or _S.get("sliders"):
+    if _S["drives"] or _S.get("sliders") or _S.get("cams"):
         _resolve_drives()
     _choose_loop()
     last = _last_frame()
@@ -634,6 +863,13 @@ def _finalize():
         _write_spin(s, last)
     _write_swings(last)
     _write_sliders(last)
+    _write_chains(last)
+    _write_cams(last)
+    _write_screws(last)
+    _write_squashes(last)
+    _write_planetaries(last)
+    if _S.get("screws") or _S.get("squashes") or _S.get("planetaries"):
+        _motion_empty()
     for b in _S["bounces"]:
         _write_bounce(b, last)
     if _S["spins"] or _S["bounces"] or _S["markers"] or _S.get("swings"):
