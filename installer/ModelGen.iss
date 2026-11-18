@@ -2,9 +2,9 @@
 ; StageDir with exactly what ships and passes the version in.
 ;
 ; The setup copies ModelGen into the user's own programs folder (no admin rights needed), then runs
-; install-deps.ps1, which checks the PC and installs only what is missing (ClaudeIn check, Python
-; 3.14, ModelGen's packages, Blender 5.2). Running a newer setup over an older install updates it
-; and keeps the person's models (projects), parts library and settings (data).
+; install-deps.ps1, which checks the PC and installs only what is missing (ClaudeIn from its GitHub
+; releases, Python 3.14, ModelGen's packages, Blender 5.2 or newer). Running a newer setup over an
+; older install updates it and keeps the person's models (projects), parts library and settings (data).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -12,9 +12,9 @@
 #ifndef StageDir
   #define StageDir "..\dist\stage"
 #endif
-; Where ClaudeIn's setup can be downloaded from. Empty until ClaudeIn is published on GitHub: until
-; then a PC without ClaudeIn gets a message to install it first.
-#define ClaudeInUrl ""
+; The GitHub repository whose latest release carries ClaudeIn-Setup-<version>.exe; a PC without
+; ClaudeIn gets it from there.
+#define ClaudeInRepo "ikverse/ClaudeIn"
 
 [Setup]
 AppId={{8F3C2A51-6B0D-4E4B-9C61-2D7A1E5B9F40}
@@ -79,24 +79,6 @@ begin
   Result := DepsOk;
 end;
 
-function ClaudeInInstalled: Boolean;
-begin
-  Result := FileExists(ExpandConstant('{%USERPROFILE}\.claudein\local.json'));
-end;
-
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-  if (not ClaudeInInstalled) and ('{#ClaudeInUrl}' = '') then
-  begin
-    if not WizardSilent then
-      MsgBox('ModelGen needs ClaudeIn, which is not installed on this PC.' + #13#10#13#10 +
-             'ModelGen asks Claude only through ClaudeIn. Install ClaudeIn first, then run this setup again.',
-             mbError, MB_OK);
-    Result := False;
-  end;
-end;
-
 { Close a ModelGen that runs from this folder, so its files can be replaced. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
@@ -128,9 +110,9 @@ var
 begin
   if CurStep <> ssPostInstall then
     Exit;
-  WizardForm.StatusLabel.Caption := 'Checking this PC and installing what is missing (Python, packages, Blender) ...';
+  WizardForm.StatusLabel.Caption := 'Checking this PC and installing what is missing (ClaudeIn, Python, packages, Blender) ...';
   Params := '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\installer\install-deps.ps1') +
-            '" -AppDir "' + ExpandConstant('{app}') + '" -Version "{#AppVersion}" -ClaudeInUrl "{#ClaudeInUrl}"';
+            '" -AppDir "' + ExpandConstant('{app}') + '" -Version "{#AppVersion}" -ClaudeInRepo "{#ClaudeInRepo}"';
   if WizardSilent then
     Show := SW_SHOWMINNOACTIVE
   else

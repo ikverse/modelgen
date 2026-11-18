@@ -7,15 +7,21 @@ program that uses the Claude login of this PC.
 
 ## Install (on any Windows PC)
 
-1. Install ClaudeIn and keep it running (its icon is in the hidden icons by the clock). ModelGen
-   reaches Claude only through it.
-2. Download `ModelGen-Setup.exe` from the latest release
+1. Download `ModelGen-Setup.exe` from the latest release
    (https://github.com/ikverse/modelgen/releases/latest) and run it. Windows may warn that the file
    is not signed: choose **More info**, then **Run anyway**.
+2. Keep ClaudeIn running while you use ModelGen (its icon is in the hidden icons by the clock).
+   ModelGen reaches Claude only through it.
 
-The setup checks the PC and installs only what is missing: Python 3.14 (from python.org), ModelGen's
-packages, and Blender 5.2 (from blender.org, about 400 MB) when no Blender is installed. ModelGen then
-updates itself: when a newer release is out, the top bar offers it.
+The setup checks the PC and installs only what is missing:
+- ClaudeIn, from its latest release (https://github.com/ikverse/ClaudeIn/releases). Its own setup
+  window opens, where you pick its options and sign in to Claude.
+- Python 3.14, from python.org.
+- ModelGen's packages.
+- Blender 5.2, from blender.org (about 400 MB), when the PC has no Blender or one older than 5.2.
+  It goes into ModelGen's own folder; a Blender you installed yourself is left alone.
+
+ModelGen then updates itself: when a newer release is out, the top bar offers it.
 
 ## Setup from this source folder (development)
 
