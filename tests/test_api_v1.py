@@ -272,10 +272,10 @@ def test_no_chat_report_is_written_for_another_programs_model(monkeypatch):
 
 # --- reuse -----------------------------------------------------------------------------------
 
-def made_before(name="fire hydrant", score=88):
+def made_before(name="fire hydrant", score=88, passed=True):
     proj = db.create_project(name, f"a {name}")
     db.add_version(proj["name"], 1)
-    db.update_version(proj["name"], 1, status="done", score=score, passed=1)
+    db.update_version(proj["name"], 1, status="done", score=score, passed=int(passed))
     folder = pipeline.version_dir(proj["name"], 1)
     (folder / "game").mkdir(parents=True)
     (folder / "game" / f"{proj['name']}_game.glb").write_bytes(b"glb")
@@ -315,6 +315,39 @@ def test_the_caster_saying_none_means_a_new_build(api, fake_build, monkeypatch):
     fake_build["scores"] = [90]
     out = run(api.post("/v1/jobs", json=HYDRANT).json()["id"])
     assert out["source"] == "built" and len(fake_build["calls"]) == 1
+
+
+def test_a_model_that_never_passed_is_not_reused(api, fake_build, monkeypatch):
+    made_before(score=40, passed=False)  # a failed earlier model, accepted only as the best it had
+    monkeypatch.setattr(runner, "run_agent", lambda *a, **kw: pytest.fail("no caster for a failed model"))
+    fake_build["scores"] = [90]
+    out = run(api.post("/v1/jobs", json=HYDRANT).json()["id"])
+    assert out["status"] == "done" and out["source"] == "built" and len(fake_build["calls"]) == 1
+
+
+def test_the_model_search_leaves_out_models_that_never_passed(api):
+    made_before(score=40, passed=False)
+    good = made_before(score=88)
+    assert [m["name"] for m in api.get("/v1/models?q=fire hydrant").json()["models"]] == [good]
+    middling = made_before("garden bench", score=65, passed=False)
+    assert api.get("/v1/models?q=garden bench").json()["models"] == []
+    assert [m["name"] for m in api.get("/v1/models?q=garden bench&min_score=60").json()["models"]] == [middling]
+    assert api.get("/v1/models?q=bench&min_score=120").status_code == 400
+
+
+def test_reuse_follows_the_jobs_min_score(api, fake_build, monkeypatch):
+    old = made_before(score=65, passed=False)
+
+    async def caster(name, prompt, tools, **kw):
+        tools[0].fn({"asset": old})
+        return RunResult(agent=name)
+
+    monkeypatch.setattr(runner, "run_agent", caster)
+    out = run(api.post("/v1/jobs", json={**HYDRANT, "min_score": 60}).json()["id"])
+    assert out["source"] == "existing" and out["project"] == old and fake_build["calls"] == []
+    fake_build["scores"] = [90]
+    out = run(api.post("/v1/jobs", json={**HYDRANT, "notes": "rusty"}).json()["id"])  # the default 70
+    assert out["source"] == "built" and out["project"] != old and len(fake_build["calls"]) == 1
 
 
 def test_views_are_made_for_the_accepted_version(api, fake_build, monkeypatch):

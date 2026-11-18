@@ -427,14 +427,16 @@ def _model_info(proj, v, outputs=("game", "full")):
             "views": styles, **version_files(proj["name"], v["number"], outputs)}
 
 
-def find_models(q, limit=10):
-    """Accepted models that match the words, best first, and the ready-made catalogue's candidates
-    (made in about a minute when a job asks for one of them)."""
+def find_models(q, limit=10, min_score=DEFAULTS["min_score"]):
+    """Accepted models that match the words and reach min_score (or passed, when unscored), best
+    first, and the ready-made catalogue's candidates (made in about a minute when a job asks for one)."""
     head, mods = asset_catalog.object_words(q)
     wanted = _tokens(q)
     hits = []
     for m in _made_models():
         if head and asset_catalog._norm(head) not in m["words"]:
+            continue
+        if not _good_enough(m["version"], min_score):
             continue
         share = len(wanted & m["words"]) / max(len(wanted), 1)
         hits.append((share, m["version"].get("score") or 0, m))
@@ -450,6 +452,12 @@ def find_models(q, limit=10):
     return {"models": made, "ready_made": catalogue}
 
 
+def _good_enough(v, min_score):
+    """Whether a version meets a job's bar: its score against min_score, or its own pass when unscored."""
+    score = v.get("score")
+    return score >= min_score if score is not None else bool(v.get("passed"))
+
+
 async def _reuse(job):
     """An accepted model that IS the object asked for, checked by the caster; (project, version) or None."""
     req = job["request"]
@@ -460,6 +468,8 @@ async def _reuse(job):
     for m in _made_models():
         if head and asset_catalog._norm(head) not in m["words"]:
             continue
+        if not _good_enough(m["version"], req["min_score"]):
+            continue  # a model that never passed is not reused: build anew
         found.append((len(wanted & m["words"]), m))
     if not found:
         return None

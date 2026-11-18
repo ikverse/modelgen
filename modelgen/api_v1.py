@@ -73,10 +73,12 @@ def part_types():
 
 
 @router.get("/models", dependencies=[Depends(with_key)])
-def find_models(q: str = "", limit: int = 10):
+def find_models(q: str = "", limit: int = 10, min_score: float = jobs.DEFAULTS["min_score"]):
     if not q.strip():
         raise HTTPException(400, "give q: the object to look for (\"fire hydrant\")")
-    return jobs.find_models(q, min(max(limit, 1), 50))
+    if not 0 <= min_score <= 100:
+        raise HTTPException(400, "min_score must be 0 to 100")
+    return jobs.find_models(q, min(max(limit, 1), 50), min_score)
 
 
 @router.get("/models/{name}", dependencies=[Depends(with_key)])
