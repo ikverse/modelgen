@@ -93,6 +93,7 @@ MESH_GAP = 0.15         # and come no further apart than this share of a module 
 CENTRE_TOL = 0.002      # the centre distance may be off by this share
 RATIO_TOL = 0.01        # the speed ratio by this share
 CLASH_DEPTH = 0.0002    # any other two parts may pass this far into each other (0.2 mm), no further
+PIN_TOL = 0.00015       # a rod's ends may stray this far off their pins between keyed frames (0.15 mm)
 
 
 def mesh_gates(report, pairs=None):
@@ -152,6 +153,30 @@ def mesh_gates(report, pairs=None):
                            f"{r.get('worst_moment')})")
         gates["blades_clear"] = {"pass": not bad, "route": "assembly",
                                  "detail": "; ".join(bad) or "every wheel's blades clear its housing all the way round"}
+    rows_all = [r for r in (report or {}).get("pairs", []) if r.get("found", True)]
+    pinned = [r for r in rows_all if r.get("kind") in ("crank", "pin")]
+    if pinned:
+        bad = [f"{r['a']} comes {r['max_offset_m'] * 1000:.2f} mm off "
+               f"{'its crankpin on ' if r['kind'] == 'crank' else 'the gudgeon pin of '}{r['b']}"
+               for r in pinned if r.get("max_offset_m", 0) > PIN_TOL]
+        gates["pins_in_bores"] = {"pass": not bad, "route": "motion",
+                                  "detail": "; ".join(bad) or "every rod stays on its crankpin and its piston's pin"}
+    liners = [r for r in rows_all if r.get("kind") == "liner"]
+    if liners:
+        bad = []
+        for r in liners:
+            if r.get("max_off_axis_m", 0) > PIN_TOL:
+                bad.append(f"{r['a']} strays {r['max_off_axis_m'] * 1000:.2f} mm off the axis of {r['b']}")
+            if r.get("top_room_m", 0) < -1e-5:
+                bad.append(f"{r['a']}'s crown rises {-r['top_room_m'] * 1000:.2f} mm out of the top of {r['b']}")
+            if r.get("bottom_room_m", 0) < -1e-5:
+                bad.append(f"{r['a']}'s rings drop {-r['bottom_room_m'] * 1000:.2f} mm out of the foot of {r['b']}")
+            want = r.get("stroke_expected_m")
+            if want and abs(r.get("stroke_m", 0) - want) > 0.005 * want:
+                bad.append(f"{r['a']} travels {r['stroke_m'] * 1000:.2f} mm, the stroke is {want * 1000:.2f} mm")
+        gates["piston_in_liner"] = {"pass": not bad, "route": "assembly",
+                                    "detail": "; ".join(bad) or "every piston runs on its cylinder's axis, the full "
+                                                                "stroke, its crown and rings inside all the way"}
     clashes = [c for c in (report or {}).get("clashes", []) if c.get("max_depth_m", 0) > CLASH_DEPTH]
     gates["no_clashes"] = {"pass": not clashes, "route": "assembly",
                            "detail": "; ".join(f"{c['a']} and {c['b']} pass {c['max_depth_m'] * 1000:.2f} mm into each "

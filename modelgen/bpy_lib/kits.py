@@ -2203,6 +2203,481 @@ def bearing(bore, outer_diameter, width, balls=None, name="bearing"):
                 pitch_radius=pitch, tip_radius=ro, cage_ratio=0.5 * (1 - ball / pitch), period=[1, count])
 
 
+def centre_housing(length, shaft_diameter, bore_diameter, outer_diameter, front_flange_diameter=None,
+                   back_flange_diameter=None, end_wall=None, oil_ports=True, name="centre_housing"):
+    """A turbocharger's centre (bearing) housing: a cast body round the shaft, bored to carry the
+    bearings (bore_diameter), closed at each end by a wall with a seal bore a little over the shaft,
+    and a flange at each end that meets the volute's back plate (front: the compressor side, +Z).
+    oil_ports: an oil inlet boss on top (+X) and a wider drain below (-X), bored through to the
+    bearings. Axis Z, centred on the origin. Slots: "hub" (casting), "tooth_face" (flanges, ends),
+    "bore" (bores). The oil's path (local points) is kept in obj["mg_gear"]["flows"]."""
+    l2 = length / 2
+    rb, rr = outer_diameter / 2, bore_diameter / 2
+    rf, rk = (front_flange_diameter or outer_diameter) / 2, (back_flange_diameter or outer_diameter) / 2
+    rs = shaft_diameter / 2 + max(0.0003, 0.03 * shaft_diameter)
+    f = end_wall or max(0.001, 0.08 * outer_diameter)
+    ft = min(f, 0.25 * length)  # the flanges' thickness
+    prof = [(rs, l2), (rf, l2), (rf, l2 - ft), (rb, l2 - ft), (rb, -l2 + ft), (rk, -l2 + ft), (rk, -l2), (rs, -l2),
+            (rs, -l2 + f), (rr, -l2 + f), (rr, l2 - f), (rs, l2 - f)]
+    slots = [1, 1, 1, 0, 1, 1, 1, 2, 0, 2, 0, 2]
+    angles = [2 * math.pi * i / 64 for i in range(64)]
+    obj = _lathe([_circle_ring(angles, z, r) for r, z in prof], slots, name, ["hub", "tooth_face", "bore"])
+    flows = {}
+    if oil_ports:
+        space = l2 - ft
+        bosses = [(1.0, min(0.2 * rb, 0.6 * space), 1.3 * rb), (-1.0, min(0.32 * rb, 0.75 * space), 1.22 * rb)]
+        solids, holes = [], []
+        start = (rr + rb) / 2  # inside the wall, clear of the bearings' bore
+        for side, radius, reach in bosses:
+            depth = reach - start
+            boss = h.cylinder(radius, depth, segments=24, location=(side * (start + depth / 2), 0, 0),
+                              rotation_deg=(0, 90, 0), name=name + "_boss")
+            _same_slots(boss, obj, "hub")
+            solids.append(boss)
+            hole_len = reach - rr * 0.8 + 0.002
+            holes.append(h.cylinder(radius * 0.45, hole_len, segments=16,
+                                    location=(side * (rr * 0.8 + hole_len / 2), 0, 0), rotation_deg=(0, 90, 0),
+                                    name=name + "_port"))
+        h.union(obj, solids)
+        obj = _cut(obj, holes, slot="bore")
+        obj[h.NO_BEVEL_KEY] = 1
+        top, low = 1.3 * rb + 0.5 * rb, -1.22 * rb - 0.5 * rb
+        flows["oil"] = [[round(v, 6) for v in p] for p in
+                        ((top, 0.0, 0.0), (rr, 0.0, 0.0), (0.0, rr, 0.0), (-rr, 0.0, 0.0), (low, 0.0, 0.0))]
+    return _tag(obj, type="centre_housing", length=length, bore_radius=rr, outer_radius=rb, flows=flows,
+                period=[1, 1])
+
+
+# --- engine parts: crankshaft, connecting rod, piston and rings, cylinder ---------------------------
+#
+# A crankshaft's axis is its local Z through the main journals (the front, the snout, on +Z); a
+# throw at angle 0 has its crankpin straight up (+Y), and a throw at angle a is turned a degrees
+# counterclockwise about +Z. A connecting rod lies in its local XY plane: the big end's centre at the
+# origin, the small end's at +Y (its length), its thickness along Z. A piston's axis is its local Z
+# (the crown up), its origin the gudgeon pin's centre, the pin along X; its rings are built in the
+# same frame, so they are placed where it is. A cylinder's axis is its local Z, its origin on the
+# axis at the bottom.
+
+ENGINE_SLOTS = ["tooth_face", "hub", "bore"]
+
+
+def _hull(pts):
+    """The convex hull of 2D points, counterclockwise (Andrew's monotone chain)."""
+    pts = sorted(set((round(x, 9), round(y, 9)) for x, y in pts))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def _circle2(cx, cy, r, n=40, a0=0.0):
+    return [(cx + r * math.cos(a0 + 2 * math.pi * i / n), cy + r * math.sin(a0 + 2 * math.pi * i / n)) for i in range(n)]
+
+
+def _slab(pts, z0, z1, slot, name):
+    """A closed prism of a counterclockwise 2D outline from z0 to z1, its two caps single faces."""
+    bm = bmesh.new()
+    low = [bm.verts.new((x, y, z0)) for x, y in pts]
+    high = [bm.verts.new((x, y, z1)) for x, y in pts]
+    n = len(pts)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((low[i], low[j], high[j], high[i]))
+    bm.faces.new(list(reversed(low)))
+    bm.faces.new(high)
+    for f in bm.faces:
+        f.material_index = slot
+    return _new_object(bm, name, ENGINE_SLOTS, no_bevel=True)
+
+
+def _along(obj, axis):
+    """Turn a part built along Z so that Z lies along "X" or "Y" (about its own origin)."""
+    rot = {"X": Matrix.Rotation(math.pi / 2, 4, "Y"), "Y": Matrix.Rotation(-math.pi / 2, 4, "X")}[axis]
+    obj.data.transform(rot)
+    return obj
+
+
+def _fuse(pieces, name, holes=(), hole_slot="bore"):
+    """One closed solid: the pieces unioned, then the holes cut."""
+    body = pieces[0]
+    if len(pieces) > 1:
+        h.union(body, pieces[1:])
+    body = h.merge_by_distance(body, 1e-7)
+    if holes:
+        body = _cut(body, list(holes), slot=hole_slot)
+    body.name = name
+    body.data.name = name
+    body[h.NO_BEVEL_KEY] = 1
+    return body
+
+
+def crankshaft(stroke, crankpin_diameter, journal_diameter, pin_width, web_thickness, journal_width,
+               throw_angles=(0.0,), spacing=None, counterweights=True, counterweight_radius=None,
+               web_radius=None, name="crankshaft"):
+    """A crankshaft: main journals on its axis (local Z), and for each throw a crankpin at half the
+    stroke from the axis between two webs, each web a pear shape round the pin and the journal
+    with, when counterweights, a fan-shaped counterweight opposite the pin. throw_angles in degrees
+    (0: the pin straight up, +Y); throws spacing apart along Z (default: pin, webs and a journal).
+    A snout on the front (+Z) and a flywheel flange on the back. Slots: "tooth_face" (journals and
+    crankpins, ground smooth), "hub" (webs), "bore" (the flange)."""
+    r, rp, rj = stroke / 2, crankpin_diameter / 2, journal_diameter / 2
+    angles = [float(a) for a in (throw_angles or (0.0,))]
+    n = len(angles)
+    spacing = spacing or (pin_width + 2 * web_thickness + journal_width)
+    zs = [(i - (n - 1) / 2) * spacing for i in range(n)]
+    web_r = web_radius or rp + 0.08 * stroke
+    cw_r = counterweight_radius or 0.85 * stroke
+    dip = 0.2 * web_thickness  # each pin and journal reaches this far into the webs beside it
+    pieces = []
+    for z, a in zip(zs, angles):
+        t = math.radians(a)
+        px, py = -r * math.sin(t), r * math.cos(t)
+        pieces.append(_slab(_circle2(px, py, rp), z - pin_width / 2 - dip, z + pin_width / 2 + dip, 0, name + "_pin"))
+        outline = _circle2(px, py, web_r, 36) + _circle2(0.0, 0.0, rj + 0.08 * stroke, 36)
+        if counterweights:
+            away = math.atan2(-py, -px)
+            outline += [(cw_r * math.cos(away + 1.15 * (i / 12 - 1)), cw_r * math.sin(away + 1.15 * (i / 12 - 1)))
+                        for i in range(25)]
+        hull = _hull(outline)
+        for side in (-1, 1):
+            zc = z + side * (pin_width / 2 + web_thickness / 2)
+            pieces.append(_slab(hull, zc - web_thickness / 2, zc + web_thickness / 2, 1, name + "_web"))
+    first, last = zs[0] - pin_width / 2 - web_thickness, zs[-1] + pin_width / 2 + web_thickness
+    spans = [(first - journal_width, first + dip)]
+    for i in range(n - 1):
+        spans.append((zs[i] + pin_width / 2 + web_thickness - dip, zs[i + 1] - pin_width / 2 - web_thickness + dip))
+    spans.append((last - dip, last + journal_width))
+    for z0, z1 in spans:
+        if z1 > z0:
+            pieces.append(_slab(_circle2(0.0, 0.0, rj, 48), z0, z1, 0, name + "_journal"))
+    snout = 0.6 * journal_width
+    pieces.append(_slab(_circle2(0.0, 0.0, 0.62 * rj, 40), last + journal_width - dip, last + journal_width + snout, 0,
+                        name + "_snout"))
+    flange_t = 0.3 * journal_width
+    pieces.append(_slab(_circle2(0.0, 0.0, 1.35 * rj, 48), first - journal_width - flange_t,
+                        first - journal_width + dip, 2, name + "_flange"))
+    obj = _fuse(pieces, name)
+    return _tag(obj, type="crankshaft", stroke=stroke, crank_radius=r, throws=n, throw_angles=angles, throw_z=zs,
+                pin_radius=rp, journal_radius=rj, counterweight_radius=cw_r if counterweights else 0.0,
+                web_radius=web_r, pitch_radius=r, period=[1, 1])
+
+
+def connecting_rod(length, big_end_bore, small_end_bore, big_end_width, small_end_width=None, name="connecting_rod"):
+    """A connecting rod: a big end round the crankpin (big_end_bore) with its cap's two bolt bosses,
+    a small end round the gudgeon pin (small_end_bore), length apart centre to centre, joined by an
+    I-section shank. Lies in its local XY plane: the big end at the origin, the small end at +Y.
+    Slots: "hub" (the forging), "bore" (the two bores)."""
+    rb, rs = big_end_bore / 2, small_end_bore / 2
+    rbo, rso = rb * 1.32 + 0.0008, rs * 1.5 + 0.0008
+    wb = big_end_width
+    ws = small_end_width or 0.8 * wb
+    t = 0.72 * min(wb, ws)
+    y0, y1 = 0.55 * rbo, length - 0.55 * rso
+    hb, hs = 0.46 * rbo, 0.62 * rso
+    shank = [(-hb, y0), (hb, y0), (hs, y1), (-hs, y1)]
+    pieces = [_slab(_circle2(0.0, 0.0, rbo, 48), -wb / 2, wb / 2, 1, name + "_big"),
+              _slab(_circle2(0.0, length, rso, 40), -ws / 2, ws / 2, 1, name + "_small"),
+              _slab(shank, -t / 2, t / 2, 1, name + "_shank")]
+    br = min(0.2 * rbo, 0.45 * wb)
+    for side in (-1, 1):  # the cap bolts' bosses, either side of the big end
+        boss = _slab(_circle2(0.0, 0.0, br, 20), -0.9 * rbo, 0.5 * rbo, 1, name + "_boss")
+        _along(boss, "Y")
+        boss.data.transform(Matrix.Translation((side * (rb + br + 0.25 * (rbo - rb)), 0.0, 0.0)))
+        pieces.append(boss)
+    depth = 0.26 * t
+    inset = [(-hb * 0.55, y0 + 0.6 * rbo), (hb * 0.55, y0 + 0.6 * rbo), (hs * 0.5, y1 - 0.5 * rso),
+             (-hs * 0.5, y1 - 0.5 * rso)]
+    holes = [_slab(_circle2(0.0, 0.0, rb, 48), -wb, wb, 2, name + "_bb"),
+             _slab(_circle2(0.0, length, rs, 40), -wb, wb, 2, name + "_sb")]
+    if inset[2][1] > inset[0][1] + 0.002:
+        holes += [_slab(inset, t / 2 - depth, t, 1, name + "_p1"), _slab(inset, -t, -t / 2 + depth, 1, name + "_p2")]
+    obj = _fuse(pieces, name, holes)
+    return _tag(obj, type="connecting_rod", length=length, big_end_radius=rb, small_end_radius=rs, period=[1, 1])
+
+
+def _piston_numbers(bore, compression_height, grooves):
+    """Where a piston's ring grooves are: (top, bottom) z of each, from the pin's centre."""
+    return _mech().piston_grooves(bore, compression_height, grooves)
+
+
+def piston(bore, compression_height, pin_diameter, skirt_length, grooves=None, groove_depth=None,
+           boss_gap=None, crown="flat", name="piston"):
+    """A piston for a cylinder of `bore`: a crown (flat, dished or domed) compression_height above
+    the gudgeon pin's centre, a ring belt with one groove per width in `grooves` (default two
+    compression rings and an oil ring), a skirt reaching skirt_length below the pin, hollow inside
+    with two pin bosses, and the gudgeon pin in its bore along X (boss_gap: the room between the
+    bosses for the rod's small end). Slots: "tooth_face" (crown and ring belt), "hub" (skirt,
+    inside), "bore" (pin and pin bore)."""
+    R = bore / 2 - max(0.00002, 0.0005 * bore)
+    land = R - max(0.00005, 0.0025 * bore)
+    gd = groove_depth or 0.045 * bore
+    grooves = list(grooves or (0.015 * bore, 0.018 * bore, 0.035 * bore))
+    ch = compression_height
+    slots = _piston_numbers(bore, ch, grooves)
+    belt_low = slots[-1][1] - 0.02 * bore
+    crown_t = 0.085 * bore
+    r_in = land - gd - 0.02 * bore  # the inside, one radius from the crown's underside to the skirt's foot
+    c = 0.01 * bore
+    dish = {"dish": -0.04 * bore, "dome": 0.06 * bore}.get(crown, 0.0)
+    prof = [(0.0, ch + dish)]
+    if dish:
+        prof.append((0.62 * land, ch))
+    prof += [(land - c, ch), (land, ch - c)]
+    for top, low in slots:
+        prof += [(land, top), (land - gd, top), (land - gd, low), (land, low)]
+    prof += [(land, belt_low), (R, belt_low - 0.01 * bore), (R, -skirt_length + c), (R - c, -skirt_length),
+             (r_in, -skirt_length), (r_in, ch - crown_t), (0.0, ch - crown_t)]
+    bm = bmesh.new()
+    _add_revolved(bm, prof, 64, 0)
+    for f in bm.faces:  # the skirt and the inside are the casting
+        mid = f.calc_center_median()
+        f.material_index = 1 if mid.z < belt_low - 0.001 or mid.xy.length < r_in + 0.001 * bore else 0
+    body = _new_object(bm, name, ENGINE_SLOTS, no_bevel=True)
+    rpin = pin_diameter / 2
+    gap = boss_gap or 1.25 * pin_diameter
+    boss_r = rpin + 0.05 * bore
+    reach = r_in + 0.6 * (land - gd - r_in)  # the bosses' corners stay inside the groove roots
+    x_out = math.sqrt(max(reach ** 2 - boss_r ** 2, (gap / 2 + 0.001) ** 2))
+    pieces = [body]
+    for side in (-1, 1):
+        lo, hi = sorted((side * gap / 2, side * x_out))
+        pieces.append(_slab([(lo, -boss_r), (hi, -boss_r), (hi, boss_r), (lo, boss_r)], -boss_r,
+                            ch - crown_t + 0.003 * bore, 1, name + "_boss"))
+    pin_hole = _slab(_circle2(0.0, 0.0, rpin + 0.00001, 40), -bore, bore, 2, name + "_pinbore")
+    _along(pin_hole, "X")
+    obj = _fuse(pieces, name, [pin_hole])
+    pin_len = 2 * R - 0.06 * bore
+    pin = _slab(_circle2(0.0, 0.0, rpin, 40), -pin_len / 2, pin_len / 2, 2, name + "_pin")
+    bore_in = _slab(_circle2(0.0, 0.0, 0.55 * rpin, 32), -pin_len, pin_len, 2, name + "_pin_hole")
+    pin = _cut(pin, [bore_in], slot="bore")
+    _along(pin, "X")
+    obj = h.join([obj, pin], name)
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="piston", bore=bore, radius=R, compression_height=ch, pin_radius=rpin,
+                skirt_length=skirt_length, grooves=[[round(a, 7), round(b, 7)] for a, b in slots],
+                groove_root=land - gd, boss_gap=gap, period=[1, 1])
+
+
+def piston_rings(bore, compression_height, grooves=None, groove_depth=None, name="piston_rings"):
+    """The rings in a piston's grooves (the same numbers as the piston): each a rectangular section
+    reaching the cylinder wall, with its gap, the gaps a third of a turn apart. In the piston's
+    frame. Slots: "tooth_face" (the rings)."""
+    R = bore / 2
+    gd = groove_depth or 0.045 * bore
+    grooves = list(grooves or (0.015 * bore, 0.018 * bore, 0.035 * bore))
+    land = R - max(0.00002, 0.0005 * bore) - max(0.00005, 0.0025 * bore)
+    rings = []
+    for k, (top, low) in enumerate(_piston_numbers(bore, compression_height, grooves)):
+        r_in = land - gd + max(0.00008, 0.002 * bore)
+        h_gap = max(0.00002, 0.0004 * bore)
+        ring = _slab(_circle2(0.0, 0.0, R - 0.00001, 96), low + h_gap, top - h_gap, 0, f"{name}_{k}")
+        hole = _slab(_circle2(0.0, 0.0, r_in, 96), low - 0.001, top + 0.001, 0, f"{name}_{k}_in")
+        a = 2 * math.pi * k / 3 + math.pi / 2
+        w = max(0.0002, 0.004 * bore)
+        cx, cy = (R - gd / 2) * math.cos(a), (R - gd / 2) * math.sin(a)
+        ux, uy = math.cos(a), math.sin(a)
+        gap_pts = [(cx - ux * gd - uy * w, cy - uy * gd + ux * w), (cx - ux * gd + uy * w, cy - uy * gd - ux * w),
+                   (cx + ux * gd + uy * w, cy + uy * gd - ux * w), (cx + ux * gd - uy * w, cy + uy * gd + ux * w)]
+        cut = _slab(gap_pts, low - 0.001, top + 0.001, 0, f"{name}_{k}_gap")
+        ring = _cut(ring, [hole], slot="tooth_face")  # one cutter at a time: the two overlap
+        rings.append(_cut(ring, [cut], slot="tooth_face"))
+    obj = h.join(rings, name)
+    obj[h.NO_BEVEL_KEY] = 1
+    return _tag(obj, type="piston_rings", bore=bore, rings=len(rings), period=[1, 1])
+
+
+def cylinder(bore, length, wall=None, style="liner", name="cylinder"):
+    """The cylinder a piston runs in: style "liner" (a sleeve with a collar at the top) or "block" (a
+    square block section with the bore and a water jacket round it, open at the deck). Axis Z, the
+    origin on the axis at the bottom. Slots: "hub" (casting), "bore" (the bore's wall),
+    "tooth_face" (the deck)."""
+    rb = bore / 2 + max(0.00003, 0.0006 * bore)
+    t = wall or 0.08 * bore
+    bore_cut = _slab(_circle2(0.0, 0.0, rb, 96), -0.01 * length, 1.01 * length, 2, name + "_bore")
+    if style == "block":
+        half = rb + t + 0.12 * bore + t
+        body = _slab([(-half, -half), (half, -half), (half, half), (-half, half)], 0.0, length, 1, name)
+        jacket = _slab(_circle2(0.0, 0.0, rb + t + 0.12 * bore, 64), 0.18 * length, 1.01 * length, 1, name + "_jk")
+        core = _slab(_circle2(0.0, 0.0, rb + t, 64), 0.1 * length, length, 1, name + "_core")
+        body = _cut(body, [jacket], slot="hub")
+        body = h.union(body, [core])
+        body = _cut(body, [bore_cut], slot="bore")
+    else:
+        collar = 0.07 * bore
+        body = _slab(_circle2(0.0, 0.0, rb + t, 96), 0.0, length - collar + 0.0001, 1, name)
+        top = _slab(_circle2(0.0, 0.0, rb + t + 0.07 * bore, 96), length - collar, length, 0, name + "_collar")
+        body = _fuse([body, top], name, [bore_cut])
+    body.name = name
+    body[h.NO_BEVEL_KEY] = 1
+    return _tag(body, type="cylinder", bore=bore, bore_radius=rb, length=length, style=style, period=[1, 1])
+
+
+# --- fasteners and springs --------------------------------------------------------------------------
+#
+# A bolt's axis is its local Z, the underside of its head at z = 0 and the shank down -Z; a nut and a
+# washer are centred on their axis with their bottom face at z = 0. Threads are right-handed ISO
+# metric: a true helix (the surface's phase is z / pitch - angle / turn), so a nut turned one way
+# about the bolt advances one pitch per turn and its thread stays in the bolt's.
+
+THREAD_ANGLES = 36  # points round a threaded ring (a multiple of 6: the hex's corners fall on them)
+
+
+def _hex_r(across_flats):
+    s = across_flats / 2
+
+    def radius(a):
+        k = ((a + math.pi / 6) % (math.pi / 3)) - math.pi / 6
+        return s / math.cos(k)
+    return radius
+
+
+def _thread_rings(diameter, pitch, z0, z1, internal, angles, taper=None):
+    """Rings of a threaded surface from z0 to z1 (z0 < z1), a few to each pitch. taper(z) in [0, 1]
+    scales the thread's depth (a chamfered end runs the thread out)."""
+    mc = _mech()
+    steps = max(2, int(math.ceil((z1 - z0) / (pitch / 8))))
+    rings = []
+    for i in range(steps + 1):
+        z = z0 + (z1 - z0) * i / steps
+        k = 1.0 if taper is None else taper(z)
+
+        def radius(a, z=z, k=k):
+            r = mc.thread_radius(z / pitch - a / (2 * math.pi), diameter, pitch, internal)
+            base = diameter / 2 - (0.6134 * pitch if not internal else 0.5413 * pitch)
+            return base + (r - base) * k if not internal else r
+        rings.append(_circle_ring(angles, z, radius))
+    return rings
+
+
+def bolt(diameter, length, pitch=None, across_flats=None, thread_length=None, name="bolt"):
+    """A hexagon-head bolt, ISO metric coarse unless pitch is given: the head (across_flats, height
+    0.65 d, chamfered 30 degrees), a plain shank, then the thread (default 2d + 6 mm, the whole length
+    when short) to a chamfered tip. Axis Z, the underside of the head at the origin, the shank down
+    -Z. Slots: "tooth_face" (thread), "hub" (head and shank)."""
+    mc = _mech()
+    d = diameter
+    p = pitch or mc.METRIC.get(round(d / 0.001), (0.15 * d / 0.001, 0))[0] * 0.001
+    s = across_flats or (mc.METRIC.get(round(d / 0.001), (0, 1.6 * d / 0.001))[1] * 0.001)
+    k = 0.65 * d
+    b = min(length, thread_length or (2 * d + 0.006))
+    angles = [2 * math.pi * i / THREAD_ANGLES for i in range(THREAD_ANGLES)]
+    hexr = _hex_r(s)
+    cham = 0.95 * s / 2  # the head's chamfer circle on top
+    tip = 0.6 * p
+    r_root = d / 2 - 0.6134 * p
+    rings = [_circle_ring(angles, k, 0.0001),
+             _circle_ring(angles, k, lambda a: min(hexr(a), cham)),
+             _circle_ring(angles, k - 0.15 * k, hexr),
+             _circle_ring(angles, 0.0, hexr),
+             _circle_ring(angles, 0.0, d / 2),
+             _circle_ring(angles, -(length - b), d / 2)]
+    taper = (lambda z: min(1.0, max(0.0, (z + length) / (3 * p))))
+    rings += list(reversed(_thread_rings(d, p, -length + tip, -(length - b) - 0.2 * p, False, angles, taper)))
+    rings += [_circle_ring(angles, -length, r_root - 0.2 * p), _circle_ring(angles, -length, 0.0001)]
+    slots = [1] * 5 + [0] * (len(rings) - 6) + [1]
+    obj = _lathe(rings, slots[:len(rings)], name, ["tooth_face", "hub", "bore"])
+    obj = h.merge_by_distance(obj, 1e-7)
+    return _tag(obj, type="bolt", diameter=d, pitch=p, length=length, across_flats=s, head_height=k,
+                period=[1, 6])
+
+
+def nut(diameter, pitch=None, across_flats=None, height=None, name="nut"):
+    """A hexagon nut (ISO 4032): across_flats, height 0.84 d, both faces chamfered 30 degrees, the
+    internal ISO thread through it. Axis Z, its bottom face at the origin. Slots: "hub" (the hex),
+    "tooth_face" (the thread)."""
+    mc = _mech()
+    d = diameter
+    p = pitch or mc.METRIC.get(round(d / 0.001), (0.15 * d / 0.001, 0))[0] * 0.001
+    s = across_flats or (mc.METRIC.get(round(d / 0.001), (0, 1.6 * d / 0.001))[1] * 0.001)
+    m = height or 0.84 * d
+    angles = [2 * math.pi * i / THREAD_ANGLES for i in range(THREAD_ANGLES)]
+    hexr = _hex_r(s)
+    cham = 0.95 * s / 2
+    c = 0.1 * m
+    rings = [_circle_ring(angles, 0.0, lambda a: min(hexr(a), cham)), _circle_ring(angles, c, hexr),
+             _circle_ring(angles, m - c, hexr), _circle_ring(angles, m, lambda a: min(hexr(a), cham))]
+    rings += list(reversed(_thread_rings(d, p, 0.0, m, True, angles)))
+    slots = [1, 1, 1, 1] + [0] * (len(rings) - 5) + [1]
+    obj = _lathe(rings, slots[:len(rings)], name, ["tooth_face", "hub", "bore"])
+    return _tag(obj, type="nut", diameter=d, pitch=p, height=m, across_flats=s, period=[1, 6])
+
+
+def washer(diameter, inner_diameter=None, outer_diameter=None, thickness=None, name="washer"):
+    """A plain washer (ISO 7089) for a bolt of `diameter`: hole d + 0.05 d, outside 2 d, 0.2 d thick.
+    Axis Z, its bottom face at the origin. Slots: "hub"."""
+    d = diameter
+    ri = (inner_diameter or 1.07 * d) / 2
+    ro = (outer_diameter or 2.0 * d) / 2
+    t = thickness or 0.2 * d
+    c = 0.15 * t
+    angles = [2 * math.pi * i / 64 for i in range(64)]
+    rings = [_circle_ring(angles, 0.0, ri), _circle_ring(angles, 0.0, ro - c), _circle_ring(angles, c, ro),
+             _circle_ring(angles, t - c, ro), _circle_ring(angles, t, ro - c), _circle_ring(angles, t, ri)]
+    obj = _lathe(rings, [1] * 6, name, ["tooth_face", "hub", "bore"])
+    return _tag(obj, type="washer", diameter=d, inner_radius=ri, outer_radius=ro, thickness=t, period=[1, 1])
+
+
+def spring(wire_diameter, mean_diameter, free_length, coils, kind="compression", name="spring"):
+    """A helical spring of round wire. "compression": `coils` turns in all, the last 0.75 turn at each
+    end closed down onto the next; "extension": close-wound with a loop (a half-turn hook) at each end.
+    Axis Z, its bottom at the origin; free_length is the body's length (the hooks reach past it).
+    Slots: "hub" (the wire)."""
+    w, rm = wire_diameter, mean_diameter / 2
+    n = float(coils)
+    steps_per = 24
+    total = int(round(n * steps_per))
+    zs = []
+    if kind == "extension":
+        pitch = w * 1.02
+        zs = [w / 2 + pitch * i / steps_per for i in range(total + 1)]
+    else:
+        closed = 0.75
+        active = max(0.5, n - 2 * closed)
+        dz_closed = w * 1.03
+        dz_active = (free_length - w - 2 * closed * dz_closed) / active
+        z = w / 2
+        for i in range(total + 1):
+            zs.append(z)
+            t = i / steps_per
+            z += (dz_closed if t < closed or t >= n - closed else dz_active) / steps_per
+    centres = [Vector((math.cos(2 * math.pi * i / steps_per) * rm, math.sin(2 * math.pi * i / steps_per) * rm, z))
+               for i, z in enumerate(zs)]
+    if kind == "extension":  # a hook at each end: a half turn of wire standing up across the axis
+        first, last = centres[0], centres[-1]
+        for base, sign in ((first, -1), (last, 1)):
+            radial = Vector((base.x, base.y, 0.0)).normalized()
+            hook = [base - radial * rm * (1 - math.cos(math.pi * j / 12))
+                    + Vector((0, 0, sign * rm * 1.1 * math.sin(math.pi * j / 12))) for j in range(1, 13)]
+            centres = (list(reversed(hook)) + centres) if sign < 0 else (centres + hook)
+    frames = []  # each cross-section square to the wire, its axes carried along without twisting
+    u = None
+    for i, c in enumerate(centres):
+        t = (centres[min(i + 1, len(centres) - 1)] - centres[max(i - 1, 0)]).normalized()
+        if u is None:
+            u = Vector((c.x, c.y, 0.0)).normalized()
+        u = (u - t * u.dot(t)).normalized()
+        frames.append((u, t.cross(u).normalized()))
+    bm = bmesh.new()
+    _tube(bm, centres, frames, [(w / 2, w / 2 * 0.001)] * len(centres), k=12)
+    for f in bm.faces:
+        f.material_index = 0
+    obj = _new_object(bm, name, ["hub", "tooth_face", "bore"], no_bevel=True)
+    return _tag(obj, type="spring", kind=kind, wire_diameter=w, mean_diameter=2 * rm, free_length=free_length,
+                coils=n, solid_length=round((n + 1) * w, 7), period=[1, 1])
+
+
 def gear_pair_layout(module, teeth_a, teeth_b, pressure_angle=20.0, helix_angle=0.0, internal=False,
                      direction_deg=0.0, phase_a_deg=0.0):
     """Where the second gear of a meshing pair goes (metres in, metres out): the exact centre

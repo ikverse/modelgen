@@ -1176,6 +1176,11 @@ def render_motion(out_dir, camera_mode="persp", style="explainer", angle="front3
             off = (offsets or {}).get(o.get(helpers.PART_KEY) or o.name)
             if off:
                 moves[o.name] = (o, o.location.copy(), Vector(off))
+        held = {}  # a part keyed to move (a piston) would be put back by its keys: its action waits aside
+        for o, base, off in moves.values():
+            if o.animation_data and o.animation_data.action:
+                held[o.name] = (o, o.animation_data.action, o.rotation_euler.copy())
+                o.animation_data.action = None
         for o, base, off in moves.values():
             o.location = base + off
         a, b = helpers.bounds(objs)
@@ -1218,6 +1223,9 @@ def render_motion(out_dir, camera_mode="persp", style="explainer", angle="front3
         files.append(_render(os.path.join(out_dir, f"frame_{i:03d}.png")))
     for o, base, off in moves.values():
         o.location = base
+    for o, action, rot in (held.values() if mode == "exploded" else []):
+        o.animation_data.action = action
+        o.rotation_euler = rot
     scene.frame_set(scene.frame_start)
     cam.data.type = "PERSP"
     return {"files": files, "parts": where, "size_px": size, "view": view, "frames": frames, "fps": scene.render.fps,

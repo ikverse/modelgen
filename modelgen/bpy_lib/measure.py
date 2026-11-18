@@ -286,7 +286,8 @@ def mesh_report(pairs, moments=12, reach=None):
             by[o[helpers.PART_KEY]] = o
     first, last = scene.frame_start, scene.frame_end
     span = last + 1 - first
-    joined = {frozenset((p["a"], p["b"])) for p in pairs}
+    # parts fixed or pinned together are not clashes; a piston in its cylinder still must not touch it
+    joined = {frozenset((p["a"], p["b"])) for p in pairs if p["kind"] != "liner"}
     tracked = {n: [] for n in by}
     samples = max(span, 24)
     for k in range(samples + 1):  # every frame (and more on a short loop): the matrices only
@@ -304,7 +305,7 @@ def mesh_report(pairs, moments=12, reach=None):
         dg = bpy.context.evaluated_depsgraph_get()
         solids = {n: _solid(o, dg) for n, o in by.items()}
         for p in pairs:
-            if p["kind"] == "shaft" or p["a"] not in solids or p["b"] not in solids:
+            if p["kind"] in ("shaft",) + ENGINE or p["a"] not in solids or p["b"] not in solids:
                 continue
             m = p.get("module_m") or 0.002
             depth, gap = _depth_and_gap(solids[p["a"]], solids[p["b"]], reach or 2.5 * m)
@@ -331,8 +332,11 @@ def mesh_report(pairs, moments=12, reach=None):
         if p["a"] not in by or p["b"] not in by:
             out["pairs"].append({**p, "found": False})
             continue
+        if p["kind"] in ENGINE:
+            out["pairs"].append(_engine_row(p, tracked[p["a"]], tracked[p["b"]]))
+            continue
         oa, ob = by[p["a"]], by[p["b"]]
-        axis_a = (tracked[p["a"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        axis_a =(tracked[p["a"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
         axis_b = (tracked[p["b"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
         row = {"a": p["a"], "b": p["b"], "kind": p["kind"], "found": True}
         da = [_angle_about(tracked[p["a"]][i], tracked[p["a"]][i + 1], axis_a) for i in range(samples)]
@@ -365,6 +369,37 @@ def mesh_report(pairs, moments=12, reach=None):
     out["clashes"] = [{"a": a, "b": b, "max_depth_m": round(d, 6), "moment": k}
                       for (a, b), (d, k) in sorted(clashes.items())]
     return out
+
+
+ENGINE = ("crank", "pin", "ring", "liner")
+
+
+def _engine_row(p, ta, tb):
+    """An engine link measured over every sampled moment of the loop: a rod's big end on its crankpin
+    ("crank") and its small end on the piston's pin ("pin"), as the largest distance apart; a piston
+    in its cylinder ("liner"): how far off the axis it strays, how much room is left above the crown
+    at the top and below the lowest ring at the bottom, and its travel."""
+    row = {"a": p["a"], "b": p["b"], "kind": p["kind"], "found": True}
+    if p["kind"] == "crank":
+        pin = Vector(p["pin_local_m"])
+        row["max_offset_m"] = round(max((ma.translation - mb @ pin).length for ma, mb in zip(ta, tb)), 6)
+    elif p["kind"] == "pin":
+        reach = Vector((0.0, p["length_m"], 0.0))
+        row["max_offset_m"] = round(max((ma @ reach - mb.translation).length for ma, mb in zip(ta, tb)), 6)
+    elif p["kind"] == "liner":
+        off, heights = 0.0, []
+        for ma, mb in zip(ta, tb):
+            up = (mb.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+            d = ma.translation - mb.translation
+            h = d.dot(up)
+            off = max(off, (d - up * h).length)
+            heights.append(h)
+        row["max_off_axis_m"] = round(off, 6)
+        row["top_room_m"] = round(p["top_m"] - (max(heights) + p["crown_m"]), 6)
+        row["bottom_room_m"] = round(min(heights) + p["rings_low_m"] - p["bottom_m"], 6)
+        row["stroke_m"] = round(max(heights) - min(heights), 6)
+        row["stroke_expected_m"] = p["stroke_m"]
+    return row
 
 
 def _measure(dg, objs, floor_tolerance, contact_tolerance):

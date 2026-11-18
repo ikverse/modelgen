@@ -278,6 +278,65 @@ def mesh_drive(driver, driven, ratio=None, same_direction=None):
     return float(ratio)
 
 
+def crank_slider(crank, rod, piston, pin, length, followers=()):
+    """An engine's slider-crank: as `crank` turns (spin it with spin(..., rpm=...)), the rod's big end
+    rides its crankpin (pin: the pin's centre in the crank's own frame, metres) and its small end
+    stays on the piston's gudgeon pin, `length` away; the piston slides up and down its cylinder's
+    axis (the line it stands on, through the crank's axis), worked out exactly every frame. Followers
+    (the piston's rings) move with the piston. Place the rod and piston at the crank's first pose
+    before calling. Returns the stroke in metres."""
+    _S.setdefault("sliders", []).append({"crank": crank, "rod": rod, "piston": piston, "pin": Vector(pin),
+                                         "length": float(length), "followers": list(followers)})
+    return 2 * Vector(pin).xy.length
+
+
+def _write_sliders(last):
+    """Key every frame of each slider-crank from where its crank stands at that frame."""
+    scene = bpy.context.scene
+    for s in _S.get("sliders") or []:
+        crank, rod, piston = s["crank"], s["rod"], s["piston"]
+        scene.frame_set(1)
+        bpy.context.view_layer.update()
+        up = (piston.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        rest = piston.matrix_world.translation.copy()
+        foot = rest  # any point of the line the piston rides along
+        rot_p = piston.matrix_world.to_3x3()
+        offsets = [(f, f.matrix_world.translation - rest) for f in s["followers"]]
+        rod.rotation_mode = "XYZ"
+        prev = None
+        lo = hi = None
+        for frame in range(1, last + 2):
+            scene.frame_set(frame)
+            p = crank.matrix_world @ s["pin"]
+            a = (crank.matrix_world.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+            d = p - foot
+            along = d.dot(up)
+            off = d - up * along
+            h = along + math.sqrt(max(s["length"] ** 2 - off.length_squared, 0.0))
+            q = foot + up * h
+            y = (q - p).normalized()
+            x = y.cross(a).normalized()
+            m3 = Matrix((x, y, x.cross(y))).transposed()
+            e = m3.to_euler("XYZ", prev) if prev is not None else m3.to_euler("XYZ")
+            prev = e
+            rod.location, rod.rotation_euler = p, e
+            rod.keyframe_insert("location", frame=frame)
+            rod.keyframe_insert("rotation_euler", frame=frame)
+            piston.matrix_world = Matrix.Translation(q) @ rot_p.to_4x4()
+            piston.keyframe_insert("location", frame=frame)
+            for f, o in offsets:
+                f.location = q + o
+                f.keyframe_insert("location", frame=frame)
+            lo, hi = (h, h) if lo is None else (min(lo, h), max(hi, h))
+        for obj in [rod, piston] + list(s["followers"]):
+            for i in range(3):
+                _set_linear(obj, "location", i)
+                _set_linear(obj, "rotation_euler", i)
+        _S["animated"][piston.name] = {"slide_m": round(hi - lo, 5)}
+        _S["animated"][rod.name] = {"crank_slider": crank.name}
+    scene.frame_set(1)
+
+
 def _pitch_point(driver, driven, gd, ge):
     """Where two meshing gears' pitch circles touch."""
     a = _gear_axis(driver)
@@ -330,7 +389,8 @@ def _resolve_drives():
     """Each driven part's turns per turn of the driver it hangs from; then the loop: spin mode (every
     part ends where it began, the shortest such stretch of at least half a second) or swing mode (a
     rack in the train: the driver turns back and forth so the rack stays in mesh)."""
-    root = next((s for s in _S["spins"] if any(d["driver"] is s["obj"] for d in _S["drives"])), None)
+    root = next((s for s in _S["spins"] if any(d["driver"] is s["obj"] for d in _S["drives"])
+                 or any(sl["crank"] is s["obj"] for sl in _S.get("sliders") or [])), None)
     if root is None:
         raise ValueError("spin the first driver with spin(obj, rpm=...) before mesh_drive")
     rates = {root["obj"].name: Fraction(1)}
@@ -566,13 +626,14 @@ def _finalize():
         return
     _S["written"] = True
     bpy.context.scene.frame_set(1)
-    if _S["drives"]:
+    if _S["drives"] or _S.get("sliders"):
         _resolve_drives()
     _choose_loop()
     last = _last_frame()
     for s in _S["spins"]:
         _write_spin(s, last)
     _write_swings(last)
+    _write_sliders(last)
     for b in _S["bounces"]:
         _write_bounce(b, last)
     if _S["spins"] or _S["bounces"] or _S["markers"] or _S.get("swings"):

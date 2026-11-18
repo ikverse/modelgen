@@ -39,12 +39,24 @@ Use real, typical values and keep them consistent:
 
 ## A turbocharger
 One `shaft` carries, in this order (front to back): the `compressor_wheel`, two `bearing`s, the
-`turbine_wheel`; each wheel has a `volute` that `houses` it. Real sizes: a car turbo's compressor
-wheel 40 to 70 mm across, the turbine wheel about 0.85 to 0.95 of that; let the tools pick blade
-counts, lengths and bores. Drive the shaft at about 30 rpm for a learner (the real thing runs at
-100 000 rpm or more; say so in your notes). The tools make a complete turbocharger from these
-parts: do not list a centre (bearing) housing, an oil feed, a wastegate or a heat shield in
-`custom_parts` unless the request asks for that part by name; "its housings" are the volutes.
+`turbine_wheel`; each wheel has a `volute` that `houses` it, and a `centre_housing` `houses` the
+shaft (the bearing housing between the volutes, with its oil inlet and drain). Real sizes: a car
+turbo's compressor wheel 40 to 70 mm across, the turbine wheel about 0.85 to 0.95 of that; let the
+tools pick blade counts, lengths, bores, the shaft's length and the housing's size. Drive the shaft at about 30 rpm for
+a learner (the real thing runs at 100 000 rpm or more; say so in your notes). The tools make a
+complete turbocharger from these parts: do not list an oil feed pipe, a wastegate or a heat shield
+in `custom_parts` unless the request asks for that part by name; "its housings" are the volutes
+and the centre housing.
+
+## Piston and crank
+A `crankshaft` (its `stroke`) drives; each `connecting_rod` is `on_crank` it, each `piston` is
+`on_rod` its rod, `piston_rings` are `on_piston` and a `cylinder` `houses` its piston. Real sizes: a
+car engine's bore and stroke 70 to 100 mm (about equal), a small motorbike or mower engine 40 to 70
+mm; give the bore and the stroke and let the tools pick the rod length, pins, rings and the
+cylinder's height. Several cylinders in a row: one rod, piston, rings and cylinder per throw; the
+tools set the usual firing order. Drive the crank at 10 to 30 rpm for a learner. A cylinder head,
+valves or a sump are parts no tool makes yet: list them in `custom_parts` only when the request
+asks for them by name.
 
 ## Parts no tool makes
 If the request needs a part that is not one of the types (a gearbox housing, a bracket, a base

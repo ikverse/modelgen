@@ -58,12 +58,16 @@ Lengths in millimetres. **Required** fields must be there; the rest have sensibl
   some each side), `keyway`. A gear says `"on_shaft": "<shaft name>"`; gears on one shaft turn
   together (a compound gear).
 
-### Turbocharger: `compressor_wheel`, `turbine_wheel`, `volute`, `bearing`
+### Turbocharger: `compressor_wheel`, `turbine_wheel`, `volute`, `bearing`, `centre_housing`
 - `compressor_wheel` and `turbine_wheel`: **diameter** (the rim). Defaults follow real wheels: the
   compressor has 6 blades and 6 splitters swept back 30°, the turbine 11 blades.
 - `volute`: the snail housing; **houses** names its wheel. It is built round that wheel, so you give
   it no size.
 - `bearing`: on the shaft; bore, outer diameter and width follow the shaft unless you give them.
+- `centre_housing`: the cast bearing housing between the two volutes; **houses** names the shaft.
+  It fills the room between the volutes' back plates round the bearings, with an oil inlet on top
+  and a drain below (`oil_ports: false` leaves them off). Its body is 0.7 of the compressor wheel
+  across unless you give `outer_diameter`.
 - One `shaft` carries them front to back in the order you list them: compressor wheel, bearings,
   turbine wheel. The wheels' noses point away from each other.
 
@@ -75,16 +79,49 @@ Lengths in millimetres. **Required** fields must be there; the rest have sensibl
   {"name": "bearing_back", "type": "bearing", "on_shaft": "shaft"},
   {"name": "turbine", "type": "turbine_wheel", "diameter": 45, "on_shaft": "shaft"},
   {"name": "compressor_housing", "type": "volute", "houses": "compressor"},
-  {"name": "turbine_housing", "type": "volute", "houses": "turbine"}],
+  {"name": "turbine_housing", "type": "volute", "houses": "turbine"},
+  {"name": "centre_housing", "type": "centre_housing", "houses": "shaft"}],
  "rpm": 30}
 ```
 
-Ask for `outputs: ["motion", "cutaway", "exploded"]` with `angle: "side"`: the cutaway slices both
-housings through the shaft so the wheels show spinning inside; the exploded view slides the parts
-apart along the shaft and back. `parts.json` has the air paths (`intake`, `compressed` on the
-compressor side; `exhaust_in`, `exhaust` on the turbine side) in picture pixels: draw them as arrows
-over the frames. A real turbo spins at 100 000 rpm or more; 20 to 40 rpm is easy to follow. The
+Ask for `outputs: ["motion", "cutaway", "exploded"]` with `angle: "side"`: the cutaway slices all
+three housings through the shaft so the wheels and bearings show turning inside; the exploded view
+slides the parts apart along the shaft (the centre housing lifts off the bearings) and back.
+`parts.json` has the air paths (`intake`, `compressed` on the compressor side; `exhaust_in`,
+`exhaust` on the turbine side) and the `oil` path through the centre housing, in picture pixels:
+draw them as arrows over the frames. A real turbo spins at 100 000 rpm or more; 20 to 40 rpm is easy to follow. The
 loop is a few turns long because the bearings' balls run round more slowly than the shaft.
+
+### Piston and crank: `crankshaft`, `connecting_rod`, `piston`, `piston_rings`, `cylinder`
+- `crankshaft`: **stroke** (the piston's travel; it takes the bore if you leave it out). Crankpin,
+  journals, webs and counterweights follow real proportions. Several rods make an inline engine;
+  `throw_angles` sets each throw (default the usual firing order: 0/180/180/0 for four).
+- `connecting_rod`: **on_crank** names the crankshaft; `length` (centre to centre, default 1.7 ×
+  stroke); `throw` (0 at the front) when you want a rod on a particular throw.
+- `piston`: **on_rod** names its rod; **bore** (default the stroke); `crown` flat, dish or dome.
+  Ring grooves, skirt and gudgeon pin follow the bore.
+- `piston_rings`: **on_piston**; two compression rings and an oil ring in the grooves.
+- `cylinder`: **houses** names the piston; `style` `liner` (a sleeve) or `block` (a block section
+  with a water jacket). Its height is worked out so the crown reaches the top and the rings stay
+  inside at the bottom, clear of the counterweights.
+- The crankshaft drives: the rod rides its crankpin and the piston slides straight up and down,
+  worked out exactly every frame. One turn of the crank is the loop (72 frames at 20 rpm).
+
+```json
+{"parts": [
+  {"name": "crank", "type": "crankshaft", "stroke": 80},
+  {"name": "rod", "type": "connecting_rod", "on_crank": "crank"},
+  {"name": "piston", "type": "piston", "bore": 80, "on_rod": "rod"},
+  {"name": "rings", "type": "piston_rings", "on_piston": "piston"},
+  {"name": "cylinder", "type": "cylinder", "houses": "piston"}],
+ "rpm": 20}
+```
+
+Ask for `outputs: ["motion", "cutaway", "exploded"]` with `angle: "front"` (looking along the
+crank): the cutaway slices the cylinder so the piston shows sliding inside; the exploded view lifts
+rod, piston, rings and cylinder off the crank in that order. A real engine idles at about 800 rpm;
+10 to 30 rpm is easy to follow. ModelGen refuses a rod too short for its stroke and says how long it
+must be.
 
 ### Connecting them
 - `meshes_with`: the gear(s) it meshes with (name the link once). Meshing gears need the same module

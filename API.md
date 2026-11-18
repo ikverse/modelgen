@@ -163,7 +163,9 @@ each output.
 
 A job can carry `mechanism`: the parts by their engineering numbers. When every part has a tool
 (`spur_gear`, `helical_gear`, `ring_gear`, `rack`, `bevel_gear`, `shaft`, `compressor_wheel`,
-`turbine_wheel`, `volute` (with `houses`: its wheel), `bearing`; `GET /v1/parts` has them all), ModelGen
+`turbine_wheel`, `volute` (with `houses`: its wheel), `bearing`, `centre_housing` (with `houses`: its
+shaft), `crankshaft`, `connecting_rod` (`on_crank`), `piston` (`on_rod`), `piston_rings`
+(`on_piston`), `cylinder` (`houses`: its piston); `GET /v1/parts` has them all), ModelGen
 builds it straight from the tools with no agents, in about 1 to 3 minutes, and `source` is
 `part_tools`. The same numbers asked for again return the stored model at once (`existing`, no
 agent). A request in plain words that names a mechanical part ("two gears, the small one drives the

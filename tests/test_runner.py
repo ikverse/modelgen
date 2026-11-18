@@ -15,10 +15,11 @@ PLAN_MODELS = {
     "builder": "claude-sonnet-5-5", "assembler": "claude-sonnet-5-5", "materials": "claude-sonnet-5-5",
     "animator": "claude-sonnet-5-5", "critic": "claude-opus-5-5", "librarian": "claude-haiku-5-5",
     "shell_architect": "claude-opus-5-5", "shell_builder": "claude-opus-5-5",
-    "researcher": "claude-sonnet-5-5", "caster": "claude-haiku-5-5",
+    "researcher": "claude-sonnet-5-5", "caster": "claude-haiku-5-5", "engineer": "claude-sonnet-5-5",
 }
 # who they sit in for on the map
-SEATS = {"shell_architect": "architect", "shell_builder": "builder", "researcher": "brief", "caster": "brief"}
+SEATS = {"shell_architect": "architect", "shell_builder": "builder", "researcher": "brief", "caster": "brief",
+         "engineer": "brief"}
 
 
 def result_message(**kw):

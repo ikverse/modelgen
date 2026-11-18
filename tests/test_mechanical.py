@@ -352,7 +352,8 @@ TURBO = {"parts": [
     {"name": "bearing_back", "type": "bearing", "on_shaft": "shaft"},
     {"name": "turbine", "type": "turbine_wheel", "diameter": 45, "on_shaft": "shaft"},
     {"name": "compressor_housing", "type": "volute", "houses": "compressor"},
-    {"name": "turbine_housing", "type": "volute", "houses": "turbine"}], "rpm": 30}
+    {"name": "turbine_housing", "type": "volute", "houses": "turbine"},
+    {"name": "centre_housing", "type": "centre_housing", "houses": "shaft"}], "rpm": 30}
 
 
 def test_a_turbocharger_sheet_is_filled_in_once_and_checked():
@@ -389,6 +390,62 @@ def test_the_turbo_layout_faces_the_wheels_apart_and_houses_them():
     assert mc.loop_turns(sheet) == 3  # wheels repeat every turn; the bearings' balls every three
 
 
+def test_the_centre_housing_fills_the_room_between_the_volutes_round_the_bearings():
+    sheet, assumed = mc.clean(TURBO)
+    assert "centre_housing.outer_diameter = 35 (0.7 x the compressor wheel)" in assumed
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    axis = mc._col(pl["shaft"]["rotation"], 2)
+    hs = pl["centre_housing"]["housing"]
+    mid = mc._dot(pl["centre_housing"]["centre"], axis)
+    front, back = mid + hs["length"] / 2000, mid - hs["length"] / 2000
+    by = {p["name"]: p for p in sheet["parts"]}
+    for wheel, end in (("compressor", front), ("turbine", back)):
+        w = by[wheel]
+        plate = mc.wheel_clearance(w["diameter"]) + 0.035 * w["diameter"]
+        face = abs(mc._dot(pl[wheel]["centre"], axis) - end) * 1000
+        assert abs(face - (w["length"] / 2 + plate + mc.HOUSING_GAP)) < 1e-6  # just clear of the back plate
+    for b in ("bearing_front", "bearing_back"):
+        s = mc._dot(pl[b]["centre"], axis)
+        assert back + hs["end_wall"] / 1000 < s < front - hs["end_wall"] / 1000
+        assert hs["bore_diameter"] > by[b]["outer_diameter"]
+    assert mc._dot(mc._col(pl["centre_housing"]["rotation"], 0), [0, 0, 1]) > 0.99  # the oil inlet on top
+    assert mc._dot(mc._col(pl["centre_housing"]["rotation"], 2), axis) > 0.99  # front: the compressor side
+    assert "centre_housing" in mc.housings(sheet) and mc.loop_turns(sheet) == 3  # it stands still
+    off = mc.exploded_offsets(sheet, lay)
+    assert off["centre_housing"][:2] == [0.0, 0.0] and off["centre_housing"][2] > 0.03  # lifted off the bearings
+    assert "k.centre_housing(length=0.03" in mc.part_code(by["centre_housing"], lay, by)
+
+
+def test_a_shaft_given_its_length_is_centred_on_the_parts_it_carries():
+    raw = json.loads(json.dumps(TURBO))
+    raw["parts"][0]["length"] = 150
+    sheet, _ = mc.clean(raw)
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    axis = mc._col(pl["shaft"]["rotation"], 2)
+    mid = (mc._dot(pl["compressor"]["centre"], axis) + mc._dot(pl["turbine"]["centre"], axis)) / 2
+    assert pl["shaft"]["length_mm"] == 150 and abs(mc._dot(pl["shaft"]["centre"], axis) - mid) < 0.01
+
+
+@pytest.mark.parametrize("change, words", [
+    ({"houses": "compressor"}, "not a shaft"),
+    ({"houses": None}, "houses no shaft"),
+    ({"outer_diameter": 8}, "at least"),
+    ({"outer_diameter": 80}, "at most"),
+])
+def test_a_centre_housing_that_cannot_fit_is_refused(change, words):
+    raw = json.loads(json.dumps(TURBO))
+    raw["parts"][-1].update(change)
+    with pytest.raises(mc.MechanismError, match=words):
+        mc.clean(raw)
+    one_wheel = {"parts": [{"name": "s", "type": "shaft"},
+                           {"name": "c", "type": "compressor_wheel", "diameter": 50, "on_shaft": "s"},
+                           {"name": "h", "type": "centre_housing", "houses": "s"}]}
+    with pytest.raises(mc.MechanismError, match="one of each"):
+        mc.clean(one_wheel)
+
+
 def test_a_blade_into_its_housing_fails_blades_clear():
     report = {"moments": 12, "clashes": [], "pairs": [
         {"a": "turbine", "b": "turbine_housing", "kind": "housing", "found": True, "max_depth_m": 0.0004,
@@ -397,6 +454,100 @@ def test_a_blade_into_its_housing_fails_blades_clear():
     assert not gates["blades_clear"]["pass"] and "turbine pass 0.40 mm into turbine_housing" in gates["blades_clear"]["detail"]
     report["pairs"][0]["max_depth_m"] = 0.0
     assert checks.mesh_gates(report)["blades_clear"]["pass"]
+
+
+# --- stage 3: piston and crank --------------------------------------------------------------------------
+
+ENGINE = {"parts": [
+    {"name": "crank", "type": "crankshaft", "stroke": 80},
+    {"name": "rod", "type": "connecting_rod", "on_crank": "crank"},
+    {"name": "piston", "type": "piston", "bore": 80, "on_rod": "rod"},
+    {"name": "rings", "type": "piston_rings", "on_piston": "piston"},
+    {"name": "cylinder", "type": "cylinder", "houses": "piston"}], "rpm": 20}
+
+
+def test_a_single_cylinder_is_filled_in_from_real_proportions_and_laid_out_exactly():
+    sheet, assumed = mc.clean(ENGINE)
+    assert mc.describe(sheet) == "single-cylinder piston and crank" and sheet["driver"] == "crank"
+    assert "rod.length = 136 (1.7 x stroke)" in assumed and "piston.pin_diameter = 20 (0.25 x bore)" in assumed
+    by = {p["name"]: p for p in sheet["parts"]}
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    up = [0.0, 0.0, 1.0]
+    assert abs(mc._dot(pl["piston"]["centre"], up) - (0.040 + 0.136)) < 1e-9  # top dead centre: r + l
+    assert pl["rings"]["centre"] == pl["piston"]["centre"]
+    foot = mc._dot(pl["cylinder"]["centre"], up)
+    assert foot * 1000 > mc.crank_sweep(by["crank"]) + 1  # the cylinder stands clear of the crank's sweep
+    top = foot + by["cylinder"]["length"] / 1000
+    assert 0 < top - (0.176 + 0.0288) < 0.001  # the crown just inside the top at top dead centre
+    low = mc.piston_grooves(80, 28.8)[-1][1] / 1000
+    assert 0.040 * 0 + 0.136 - 0.040 + low > foot  # at the bottom the rings stay in the cylinder
+    kinds = {p["kind"] for p in lay["pairs"]}
+    assert kinds == {"crank", "pin", "ring", "liner"} and mc.loop_turns(sheet) == 1
+    motion = mc.scripts(sheet)[0]["motion.py"]
+    assert "m.crank_slider(parts['crank'][0], parts['rod'][0], parts['piston'][0]" in motion
+    assert "followers=[parts['rings'][0]]" in motion and "mesh_drive" not in motion
+    off = mc.exploded_offsets(sheet, lay)
+    assert off["crank"][2] == 0 < off["rod"][2] < off["piston"][2] < off["rings"][2] < off["cylinder"][2]
+    assert mc.housings(sheet) == ["cylinder"]
+
+
+def test_four_throws_take_the_inline_firing_order_and_room_for_their_cylinders():
+    parts = [{"name": "crank", "type": "crankshaft", "stroke": 80}]
+    for i in range(4):
+        parts += [{"name": f"rod{i}", "type": "connecting_rod", "on_crank": "crank"},
+                  {"name": f"piston{i}", "type": "piston", "bore": 82, "on_rod": f"rod{i}"},
+                  {"name": f"cyl{i}", "type": "cylinder", "houses": f"piston{i}"}]
+    sheet, assumed = mc.clean({"parts": parts})
+    crank = sheet["parts"][0]
+    assert crank["throw_angles"] == [0, 180, 180, 0] and crank["spacing"] >= 1.32 * 82
+    lay = mc.layout(sheet)
+    xs = sorted(mc._dot(lay["place"][f"cyl{i}"]["centre"], [0, -1, 0]) for i in range(4))
+    assert all(abs((b - a) * 1000 - crank["spacing"]) < 1e-6 for a, b in zip(xs, xs[1:]))
+    tops = {i: lay["place"][f"piston{i}"]["centre"][2] for i in range(4)}
+    assert abs(tops[0] - tops[3]) < 1e-9 and tops[1] < tops[0] - 0.079  # 1 and 4 up, 2 and 3 down
+    assert mc.describe(sheet) == "4-cylinder piston and crank"
+
+
+@pytest.mark.parametrize("change, words", [
+    ({1: {"length": 90}}, "at least 2.5 x the crank radius"),
+    ({1: {"length": 102}, 2: {"skirt_length": 60}}, "too short for counterweights"),
+    ({2: {"on_rod": None}}, "has no on_rod"),
+    ({2: {"on_rod": "crank"}}, "not a connecting rod"),
+    ({0: {"stroke": None}, 2: {"bore": None}}, "no stroke"),
+    ({2: {"pin_diameter": 40}}, "at most 0.4"),
+    ({"driver": "piston"}, "name the crankshaft"),
+])
+def test_an_engine_that_cannot_run_is_refused_with_the_number_to_change(change, words):
+    raw = json.loads(json.dumps(ENGINE))
+    for k, v in change.items():
+        if k == "driver":
+            raw["driver"] = v
+        else:
+            raw["parts"][k].update(v)
+    with pytest.raises(mc.MechanismError, match=words):
+        mc.clean(raw)
+    lonely = {"parts": [{"name": "crank", "type": "crankshaft", "stroke": 80},
+                        {"name": "rod", "type": "connecting_rod", "on_crank": "crank"}]}
+    with pytest.raises(mc.MechanismError, match="has no piston"):
+        mc.clean(lonely)
+
+
+def test_the_engine_gates_catch_a_rod_off_its_pin_and_a_piston_out_of_its_cylinder():
+    good = {"moments": 12, "clashes": [], "pairs": [
+        {"a": "rod", "b": "crank", "kind": "crank", "found": True, "max_offset_m": 0.00004},
+        {"a": "rod", "b": "piston", "kind": "pin", "found": True, "max_offset_m": 0.00003},
+        {"a": "piston", "b": "cylinder", "kind": "liner", "found": True, "max_off_axis_m": 0.0, "top_room_m": 0.0005,
+         "bottom_room_m": 0.03, "stroke_m": 0.08, "stroke_expected_m": 0.08}]}
+    gates = checks.mesh_gates(good)
+    assert gates["pins_in_bores"]["pass"] and gates["piston_in_liner"]["pass"]
+    bad = json.loads(json.dumps(good))
+    bad["pairs"][1]["max_offset_m"] = 0.002
+    bad["pairs"][2]["top_room_m"] = -0.003
+    gates = checks.mesh_gates(bad)
+    assert not gates["pins_in_bores"]["pass"] and "rod comes 2.00 mm off the gudgeon pin of piston" in \
+        gates["pins_in_bores"]["detail"]
+    assert not gates["piston_in_liner"]["pass"] and "rises 3.00 mm out of the top" in gates["piston_in_liner"]["detail"]
 
 
 # --- real Blender --------------------------------------------------------------------------------------
@@ -441,6 +592,27 @@ def build_volute():
 
 def build_bearing():
     return k.bearing(0.004, 0.0104, 0.00312, name="bearing")
+
+def build_centre():
+    return k.centre_housing(0.031, 0.004, 0.0108, 0.035, 0.055, 0.0495, 0.003, name="centre")
+
+def build_crank():
+    return k.crankshaft(0.08, 0.044, 0.052, 0.026, 0.014, 0.024, throw_angles=(0, 180, 180, 0), name="crank")
+
+def build_rod():
+    return k.connecting_rod(0.136, 0.04404, 0.02003, 0.0252, 0.0246, name="rod")
+
+def build_piston():
+    return k.piston(0.08, 0.0288, 0.02, 0.0264, boss_gap=0.025, name="piston")
+
+def build_rings():
+    return k.piston_rings(0.08, 0.0288, name="rings")
+
+def build_liner():
+    return k.cylinder(0.08, 0.135, name="liner")
+
+def build_block():
+    return k.cylinder(0.08, 0.135, style="block", name="block")
 '''
 
 
@@ -448,8 +620,9 @@ def build_bearing():
 def test_every_gear_tool_makes_one_closed_solid_at_its_real_size(tmp_path):
     file = tmp_path / "kit.py"
     file.write_text(KIT, encoding="utf-8")
-    names = ["spur", "helical", "herring", "holes", "spokes", "ring", "rack", "bevel", "shaft"]
-    several = ["compressor", "turbine", "volute", "bearing"]  # closed solids that overlap (blades in a hub)
+    names = ["spur", "helical", "herring", "holes", "spokes", "ring", "rack", "bevel", "shaft", "centre", "crank",
+             "rod", "liner", "block"]
+    several = ["compressor", "turbine", "volute", "bearing", "piston", "rings"]  # several closed solids
     result = blender.run_job([blender.part_step(n, file, func=f"build_{n}") for n in names + several]
                              + [blender.measure_step()], timeout=600)
     assert result.ok, result.traceback
@@ -464,6 +637,30 @@ def test_every_gear_tool_makes_one_closed_solid_at_its_real_size(tmp_path):
     assert abs(parts["spur"]["size"][0] - tip) < 0.0002 and abs(parts["spur"]["size"][2] - 0.016) < 1e-5
     assert abs(parts["ring"]["size"][0] - (2 * 62.5 + 12) / 1000) < 0.0005  # root diameter 125 mm + 6 modules
     assert abs(parts["rack"]["size"][0] - 12 * math.pi * 0.002) < 1e-5
+    assert parts["piston"]["islands"] == 2 and parts["rings"]["islands"] == 3  # piston and pin; three rings
+    assert abs(parts["piston"]["size"][0] - 0.08) < 0.0002 and abs(parts["rings"]["size"][0] - 0.08) < 0.0001
+    assert abs(parts["liner"]["size"][2] - 0.135) < 1e-6 and abs(parts["block"]["size"][2] - 0.135) < 1e-6
+
+
+@pytest.mark.blender
+def test_a_real_single_cylinder_runs_on_its_pins_inside_its_cylinder_and_cuts_open():
+    sheet, assumed = mc.clean(ENGINE)
+    proj = db.create_project("engine", "single cylinder", options={"mechanism": sheet, "assumed": assumed})
+    out = asyncio.run(pipeline._run_parts(proj["name"], sheet, assumed))
+    folder = pipeline.version_dir(proj["name"], out["version"])
+    gates = json.loads((folder / "checks.json").read_text(encoding="utf-8"))["gates"]
+    assert out["ok"] and out["passed"], gates
+    assert gates["pins_in_bores"]["pass"] and gates["piston_in_liner"]["pass"] and gates["no_clashes"]["pass"]
+    rows = {r["kind"]: r for r in json.loads((folder / "mesh_check.json").read_text(encoding="utf-8"))["pairs"]}
+    assert abs(rows["liner"]["stroke_m"] - 0.08) < 0.0002 and rows["liner"]["top_room_m"] >= 0
+    report = json.loads((folder / "motion_report.json").read_text(encoding="utf-8"))
+    assert report["frames"] == 72  # one turn at 20 rpm, 24 frames a second
+    assert asyncio.run(jobs.render_motion(proj["name"], out["version"], "explainer", "persp", "front", None,
+                                          "cutaway", "auto")) is None
+    info = json.loads((folder / "cutaway" / "explainer-persp" / "cutaway.json").read_text(encoding="utf-8"))
+    assert info["cut_parts"] == ["cylinder"]
+    assert asyncio.run(jobs.render_motion(proj["name"], out["version"], "explainer", "persp", "front", None,
+                                          "exploded")) is None
 
 
 @pytest.mark.blender
@@ -516,9 +713,9 @@ def test_a_real_turbocharger_clears_its_housings_and_renders_a_cutaway_and_an_ex
                                           "cutaway", "auto")) is None
     cut = folder / "cutaway" / "explainer-persp"
     info = json.loads((cut / "cutaway.json").read_text(encoding="utf-8"))
-    assert info["cut_parts"] == ["compressor_housing", "turbine_housing"]
+    assert info["cut_parts"] == ["compressor_housing", "turbine_housing", "centre_housing"]
     flows = json.loads((cut / "parts.json").read_text(encoding="utf-8"))["flows"]
-    assert {f["name"] for f in flows} == {"intake", "compressed", "exhaust_in", "exhaust"}
+    assert {f["name"] for f in flows} == {"intake", "compressed", "exhaust_in", "exhaust", "oil"}
     with Image.open(cut / "frame_000.png") as im:
         accent = sum(1 for px in im.convert("RGB").getdata() if px[0] > 220 and px[1] < 90 and 60 < px[2] < 140)
     assert accent > 500  # the cut faces show in the accent colour
