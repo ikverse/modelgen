@@ -711,6 +711,19 @@ def test_the_mount_gate_fails_a_planet_off_its_pin_even_when_nothing_clashes():
     assert checks.mesh_gates(report)["parts_on_their_mounts"]["pass"]
 
 
+def test_a_shaft_too_short_for_its_parts_is_refused_and_caught():
+    raw = json.loads(json.dumps(TURBO))
+    raw["parts"][0]["length"] = 40
+    with pytest.raises(mc.MechanismError, match=r"shaft shaft is too short: \w+ reaches [\d.]+ mm past its end; make "
+                                                r"it at least \d+ mm long"):
+        mc.clean(raw)
+    report = {"moments": 12, "clashes": [], "pairs": [
+        {"a": "wheel", "b": "shaft", "kind": "shaft", "found": True, "max_offset_m": 0.0, "max_tilt_deg": 0.0,
+         "beyond_end_m": 0.003}]}
+    gate = checks.mesh_gates(report)["parts_on_their_mounts"]
+    assert not gate["pass"] and "wheel stands 3.00 mm past the end of shaft" in gate["detail"]
+
+
 def test_a_worm_drives_its_wheel_one_tooth_a_turn_from_below():
     sheet, assumed = mc.clean(WORM)
     lay = mc.layout(sheet)
@@ -975,6 +988,46 @@ def test_a_real_single_cylinder_runs_on_its_pins_inside_its_cylinder_and_cuts_op
     assert info["cut_parts"] == ["cylinder"]
     assert asyncio.run(jobs.render_motion(proj["name"], out["version"], "explainer", "persp", "front", None,
                                           "exploded")) is None
+
+
+AXIS_KIT = '''from bpy_lib import kits as k
+
+
+def _closed_on_axis(obj, ends):
+    """Raise unless the part has a single vertex on its axis at each end (no hairline hole)."""
+    for z in ends:
+        hits = [v for v in obj.data.vertices if v.co.xy.length < 1e-9 and abs(v.co.z - z) < 1e-7]
+        if len(hits) != 1:
+            raise AssertionError(f"{obj.name}: {len(hits)} vertices on its axis at z = {z}")
+    return obj
+
+def build_valve():
+    return _closed_on_axis(k.valve(0.032, 0.006, 0.1, name="valve"), (0.1,))
+
+def build_worm():
+    w = k.worm(0.003, 1, 0.03, 0.06, name="worm")
+    return _closed_on_axis(w, (-0.03 - 0.018, 0.03 + 0.018))
+
+def build_bolt():
+    return _closed_on_axis(k.bolt(0.010, 0.040, name="bolt"), (0.0065, -0.040))
+
+def build_pulley():
+    p = k.pulley(0.1, grooves=1, section="A", bore=0.0, name="pulley")
+    w = p["mg_gear"] and __import__("json").loads(p["mg_gear"])["width"]
+    return _closed_on_axis(p, (-w / 2, w / 2))
+'''
+
+
+@pytest.mark.blender
+def test_turned_parts_close_on_their_axis_with_no_hairline_hole(tmp_path):
+    file = tmp_path / "axis_kit.py"
+    file.write_text(AXIS_KIT, encoding="utf-8")
+    names = ["valve", "worm", "bolt", "pulley"]
+    result = blender.run_job([blender.part_step(n, file, func=f"build_{n}") for n in names]
+                             + [blender.measure_step()], timeout=600)
+    assert result.ok, result.traceback
+    for p in result.outputs["measure"]["parts"]:
+        assert p["non_manifold_edges"] == 0 and p["islands"] == 1, p
 
 
 @pytest.mark.blender

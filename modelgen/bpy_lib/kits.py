@@ -1571,9 +1571,19 @@ def _lathe(rings, slots, name, slot_names):
             continue
         keep.append(ring)
         keep_slots.append(slot)
-    verts = [[bm.verts.new(p) for p in ring] for ring in keep]
+    # a ring of radius 0 is the axis itself: one vertex, fanned to its neighbours (no hairline hole)
+    on_axis = [max(abs(p[0]) + abs(p[1]) for p in ring) < 1e-9 for ring in keep]
+    verts = [[bm.verts.new(ring[0])] if axis else [bm.verts.new(p) for p in ring] for ring, axis in zip(keep, on_axis)]
     for j in range(len(verts)):
         a, b = verts[j], verts[(j + 1) % len(verts)]
+        if len(a) == 1 and len(b) == 1:
+            continue  # along the axis: nothing to close
+        if len(a) == 1 or len(b) == 1:
+            ring, tip = (b, a[0]) if len(a) == 1 else (a, b[0])
+            for i in range(len(ring)):
+                f = bm.faces.new((ring[i], ring[(i + 1) % len(ring)], tip))
+                f.material_index = keep_slots[j]
+            continue
         if len(a) != len(b):
             _zip(bm, a, b, keep_slots[j], keep[j], keep[(j + 1) % len(keep)])
             continue
@@ -1976,7 +1986,7 @@ def _radial_wheel(name, diameter, length, blades, splitters, tip_ratio, exit_hei
     angles = [2 * math.pi * i / seg for i in range(seg)]
     prof = [hub(i / 16) for i in range(17)]  # nose to rim along the hub line
     rn, zn = prof[0]
-    bore_r = max(bore / 2, 1e-4)
+    bore_r = bore / 2  # 0: the hub closes on the axis
     rings = [_circle_ring(angles, z, r) for r, z in prof]
     rings += [_circle_ring(angles, -length / 2, 0.97 * r2), _circle_ring(angles, -length / 2, bore_r),
               _circle_ring(angles, zn, bore_r)]
@@ -2577,7 +2587,7 @@ def bolt(diameter, length, pitch=None, across_flats=None, thread_length=None, na
     cham = 0.95 * s / 2  # the head's chamfer circle on top
     tip = 0.6 * p
     r_root = d / 2 - 0.6134 * p
-    rings = [_circle_ring(angles, k, 0.0001),
+    rings = [_circle_ring(angles, k, 0.0),
              _circle_ring(angles, k, lambda a: min(hexr(a), cham)),
              _circle_ring(angles, k - 0.15 * k, hexr),
              _circle_ring(angles, 0.0, hexr),
@@ -2585,7 +2595,7 @@ def bolt(diameter, length, pitch=None, across_flats=None, thread_length=None, na
              _circle_ring(angles, -(length - b), d / 2)]
     taper = (lambda z: min(1.0, max(0.0, (z + length) / (3 * p))))
     rings += list(reversed(_thread_rings(d, p, -length + tip, -(length - b) - 0.2 * p, False, angles, taper)))
-    rings += [_circle_ring(angles, -length, r_root - 0.2 * p), _circle_ring(angles, -length, 0.0001)]
+    rings += [_circle_ring(angles, -length, r_root - 0.2 * p), _circle_ring(angles, -length, 0.0)]
     slots = [1] * 5 + [0] * (len(rings) - 6) + [1]
     obj = _lathe(rings, slots[:len(rings)], name, ["tooth_face", "hub", "bore"])
     obj = h.merge_by_distance(obj, 1e-7)
@@ -2696,7 +2706,7 @@ def pulley(datum_diameter, grooves=1, section="A", bore=0.0, name="pulley"):
     width = (max(1, int(grooves)) - 1) * e + 2 * f
     t19 = math.tan(math.radians(19))
     w_datum = top - 2 * (height * 0.34) * math.tan(math.radians(20))  # the belt's width at its datum line
-    prof = [(max(bore / 2, 0.0005), -width / 2), (r_out, -width / 2)]
+    prof = [(bore / 2, -width / 2), (r_out, -width / 2)]
     slots = [1, 1]
     for g in range(max(1, int(grooves))):
         zc = -width / 2 + f + g * e
@@ -2704,7 +2714,7 @@ def pulley(datum_diameter, grooves=1, section="A", bore=0.0, name="pulley"):
         w_bot = max(0.0005, w_datum - 2 * below * t19)
         prof += [(r_out, zc - w_out / 2), (r_bot, zc - w_bot / 2), (r_bot, zc + w_bot / 2), (r_out, zc + w_out / 2)]
         slots += [0, 0, 0, 1]
-    prof += [(r_out, width / 2), (max(bore / 2, 0.0005), width / 2)]
+    prof += [(r_out, width / 2), (bore / 2, width / 2)]
     slots += [1, 2]
     angles = [2 * math.pi * i / 72 for i in range(72)]
     obj = _lathe([_circle_ring(angles, z, r) for r, z in prof], slots, name, ENGINE_SLOTS)
@@ -2794,8 +2804,8 @@ def sprocket(pitch, teeth, roller=None, width=None, bore=0.0, hub=None, name="sp
     width = width or 0.58 * pitch
     pts, R, r_tip = _sprocket_outline(pitch, teeth, roller)
     rings = [_outline_ring(pts, -width / 2), _outline_ring(pts, width / 2)]
-    pieces = [_lathe(rings + [_circle_ring([2 * math.pi * i / 48 for i in range(48)], width / 2, 0.0005),
-                              _circle_ring([2 * math.pi * i / 48 for i in range(48)], -width / 2, 0.0005)],
+    pieces = [_lathe(rings + [_circle_ring([2 * math.pi * i / 48 for i in range(48)], width / 2, 0.0),
+                              _circle_ring([2 * math.pi * i / 48 for i in range(48)], -width / 2, 0.0)],
                      [0, 1, 1, 1], name, ENGINE_SLOTS)]
     if hub:
         pieces.append(_slab(_circle2(0.0, 0.0, hub[0] / 2, 48), -width / 2 - hub[1], width / 2 - 0.0002, 1,
@@ -2991,8 +3001,8 @@ def valve(head_diameter, stem_diameter, length, seat_angle=45.0, bucket=None, na
     margin = 0.06 * head_diameter
     seat_h = (rh - 1.8 * rs) * math.tan(math.radians(90 - seat_angle)) * 0.35
     angles = [2 * math.pi * i / 48 for i in range(48)]
-    prof = [(0.0005, 0.0), (rs, 0.0), (rs, length - margin - seat_h - 0.25 * head_diameter),
-            (1.8 * rs, length - margin - seat_h), (rh, length - margin), (rh, length), (0.0005, length)]
+    prof = [(0.0, 0.0), (rs, 0.0), (rs, length - margin - seat_h - 0.25 * head_diameter),
+            (1.8 * rs, length - margin - seat_h), (rh, length - margin), (rh, length), (0.0, length)]
     stem = _lathe([_circle_ring(angles, z, r) for r, z in prof], [1, 1, 1, 0, 1, 1, 1], name, ENGINE_SLOTS)
     bd = bucket or 1.1 * head_diameter
     cup = _slab(_circle2(0.0, 0.0, bd / 2, 48), 0.0, 0.35 * bd, 2, name + "_bucket")  # its face at the origin
@@ -3052,7 +3062,7 @@ def worm(module, starts, pitch_diameter, length, pressure_angle=20.0, hand="righ
             r = min(r_tip, max(r_root, r))
             return r_root + (r - r_root) * end
         rings.append(_circle_ring(angles, z, radius))
-    inner = bore / 2 if bore else 0.0005
+    inner = bore / 2 if bore else 0.0
     rs = 0.6 * r_root  # the plain shaft the thread is cut on, running on past it each side
     e = 0.6 * pitch_diameter
     thread = rings

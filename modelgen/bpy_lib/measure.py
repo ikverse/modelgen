@@ -334,10 +334,11 @@ def mesh_report(pairs, moments=12, reach=None):
             out["pairs"].append({**p, "found": False})
             continue
         if p["kind"] in ENGINE:
-            out["pairs"].append(_engine_row(p, tracked[p["a"]], tracked[p["b"]]))
+            out["pairs"].append(_engine_row(p, tracked[p["a"]], tracked[p["b"]], by.get(p["b"])))
             continue
         if p["kind"] in ("shaft", "mount", "pin_mount"):
-            out["pairs"].append(_mount_row(p, tracked[p["a"]], tracked[p["b"]], _built_pins(by.get(p["b"]))))
+            out["pairs"].append(_mount_row(p, tracked[p["a"]], tracked[p["b"]], _built_pins(by.get(p["b"])),
+                                           _built_length(by.get(p["b"])) if p["kind"] == "shaft" else None))
             continue
         oa, ob = by[p["a"]], by[p["b"]]
         axis_a =(tracked[p["a"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
@@ -391,16 +392,28 @@ def _built_pins(obj):
     return [Vector(v) for v in pins] if pins else None
 
 
-def _mount_row(p, ta, tb, built_pins=None):
+def _built_length(obj):
+    """A built shaft's length (kits.shaft keeps it in its mg_gear), metres, or None."""
+    import json
+    raw = obj.get("mg_gear") if obj is not None else None
+    try:
+        return float(json.loads(raw).get("length")) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _mount_row(p, ta, tb, built_pins=None, shaft_length=None):
     """A part carried by another, measured at every sampled moment: how far its own axis's origin
     strays from the line it must sit on (a shaft's axis, a carrier's pin, a bolt's axis), and how far
     its own axis tilts from that line. A planet is measured against the pins its carrier was really
     built with (the nearest of them), not where they were meant to be. A gear standing beside its
     shaft, or a planet off its pin, shows here even when nothing passes through anything."""
     locals_ = built_pins if p["kind"] == "pin_mount" and built_pins else [Vector(p.get("pin_local_m") or (0.0, 0.0, 0.0))]
-    off, tilt = 0.0, 0.0
+    off, tilt, beyond = 0.0, 0.0, 0.0
     for ma, mb in zip(ta, tb):
         axis = (mb.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        if shaft_length:  # the part's middle must be on the shaft, not past its end
+            beyond = max(beyond, abs((ma.translation - mb.translation).dot(axis)) - shaft_length / 2)
         here = []
         for local in locals_:
             d = ma.translation - mb @ local
@@ -409,17 +422,33 @@ def _mount_row(p, ta, tb, built_pins=None):
         own = (ma.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
         tilt = max(tilt, math.degrees(math.acos(max(-1.0, min(1.0, abs(own.dot(axis)))))))
     return {"a": p["a"], "b": p["b"], "kind": p["kind"], "found": True, "max_offset_m": round(off, 7),
-            "max_tilt_deg": round(tilt, 4)}
+            "max_tilt_deg": round(tilt, 4), "beyond_end_m": round(max(beyond, 0.0), 7)}
 
 
-def _engine_row(p, ta, tb):
+def _built_crankpin(obj, throw):
+    """Where a built crankshaft's crankpin for `throw` really is (its own frame, metres), from the
+    throws kits.crankshaft keeps in its mg_gear, or None."""
+    import json
+    raw = obj.get("mg_gear") if obj is not None else None
+    try:
+        g = json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+    if not g or "throw_angles" not in g or throw is None or throw >= len(g["throw_angles"]):
+        return None
+    a = math.radians(g["throw_angles"][throw])
+    r = g["crank_radius"]
+    return Vector((-r * math.sin(a), r * math.cos(a), g["throw_z"][throw]))
+
+
+def _engine_row(p, ta, tb, b_obj=None):
     """An engine link measured over every sampled moment of the loop: a rod's big end on its crankpin
     ("crank") and its small end on the piston's pin ("pin"), as the largest distance apart; a piston
     in its cylinder ("liner"): how far off the axis it strays, how much room is left above the crown
     at the top and below the lowest ring at the bottom, and its travel."""
     row = {"a": p["a"], "b": p["b"], "kind": p["kind"], "found": True}
-    if p["kind"] == "crank":
-        pin = Vector(p["pin_local_m"])
+    if p["kind"] == "crank":  # the crankpin the crankshaft was really built with, not where it was meant to be
+        pin = _built_crankpin(b_obj, p.get("throw")) or Vector(p["pin_local_m"])
         row["max_offset_m"] = round(max((ma.translation - mb @ pin).length for ma, mb in zip(ta, tb)), 6)
     elif p["kind"] == "pin":
         reach = Vector((0.0, p["length_m"], 0.0))

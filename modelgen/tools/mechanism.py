@@ -2088,7 +2088,7 @@ def _check_mounts(sheet, by, place, links):
     tools, refused here naming the part and how far off it is. Returns the pairs the built model is
     measured on as well (bpy_lib.measure: parts_on_their_mounts)."""
     tol = MOUNT_TOL_MM * MM
-    out, bad = [], []
+    out, bad, short = [], [], []
 
     def axis_of(name):
         return _col(place[name]["rotation"], 2)
@@ -2106,6 +2106,13 @@ def _check_mounts(sheet, by, place, links):
             check(gear, shaft, place[shaft]["centre"], axis_of(shaft), f"the axis of its shaft {shaft}")
             if abs(_dot(axis_of(gear), axis_of(shaft))) < 0.9999:
                 bad.append(f"{gear} does not turn about its shaft {shaft}'s axis")
+            length = place[shaft].get("length_mm") or by[shaft].get("length")
+            if length:  # the shaft must reach right through every part on it
+                h = abs(_dot(_sub(place[gear]["centre"], place[shaft]["centre"]), axis_of(shaft))) / MM
+                over = h + _extent(by[gear], None) / MM - length / 2
+                if over > MOUNT_TOL_MM:
+                    short.append(f"shaft {shaft} is too short: {gear} reaches {over:.1f} mm past its end; make it at "
+                                 f"least {math.ceil(2 * (h + _extent(by[gear], None) / MM))} mm long")
         elif l["kind"] == "bolt":
             bolt, part = l["a"], l["b"]
             check(part, bolt, place[bolt]["centre"], axis_of(bolt), f"the axis of its bolt {bolt}",
@@ -2126,6 +2133,8 @@ def _check_mounts(sheet, by, place, links):
                   {"a": n, "b": ps["carrier"], "kind": "pin_mount", "pin_local_m": [round(v, 9) for v in local]})
         check(ps["carrier"], ps["sun"], place[ps["sun"]]["centre"], axis_of(ps["sun"]), f"the axis of {ps['sun']}",
               {"a": ps["carrier"], "b": ps["sun"], "kind": "mount", "pin_local_m": [0.0, 0.0, 0.0]})
+    if short:  # a length the request gave: its numbers to change
+        raise MechanismError("; ".join(short))
     if bad:
         raise MechanismError("the tools laid this out wrong (please report it): " + "; ".join(bad))
     return out
@@ -2333,7 +2342,7 @@ def _engine_pair(l, by, place):
     a, b = by[l["a"]], by[l["b"]]
     if l["kind"] == "crank":
         return {"a": a["name"], "b": b["name"], "kind": "crank", "pin_local_m": place[a["name"]]["engine"]["pin_local"],
-                "length_m": a["length"] * MM}
+                "length_m": a["length"] * MM, "throw": a["throw"]}
     if l["kind"] == "pin":
         return {"a": a["name"], "b": b["name"], "kind": "pin", "length_m": a["length"] * MM}
     if l["kind"] == "ring":

@@ -165,6 +165,8 @@ def mesh_gates(report, pairs=None):
                   "mount": f"the axis of {r['b']}"}[r["kind"]]
             if r["max_offset_m"] > MOUNT_TOL:
                 bad.append(f"{r['a']} sits {r['max_offset_m'] * 1000:.2f} mm off {on}")
+            if r.get("beyond_end_m", 0) > MOUNT_TOL:
+                bad.append(f"{r['a']} stands {r['beyond_end_m'] * 1000:.2f} mm past the end of {r['b']}")
             if r.get("max_tilt_deg", 0) > MOUNT_TILT_DEG:
                 bad.append(f"{r['a']} is tilted {r['max_tilt_deg']:.2f} degrees from {on}")
         gates["parts_on_their_mounts"] = {
