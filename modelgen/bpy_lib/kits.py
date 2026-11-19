@@ -3002,27 +3002,31 @@ def valve(head_diameter, stem_diameter, length, seat_angle=45.0, bucket=None, na
 
 # --- planetary sets and worms -----------------------------------------------------------------------
 
-def carrier(radius, planets, pin_diameter, width, plate=None, bore=0.0, name="carrier"):
+def carrier(radius, planets, pin_diameter, width, plate=None, bore=0.0, pin_angles=None, name="carrier"):
     """A planet carrier: a plate behind the planets (-Z side) reaching each planet's pin at
-    `radius`, the pins standing +Z through the planets' bores, a boss on its axis. Axis Z. Slots:
-    "hub" (plate), "bore" (pins)."""
+    `radius`, the pins standing +Z through the planets' bores, a boss on its axis. pin_angles
+    (degrees, counterclockwise from local +X) are where the planets were laid out: the mechanism
+    sheet passes them, so each pin stands exactly in its planet's bore; left out, evenly from 0.
+    The pins' centres (local) are kept in obj["mg_gear"]["pins"]. Axis Z. Slots: "hub" (plate),
+    "bore" (pins)."""
     t = plate or 0.35 * width
     arm = 1.3 * pin_diameter
+    angles = [math.radians(a) for a in pin_angles] if pin_angles else \
+        [2 * math.pi * k / planets for k in range(int(planets))]
+    centres = [(radius * math.cos(a), radius * math.sin(a)) for a in angles]
     pts = []
-    for k in range(int(planets)):
-        a = 2 * math.pi * k / planets
-        pts += _circle2(radius * math.cos(a), radius * math.sin(a), arm, 16)
+    for x, y in centres:
+        pts += _circle2(x, y, arm, 16)
     pts += _circle2(0.0, 0.0, 0.45 * radius, 24)
     outline = _hull(pts)
     z0 = -width / 2 - 0.0012 - t
     pieces = [_slab(outline, z0, z0 + t, 1, name)]
-    for k in range(int(planets)):
-        a = 2 * math.pi * k / planets
-        pieces.append(_slab(_circle2(radius * math.cos(a), radius * math.sin(a), pin_diameter / 2, 24),
-                            z0 + 0.5 * t, width / 2 + 0.001, 2, name + "_pin"))
+    for x, y in centres:
+        pieces.append(_slab(_circle2(x, y, pin_diameter / 2, 24), z0 + 0.5 * t, width / 2 + 0.001, 2, name + "_pin"))
     holes = [_slab(_circle2(0.0, 0.0, bore / 2, 32), -1.0, 1.0, 2, name + "_bore")] if bore else []
     obj = _fuse(pieces, name, holes)
-    return _tag(obj, type="carrier", radius=radius, planets=int(planets), period=[1, int(planets)])
+    return _tag(obj, type="carrier", radius=radius, planets=len(centres),
+                pins=[[round(x, 7), round(y, 7), 0.0] for x, y in centres], period=[1, len(centres)])
 
 
 def worm(module, starts, pitch_diameter, length, pressure_angle=20.0, hand="right", bore=0.0, name="worm"):

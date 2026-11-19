@@ -93,7 +93,9 @@ MESH_GAP = 0.15         # and come no further apart than this share of a module 
 CENTRE_TOL = 0.002      # the centre distance may be off by this share
 RATIO_TOL = 0.01        # the speed ratio by this share
 CLASH_DEPTH = 0.0002    # any other two parts may pass this far into each other (0.2 mm), no further
-CAM_TOL = 0.00025       # a follower may sit this far into or off its cam (the profile is a polygon): 0.25 mm
+MOUNT_TOL = 0.00005      # a part on a shaft or pin may sit this far off its axis (0.05 mm), no further
+MOUNT_TILT_DEG = 0.1     # nor turn about an axis tilted further than this from it
+CAM_TOL = 0.00025      # a follower may sit this far into or off its cam (the profile is a polygon): 0.25 mm
 PIN_TOL = 0.00015      # a rod's ends may stray this far off their pins between keyed frames (0.15 mm)
 
 
@@ -155,6 +157,19 @@ def mesh_gates(report, pairs=None):
         gates["blades_clear"] = {"pass": not bad, "route": "assembly",
                                  "detail": "; ".join(bad) or "every wheel's blades clear its housing all the way round"}
     rows_all = [r for r in (report or {}).get("pairs", []) if r.get("found", True)]
+    mounted = [r for r in rows_all if r.get("kind") in ("shaft", "mount", "pin_mount") and "max_offset_m" in r]
+    if mounted:
+        bad = []
+        for r in mounted:
+            on = {"shaft": f"the axis of its shaft {r['b']}", "pin_mount": f"its pin on {r['b']}",
+                  "mount": f"the axis of {r['b']}"}[r["kind"]]
+            if r["max_offset_m"] > MOUNT_TOL:
+                bad.append(f"{r['a']} sits {r['max_offset_m'] * 1000:.2f} mm off {on}")
+            if r.get("max_tilt_deg", 0) > MOUNT_TILT_DEG:
+                bad.append(f"{r['a']} is tilted {r['max_tilt_deg']:.2f} degrees from {on}")
+        gates["parts_on_their_mounts"] = {
+            "pass": not bad, "route": "assembly",
+            "detail": "; ".join(bad) or "every gear, wheel and planet sits on its shaft or pin all through the loop"}
     cams = [r for r in rows_all if r.get("kind") == "cam"]
     if cams:
         bad = []

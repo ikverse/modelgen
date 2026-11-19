@@ -2048,6 +2048,15 @@ def layout(sheet):
                           "clearance_m": wheel_clearance(b["diameter"]) * MM})
             continue
         pairs.append(_pair_numbers(a, b, place))
+    for ps in sheet.get("planetary") or []:  # the carrier's pins where the planets were laid out, not apart
+        pc = place[ps["carrier"]]
+        rot = pc["rotation"]
+        pins = []
+        for n in ps["planets"]:
+            d = _sub(place[n]["centre"], pc["centre"])
+            pins.append([_dot(d, _col(rot, 0)), _dot(d, _col(rot, 1)), 0.0])
+        pc["pins_local_m"] = pins
+        pc["pin_angles_deg"] = [round(math.degrees(math.atan2(y, x)), 6) for x, y, _ in pins]
     for ps in sheet.get("planetary") or []:  # planets ride round: their mesh is checked, the set's ratio as a whole
         members = {ps["sun"], ps["ring"], *ps["planets"]}
         for pair in pairs:
@@ -2058,7 +2067,68 @@ def layout(sheet):
         ratio = rates[out]
         pairs.append({"a": ps[ps["input"]], "b": ps[out], "kind": "train", "ratio": float(abs(ratio)),
                       "same_direction": ratio > 0})
+    pairs += _check_mounts(sheet, by, place, links)
     return {"place": place, "order": order, "pairs": pairs}
+
+
+MOUNT_TOL_MM = 0.01  # how far, at most, a part laid out on a shaft or pin may sit off its axis
+
+
+def _off_line(point, origin, axis):
+    """How far a point is from the line through origin along axis, metres."""
+    d = _sub(point, origin)
+    return math.sqrt(max(_dot(d, d) - _dot(d, axis) ** 2, 0.0))
+
+
+def _check_mounts(sheet, by, place, links):
+    """Every part carried by another sits on it: a gear, wheel, bearing, pulley, sprocket or cam on its
+    shaft's axis (and turning about the same axis); a planet on its carrier's pin; a nut or washer on
+    its bolt; a carrier on its sun's axis; a follower or valve straight out from its cam's centre.
+    Checked on the laid-out numbers, before anything is built: a part off its mount is a fault in the
+    tools, refused here naming the part and how far off it is. Returns the pairs the built model is
+    measured on as well (bpy_lib.measure: parts_on_their_mounts)."""
+    tol = MOUNT_TOL_MM * MM
+    out, bad = [], []
+
+    def axis_of(name):
+        return _col(place[name]["rotation"], 2)
+
+    def check(part, mount, origin, axis, what, pair=None):
+        off = _off_line(place[part]["centre"], origin, axis)
+        if off > tol:
+            bad.append(f"{part} is {off / MM:.3f} mm off {what}")
+        if pair:
+            out.append(pair)
+
+    for l in links:
+        if l["kind"] == "shaft" and l["a"] in place and l["b"] in place:
+            gear, shaft = l["a"], l["b"]
+            check(gear, shaft, place[shaft]["centre"], axis_of(shaft), f"the axis of its shaft {shaft}")
+            if abs(_dot(axis_of(gear), axis_of(shaft))) < 0.9999:
+                bad.append(f"{gear} does not turn about its shaft {shaft}'s axis")
+        elif l["kind"] == "bolt":
+            bolt, part = l["a"], l["b"]
+            check(part, bolt, place[bolt]["centre"], axis_of(bolt), f"the axis of its bolt {bolt}",
+                  {"a": part, "b": bolt, "kind": "mount", "pin_local_m": [0.0, 0.0, 0.0]})
+        elif l["kind"] == "cam":
+            cam, f = l["a"], l["b"]
+            off = _off_line(place[cam]["centre"], place[f]["centre"], axis_of(f))
+            if off > tol:
+                bad.append(f"{f} is {off / MM:.3f} mm to the side of its cam {cam}'s centre")
+    for ps in sheet.get("planetary") or []:
+        pc = place[ps["carrier"]]
+        for n, local in zip(ps["planets"], pc.get("pins_local_m") or []):
+            orbit = _off_line(place[n]["centre"], place[ps["sun"]]["centre"], axis_of(ps["sun"]))
+            if abs(orbit - ps["radius"] * MM) > tol:
+                bad.append(f"{n} rides {orbit / MM:.3f} mm from the sun's axis, not {ps['radius']:g} mm")
+            pin = _add(pc["centre"], _apply(pc["rotation"], local))
+            check(n, ps["carrier"], pin, _col(pc["rotation"], 2), f"its pin on {ps['carrier']}",
+                  {"a": n, "b": ps["carrier"], "kind": "pin_mount", "pin_local_m": [round(v, 9) for v in local]})
+        check(ps["carrier"], ps["sun"], place[ps["sun"]]["centre"], axis_of(ps["sun"]), f"the axis of {ps['sun']}",
+              {"a": ps["carrier"], "b": ps["sun"], "kind": "mount", "pin_local_m": [0.0, 0.0, 0.0]})
+    if bad:
+        raise MechanismError("the tools laid this out wrong (please report it): " + "; ".join(bad))
+    return out
 
 
 def _radius(p):
@@ -2519,7 +2589,8 @@ def speeds(sheet):
             if cur not in (pair["a"], pair["b"]):
                 continue
             other = pair["b"] if pair["a"] == cur else pair["a"]
-            if other in rates or other in racks or pair["kind"] in ("housing", "cam", "planet", "train") + ENGINE_LINKS:
+            if other in rates or other in racks or pair["kind"] in ("housing", "cam", "planet", "train", "mount",
+                                                                    "pin_mount") + ENGINE_LINKS:
                 continue
             if pair["kind"] in ("drive",) or (pair["kind"] == "mesh" and "teeth" not in by[pair["a"]]):
                 ratio = Fraction(pair["ratio"]).limit_denominator(100000)  # a belt, chain or worm drive
@@ -2631,7 +2702,7 @@ def part_code(p, lay=None, by=None):
                 f"inlet_diameter={_m(inlet)}, kind={'turbine' if turbine else 'compressor'!r}, "
                 f"wall={_m(p['wall']) if p.get('wall') else None}, flanges={bool(p['flanges'])}, name={n!r})")
     elif t in STAGE4:
-        call = _stage4_call(p, by or {})
+        call = _stage4_call(p, by or {}, lay or {})
     elif t == "crankshaft":
         call = (f"k.crankshaft(stroke={_m(p['stroke'])}, crankpin_diameter={_m(p['crankpin_diameter'])}, "
                 f"journal_diameter={_m(p['journal_diameter'])}, pin_width={_m(p['pin_width'])}, "
@@ -2691,7 +2762,7 @@ def part_code(p, lay=None, by=None):
             f"def build():\n    return {call}\n")
 
 
-def _stage4_call(p, by):
+def _stage4_call(p, by, lay=None):
     """The kit call that builds a stage 4 part from its numbers (metres)."""
     t, n = p["type"], p["name"]
     if t == "bolt":
@@ -2746,7 +2817,11 @@ def _stage4_call(p, by):
         return (f"k.helical_gear({_m(mn)}, {p['teeth']}, {_m(p['width'])}, bore={_m(p['bore'])}, "
                 f"helix_angle={p['lead_angle']}, hand={p['hand']!r}, name={n!r})")
     if t == "carrier":
-        return (f"k.carrier({_m(p['radius'])}, {p['planets']}, {_m(p['pin'])}, {_m(p['width'])}, name={n!r})")
+        angles = ((lay or {}).get("place", {}).get(n) or {}).get("pin_angles_deg")
+        if not angles:
+            raise MechanismError(f"carrier {n}: its planets have not been laid out, so its pins have nowhere to go")
+        return (f"k.carrier({_m(p['radius'])}, {p['planets']}, {_m(p['pin'])}, {_m(p['width'])}, "
+                f"pin_angles={angles}, name={n!r})")
     raise MechanismError(f"no tool builds a {t}")
 
 
@@ -2819,7 +2894,7 @@ def motion_code(sheet, lay):
             if cur not in (pair["a"], pair["b"]):
                 continue
             other = pair["b"] if pair["a"] == cur else pair["a"]
-            if other in done:
+            if other in done or pair["kind"] in ("mount", "pin_mount"):  # measured only: nothing drives through it
                 continue
             done.add(other)
             todo.append(other)

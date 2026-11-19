@@ -287,7 +287,7 @@ def mesh_report(pairs, moments=12, reach=None):
     first, last = scene.frame_start, scene.frame_end
     span = last + 1 - first
     # parts fixed or pinned together are not clashes; a piston in its cylinder still must not touch it
-    joined = {frozenset((p["a"], p["b"])) for p in pairs if p["kind"] != "liner"}
+    joined = {frozenset((p["a"], p["b"])) for p in pairs if p["kind"] not in ("liner", "mount", "pin_mount")}
     tracked = {n: [] for n in by}
     samples = max(span, 24)
     for k in range(samples + 1):  # every frame (and more on a short loop): the matrices only
@@ -305,7 +305,8 @@ def mesh_report(pairs, moments=12, reach=None):
         dg = bpy.context.evaluated_depsgraph_get()
         solids = {n: _solid(o, dg) for n, o in by.items()}
         for p in pairs:
-            if p["kind"] in ("shaft", "drive", "train") + ENGINE or p["a"] not in solids or p["b"] not in solids:
+            if p["kind"] in ("shaft", "drive", "train", "mount", "pin_mount") + ENGINE or p["a"] not in solids \
+                    or p["b"] not in solids:
                 continue
             m = p.get("module_m") or 0.002
             depth, gap = _depth_and_gap(solids[p["a"]], solids[p["b"]], reach or 2.5 * m)
@@ -334,6 +335,9 @@ def mesh_report(pairs, moments=12, reach=None):
             continue
         if p["kind"] in ENGINE:
             out["pairs"].append(_engine_row(p, tracked[p["a"]], tracked[p["b"]]))
+            continue
+        if p["kind"] in ("shaft", "mount", "pin_mount"):
+            out["pairs"].append(_mount_row(p, tracked[p["a"]], tracked[p["b"]], _built_pins(by.get(p["b"]))))
             continue
         oa, ob = by[p["a"]], by[p["b"]]
         axis_a =(tracked[p["a"]][0].to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
@@ -374,6 +378,38 @@ def mesh_report(pairs, moments=12, reach=None):
 
 
 ENGINE = ("crank", "pin", "ring", "liner")
+
+
+def _built_pins(obj):
+    """The pins a built carrier really has (kits.carrier keeps their centres in its mg_gear), or None."""
+    import json
+    raw = obj.get("mg_gear") if obj is not None else None
+    try:
+        pins = json.loads(raw).get("pins") if raw else None
+    except (TypeError, ValueError):
+        return None
+    return [Vector(v) for v in pins] if pins else None
+
+
+def _mount_row(p, ta, tb, built_pins=None):
+    """A part carried by another, measured at every sampled moment: how far its own axis's origin
+    strays from the line it must sit on (a shaft's axis, a carrier's pin, a bolt's axis), and how far
+    its own axis tilts from that line. A planet is measured against the pins its carrier was really
+    built with (the nearest of them), not where they were meant to be. A gear standing beside its
+    shaft, or a planet off its pin, shows here even when nothing passes through anything."""
+    locals_ = built_pins if p["kind"] == "pin_mount" and built_pins else [Vector(p.get("pin_local_m") or (0.0, 0.0, 0.0))]
+    off, tilt = 0.0, 0.0
+    for ma, mb in zip(ta, tb):
+        axis = (mb.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        here = []
+        for local in locals_:
+            d = ma.translation - mb @ local
+            here.append((d - axis * d.dot(axis)).length)
+        off = max(off, min(here))
+        own = (ma.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
+        tilt = max(tilt, math.degrees(math.acos(max(-1.0, min(1.0, abs(own.dot(axis)))))))
+    return {"a": p["a"], "b": p["b"], "kind": p["kind"], "found": True, "max_offset_m": round(off, 7),
+            "max_tilt_deg": round(tilt, 4)}
 
 
 def _engine_row(p, ta, tb):

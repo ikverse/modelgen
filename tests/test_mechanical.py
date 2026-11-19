@@ -675,6 +675,42 @@ def test_a_planetary_set_turns_by_willis_and_spaces_its_planets_evenly():
         mc.clean({"parts": [{"name": "ps", "type": "planetary_set", "module": 2, "sun_teeth": 25, "planet_teeth": 24}]})
 
 
+def test_each_planet_sits_on_its_carriers_pin_and_a_part_off_its_mount_is_caught():
+    sheet, assumed = mc.clean(PLANETARY)
+    lay = mc.layout(sheet)
+    pl = lay["place"]
+    pc = pl["ps_carrier"]
+    for n, local in zip(sheet["planetary"][0]["planets"], pc["pins_local_m"]):
+        pin = mc._add(pc["centre"], mc._apply(pc["rotation"], local))
+        assert math.dist(pin, pl[n]["centre"]) < 1e-12  # the pin stands exactly where its planet was laid out
+    assert "pin_angles=[90.0, -150.0, -30.0]" in mc.scripts(sheet)[0]["parts/ps_carrier.py"]
+    kinds = [p["kind"] for p in lay["pairs"]]
+    assert kinds.count("pin_mount") == 3 and kinds.count("mount") == 1
+    # laid out wrong (a planet moved off its pin), the sheet is refused before anything is built
+    by = {p["name"]: p for p in sheet["parts"]}
+    pl["ps_planet2"]["centre"] = mc._add(pl["ps_planet2"]["centre"], [0.004, 0.0, 0.0])
+    with pytest.raises(mc.MechanismError, match="ps_planet2 is 4.000 mm off its pin"):
+        mc._check_mounts(sheet, by, pl, sheet["links"])
+    # and a gear moved beside its shaft
+    s2, _ = mc.clean(TURBO)
+    lay2 = mc.layout(s2)
+    lay2["place"]["compressor"]["centre"] = mc._add(lay2["place"]["compressor"]["centre"], [0.0, 0.0, 0.002])
+    with pytest.raises(mc.MechanismError, match="compressor is 2.000 mm off the axis of its shaft shaft"):
+        mc._check_mounts(s2, {p["name"]: p for p in s2["parts"]}, lay2["place"], s2["links"])
+
+
+def test_the_mount_gate_fails_a_planet_off_its_pin_even_when_nothing_clashes():
+    report = {"moments": 12, "clashes": [], "pairs": [
+        {"a": "planet2", "b": "carrier", "kind": "pin_mount", "found": True, "max_offset_m": 0.0124,
+         "max_tilt_deg": 0.0},
+        {"a": "wheel", "b": "shaft", "kind": "shaft", "found": True, "max_offset_m": 0.0, "max_tilt_deg": 0.0}]}
+    gates = checks.mesh_gates(report)
+    assert gates["no_clashes"]["pass"] and not gates["parts_on_their_mounts"]["pass"]
+    assert "planet2 sits 12.40 mm off its pin on carrier" in gates["parts_on_their_mounts"]["detail"]
+    report["pairs"][0]["max_offset_m"] = 0.00001
+    assert checks.mesh_gates(report)["parts_on_their_mounts"]["pass"]
+
+
 def test_a_worm_drives_its_wheel_one_tooth_a_turn_from_below():
     sheet, assumed = mc.clean(WORM)
     lay = mc.layout(sheet)
@@ -908,7 +944,7 @@ def test_every_gear_tool_makes_one_closed_solid_at_its_real_size(tmp_path):
 @pytest.mark.blender
 @pytest.mark.parametrize("raw, gate", [(FASTENERS, "no_clashes"), (BELT, "speed_ratio"), (CHAIN, "no_clashes"),
                                        (CAM, "follower_contact"), (VALVE, "follower_contact"),
-                                       (PLANETARY, "teeth_clear"), (WORM, "teeth_clear")],
+                                       (PLANETARY, "parts_on_their_mounts"), (WORM, "teeth_clear")],
                          ids=["fasteners", "belt", "chain", "cam", "valve", "planetary", "worm"])
 def test_every_stage_4_drive_builds_and_runs_with_every_check_passed(raw, gate):
     sheet, assumed = mc.clean(raw)

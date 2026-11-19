@@ -18,10 +18,13 @@ criteria:
     name: Meshing
     weight: 3
     guide: >
-      In every frame of the motion strip each tooth sits in its mate's gap, the pitch circles touch,
-      no tooth passes through another and none floats clear; shafts run through their bores; parts on
-      one shaft turn together. The geometric checks' mesh gates measure this at 12 moments: a failed
-      one caps this at 4. 10: meshes like a real gearbox all through the loop.
+      First: every gear, wheel, pulley, sprocket and bearing sits on its shaft (the shaft through the
+      middle of its bore), every planet on its carrier's pin, a nut on its bolt. Any part beside its
+      shaft or off its pin scores 0 here, whatever else is right. Then: in every frame of the motion
+      strip each tooth sits in its mate's gap, the pitch circles touch, no tooth passes through another
+      and none floats clear; parts on one shaft turn together. The geometric checks' mesh gates measure
+      this at 12 moments: a failed one caps this at 4. 10: meshes like a real gearbox all through the
+      loop.
   - id: motion
     name: Motion reads clearly
     weight: 2
@@ -55,6 +58,11 @@ gates:
   - id: on_floor
     name: On the floor
     guide: The lowest point of the model is at Z = 0.
+  - id: parts_on_their_mounts
+    name: Parts on their shafts and pins
+    guide: >
+      Every gear, wheel, bearing and planet sits on its shaft or pin (within 0.05 mm, square to it) at
+      every moment of the loop.
   - id: teeth_clear
     name: Teeth clear
     guide: Meshing teeth never cut into each other at any of the 12 moments across the loop.

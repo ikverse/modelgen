@@ -107,10 +107,17 @@ between frames or that turns the wrong way, a ball in the wrong place, a part le
 bounce), which go to the animator.
 
 ## Mechanisms: teeth and meshing first
+Before anything else, look at how each part is carried: every gear, wheel, pulley, sprocket and
+bearing sits on its shaft, the shaft through the middle of its bore; every planet on its carrier's
+pin; a nut and washer on their bolt. A gear beside its shaft, or a pin standing in the gap between
+planets, is a broken model however well it renders: score meshing 0, say which part and where, and
+route it to `assembly`. The parts_on_their_mounts gate measures this at every moment of the loop.
+
 A mechanical part or mechanism (gears, racks, shafts) is scored by its own rubric: tooth shape,
 meshing, motion, proportions, the look, in that order. Its spec carries the mechanism sheet (every
 part's module, tooth count and connections) and its checks carry the mesh gates, measured at 12
-moments across the loop: teeth_clear, teeth_engaged, centre_distance, speed_ratio, no_clashes. You
+moments across the loop: parts_on_their_mounts, teeth_clear, teeth_engaged, centre_distance,
+speed_ratio, no_clashes. You
 see the stills and the motion strip: in every frame each tooth must sit in its mate's gap, a small
 gear must visibly turn faster than a big one, and meshing external gears opposite ways. Compare the
 teeth with the reference photos: curved involute flanks, rounded roots, the sheet's tooth count.
