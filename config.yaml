@@ -60,6 +60,10 @@ cars:
 # builds a stylised figure instead.
 characters:
   data: assets_cc0/anny_body
+  # A motion asked for in words: true would use a text-to-motion model (NVIDIA Kimodo); it needs about
+  # 17 GB of video memory or 16 GB of memory for its text encoder, more than this PC has, so a request
+  # in words takes the closest clip from the animation library either way.
+  text_motion: false
 
 # The motion a moving model loops through (wheels turning, a bounce; smoke and steam are drawn by
 # the page at the animator's markers). The loop plays in the viewer and is carried in the GLB and FBX.
