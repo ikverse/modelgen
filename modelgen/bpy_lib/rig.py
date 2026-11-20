@@ -1872,10 +1872,20 @@ def _first(*calls):
     raise error
 
 
+def _skeletons(objs):
+    """The armatures that drive any of these meshes (a character's skeleton)."""
+    out = []
+    for o in objs:
+        for m in getattr(o, "modifiers", []):
+            if m.type == "ARMATURE" and m.object is not None and m.object not in out:
+                out.append(m.object)
+    return out
+
+
 def _select(objs):
-    """Select the model and, with it, the motion's empties (markers and spin pivots), which the GLB
-    and FBX carry; the still formats only take meshes anyway."""
-    objs = list(objs) + motion.motion_objects()
+    """Select the model and, with it, the motion's empties (markers and spin pivots) and a
+    character's skeleton, which the GLB and FBX carry; the still formats only take meshes anyway."""
+    objs = list(objs) + motion.motion_objects() + _skeletons(objs)
     for o in bpy.context.scene.objects:
         o.select_set(o in objs)
     bpy.context.view_layer.objects.active = objs[0]
@@ -1919,7 +1929,7 @@ def export_all(out_dir, basename="model"):
     jobs = {
         "glb": _export_gltf,
         "fbx": lambda p: bpy.ops.export_scene.fbx(filepath=p, use_selection=True, bake_anim=True,
-                                                  use_custom_props=True),
+                                                  use_custom_props=True, add_leaf_bones=False),
         "obj": lambda p: _first(lambda: bpy.ops.wm.obj_export(filepath=p, export_selected_objects=True),
                                 lambda: bpy.ops.export_scene.obj(filepath=p, use_selection=True)),
         "stl": lambda p: _first(lambda: bpy.ops.wm.stl_export(filepath=p, export_selected_objects=True),

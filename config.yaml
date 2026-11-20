@@ -54,6 +54,13 @@ game:
 cars:
   generator: remix
 
+# How a request for a person is built: the character designer writes a character sheet, then the
+# body, its 53-bone game skeleton and skin weights are made from the CC0 MakeHuman body data in this
+# folder (as packaged by the Anny body model), with no build team. Without the folder, the team
+# builds a stylised figure instead.
+characters:
+  data: assets_cc0/anny_body
+
 # The motion a moving model loops through (wheels turning, a bounce; smoke and steam are drawn by
 # the page at the animator's markers). The loop plays in the viewer and is carried in the GLB and FBX.
 motion:
@@ -90,6 +97,7 @@ caps:
   shell_architect: {max_turns: 8, max_budget_usd: 1.20}   # plans a car (or other shell) as a sheet
   shell_builder:   {max_turns: 24, max_budget_usd: 2.50}  # shapes the one continuous body, on Opus
   talk:      {max_turns: 4,  max_budget_usd: 0.15}   # you messaging one agent directly
+  character_designer: {max_turns: 6, max_budget_usd: 0.30}   # turns a request for a person into a character sheet
 
 updates:
   # An installed copy checks this GitHub repository's latest release (only its version is read).

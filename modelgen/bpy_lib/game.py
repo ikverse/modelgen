@@ -81,8 +81,8 @@ def _centre_pivot(objs):
     keyframes hold positions, and it was built about its own centre line anyway."""
     lo, hi = helpers.bounds(objs)
     shift = Vector((-(lo.x + hi.x) / 2, -(lo.y + hi.y) / 2, -lo.z))
-    if shift.length < 1e-6 or _animated():
-        return [0.0, 0.0, 0.0]
+    if shift.length < 1e-6 or _animated() or rig._skeletons(objs):
+        return [0.0, 0.0, 0.0]  # a character is built standing at the origin; moving its skin off its skeleton would tear it
     roots = [o for o in objs if o.parent is None or o.parent not in objs]
     for obj in roots:
         obj.matrix_world.translation = obj.matrix_world.translation + shift

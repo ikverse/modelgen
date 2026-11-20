@@ -159,6 +159,24 @@ The team works in English internally; the director always answers in the languag
      roofs, a glass tower, wheels in arches, trees, benches, fences, lamp posts. A scene can also
      place ready-made catalogue models as parts.
 
+## How a person is made
+
+A request for a person ("a cool guy", "an old grandma", "baby girl", "a nerd") goes to the
+**character path**, not the team. The character designer agent turns your words into a character
+sheet (age, sex, height, build, ancestry, skin tone), and the body is built from it exactly in one
+Blender run: MakeHuman's free body data (CC0, as packaged by the Anny body model, in
+`assets_cc0\anny_body`) covers a newborn to a 90-year-old, at the real height for the age and sex
+unless you give one. Every character gets a **53-bone game skeleton** (the usual names: `pelvis`,
+`spine_01`, `upperarm_l`, fingers...) and skin weights, kept in the GLB and FBX files and in the game
+files (20,000 triangles, lower-detail versions keep the skeleton). The viewer plays its clips; a
+clip picker appears when it has more than one. Ask for changes in words ("make her ten years
+older"). A robot, an animal, a statue or a monster is not a person: the team builds those as
+stylised figures.
+
+So far a character is a bare, uniformly coloured body with eyes and one test clip; hair, clothes,
+drawn styles (cartoon, anime), real clips (idle, walk, run) and hair and cloth physics are the next
+stages of `CHARACTERS_PLAN.md`.
+
 Every finished model, however it was made, also gets **game-ready files** in its `game` folder
 (they are listed in the Export stage and are in the *All of it* zip): `<name>_game.glb` within the triangle limit of its family, with
 the pivot at the centre of its base and real-world scale, `<name>_LOD1.glb` and `_LOD2.glb` at half

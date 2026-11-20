@@ -413,10 +413,11 @@ def _plan(project, number):
 
 def _path(project, number, plan=None):
     """How a version was made: from a ready-made model (library), by the car generator (remix),
-    as a car body from a sheet (shell), or part by part by the team (team)."""
+    as a car body from a sheet (shell), as a rigged person from a character sheet (character), or
+    part by part by the team (team)."""
     plan = _plan(project, number) if plan is None else plan
     kind = plan.get("kind")
-    return kind if kind in ("library", "remix", "shell") else "team"
+    return kind if kind in ("library", "remix", "shell", "character") else "team"
 
 
 def brief(project, number=None):

@@ -547,6 +547,33 @@ def engineer_tools(sink):
                       MECHANISM_SCHEMA, submit)]
 
 
+CHARACTER_SCHEMA = {"type": OBJ, "properties": {
+    "character": {"type": OBJ, "description": "{name, age, sex, height_cm, build, muscle, weight, proportions, "
+                                              "ancestry, skin, eyes, style, look}; leave out what you have no "
+                                              "reason to set"},
+    "notes": {"type": "string", "description": "anything the person should know: a style the tools cannot make "
+                                               "yet, a named character you did not copy"}},
+    "required": ["character"]}
+
+
+def character_designer_tools(sink):
+    """submit_character: the sheet is checked by the same code that builds it (tools.character); a
+    sheet that cannot be built comes back with the field named, to fix and submit again."""
+    from . import character
+
+    def submit(args):
+        try:
+            sheet, assumed = character.clean(args.get("character") or {})
+        except character.CharacterError as exc:
+            return {"ok": False, "error": str(exc)}
+        sink.update(character=sheet, assumed=assumed, notes=str(args.get("notes") or ""))
+        return {"ok": True, "character": character.describe(sheet), "filled_in": assumed}
+
+    return [AgentTool("submit_character", "Submit the character sheet. It is checked at once: a mistake comes back "
+                      "with the field named; fix it and submit again. Returns what was filled in by default.",
+                      CHARACTER_SCHEMA, submit)]
+
+
 def caster_tools(sink, ids):
     """choose: the caster names the ready-made model that is the object asked for, or "none"."""
     def choose(args):

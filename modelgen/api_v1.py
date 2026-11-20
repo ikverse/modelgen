@@ -72,6 +72,11 @@ def part_types():
     return jobs.parts_catalogue()
 
 
+@router.get("/characters", dependencies=[Depends(with_key)])
+def character_fields():
+    return jobs.characters_catalogue()
+
+
 @router.get("/models", dependencies=[Depends(with_key)])
 def find_models(q: str = "", limit: int = 10, min_score: float = jobs.DEFAULTS["min_score"]):
     if not q.strip():

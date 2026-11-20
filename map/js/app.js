@@ -532,6 +532,7 @@ window.MG = window.MG || {};
     library: ['Ready-made', 'Made from a free ready-made model, with no build team'],
     remix: ['Car generator', 'Made by the car generator from a free base car'],
     shell: ['Car body', 'The team shapes the car as one body from a sheet'],
+    character: ['Character', 'Built as a rigged, animated person from a character sheet, with no build team'],
     team: ['Team build', 'The team builds it part by part']
   };
   const STUCK = ['failed', 'stopped', 'interrupted'];

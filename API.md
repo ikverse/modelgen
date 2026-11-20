@@ -41,6 +41,8 @@ Errors come back as `{"detail": "what is wrong"}` with status 400 (a bad request
    - a car is made by the car generator in under a minute (`car_generator`);
    - a mechanical part the part tools make (gears, racks, shafts) is built from its numbers in 1 to 3
      minutes with no agents (`part_tools`; see Mechanisms);
+   - a person (a baby, a girl, an old man, a nerd...) is built as a rigged, animated game character
+     from a character sheet in a few minutes (`character`; see Characters);
    - anything else is built by the agent team (`built`), roughly 20–60+ minutes per version.
 4. **Nobody is asked anything.** An agent that would ask a question decides itself. Reaching the
    job's `budget_usd`, or today's spending limit, stops the build instead of asking.
@@ -107,6 +109,7 @@ If this call fails, ModelGen is not running: fall back to something else. Do not
 | `colours` | the palette | explainer colour per part, `{"wheel": "#2e86ab"}` |
 | `mechanism` | | a mechanical part or mechanism by its numbers (see Mechanisms); `object` may then be left out |
 | `design` | | a Village vector design to match in 3D, instead of `mechanism` (see From a Village design) |
+| `character` | | a person by their character sheet (see Characters); `object` may then be left out |
 | `reuse` | `true` | use a model made before when one fits |
 | `max_versions` | `2` | 1 to 5 |
 | `min_score` | `70` | 0 to 100: the score `passed` needs (the page shows it divided by 10) |
@@ -160,6 +163,45 @@ each output.
 - `GET /v1/models/{name}`: one accepted model with all its files.
 - `GET /v1/parts`: every part type the part tools build, with its fields, units, allowed ranges and
   defaults; also the styles, angles and the explainer palette.
+- `GET /v1/characters`: the fields of a character sheet, with units, ranges and defaults; the
+  skeleton and the clips a character comes with.
+
+## Characters (people)
+
+A request for a person ("a cool guy", "an old grandma", "baby girl", "a nerd") is built by the
+character path: the character designer agent (about $0.05) writes a character sheet, then the body
+is made from it exactly, with no build team. A job can instead carry the sheet itself as `character`;
+then no agent runs at all (`cost_usd` 0):
+
+```json
+{"client": "village", "character": {"name": "cool guy", "age": 26, "sex": "male", "build": "athletic"},
+ "outputs": ["game", "full"]}
+```
+
+| field | | |
+|---|---|---|
+| `age` | `30` | years, 0 to 95: 0.5 is a six-month-old baby, 8 a child, 80 an old person |
+| `sex` | `neutral` | `female`, `male` or `neutral` |
+| `height_cm` | the median for the age and sex | 40 to 230 |
+| `build` | `average` | `skinny`, `slim`, `average`, `athletic`, `muscular`, `stocky`, `chubby`, `heavy` |
+| `muscle`, `weight`, `proportions` | from `build`; `0.5` | 0 to 1, 0.5 average; they override `build` |
+| `ancestry` | an even mix | `african`, `asian` or `caucasian`, or shares `{"asian": 3, "caucasian": 1}` |
+| `skin`, `eyes` | typical for the ancestry | `#rrggbb` |
+| `style` | `realistic` | the only style so far; drawn styles come later |
+| `look` | | hair, clothes and face in words (used once characters are dressed) |
+
+Every value filled in is listed in `assumed`; a sheet that cannot be built is refused with the
+field named (`character.age must be from 0.0 to 95.0, not 130`). The job's answer has `source:
+"character"` and `character: {"key", "sheet"}`.
+
+What you get: the body (MakeHuman's free CC0 body data, newborn to 90 years) at the real height,
+standing on the floor at the origin, Z up, facing -Y, with a **53-bone game skeleton** (`pelvis`,
+`spine_01`..`03`, `neck_01`, `head`, `clavicle_l`, `upperarm_l`, `lowerarm_l`, `hand_l`, three bones
+per finger, `thigh_l`, `calf_l`, `foot_l`, `ball_l` and the same on the right) and skin weights of
+at most four bones per vertex, in the GLB and FBX files (full and game). The game file is held to
+20 000 triangles, with lower-detail versions that keep the skeleton. It carries one clip so far,
+`rig_test` (a 4-second loop that moves every main joint); real clips (idle, walk, run...), hair,
+clothes and drawn styles come in the next stages.
 
 ## Mechanisms (gears and other mechanical parts)
 

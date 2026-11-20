@@ -307,7 +307,7 @@ export function createViewer(container) {
   let disposables = [];     // geometries and materials made for the current model
 
   // ---- motion: the animator's loop, puffs at the smoke and steam markers, the sliding ground
-  let mixer = null, clips = [], playing = false, fx = [], travel = null;
+  let mixer = null, clips = [], playing = false, fx = [], travel = null, currentClip = null;
   const clock = new THREE.Clock();
   let puffTexture = null;
   const FX_COLOURS = { smoke: 0x4a4a4a, steam: 0xf4f4f4 };
@@ -348,11 +348,21 @@ export function createViewer(container) {
     return { node, kind: u.mg_fx, size, rate, group, puffs, next: 0, origin: new THREE.Vector3() };
   }
 
+  // A rigged character carries named clips (idle, walk...): one plays at a time and the page picks
+  // it. Any other model's clips are parts of one motion and all play together.
+  function isCharacter() {
+    let skinned = false;
+    if (model) model.traverse((o) => { if (o.isSkinnedMesh) skinned = true; });
+    return skinned;
+  }
+
   function setupMotion(gltf) {
     clips = gltf.animations || [];
+    currentClip = null;
     if (clips.length) {
       mixer = new THREE.AnimationMixer(model);
-      clips.forEach((c) => mixer.clipAction(c).play());
+      if (isCharacter()) playClip(clips[0].name);
+      else clips.forEach((c) => mixer.clipAction(c).play());
     }
     model.traverse((o) => {
       const u = o.userData || {};
@@ -373,6 +383,37 @@ export function createViewer(container) {
   }
 
   function hasMotion() { return !!(clips.length || fx.length); }
+  // The named clips a character can play ([] for any other model), and the one playing.
+  function clipNames() { return isCharacter() ? clips.map((c) => c.name) : []; }
+  function playClip(name) {
+    const clip = clips.find((c) => c.name === name);
+    if (!clip || !mixer) return false;
+    mixer.stopAllAction();
+    mixer.clipAction(clip).reset().play();
+    currentClip = name;
+    if (clipPick && clipPick.value !== name) clipPick.value = name;
+    if (!playing) setPlaying(true);
+    return true;
+  }
+
+  // The clip picker the viewer draws itself over the view's bottom-left corner: shown only for a
+  // character with more than one clip.
+  let clipPick = null;
+  function showClipPicker() {
+    if (clipPick) { clipPick.remove(); clipPick = null; }
+    const names = clipNames();
+    if (names.length < 2) return;
+    clipPick = document.createElement('select');
+    clipPick.className = 'v3-clip-pick';
+    clipPick.title = 'Choose the animation clip to play';
+    clipPick.setAttribute('aria-label', clipPick.title);
+    clipPick.style.cssText = 'position:absolute;left:8px;bottom:8px;z-index:2;max-width:180px;padding:3px 6px;'
+      + 'border:1px solid rgba(128,128,128,.45);border-radius:6px;background:rgba(255,255,255,.88);color:#222;font:12px system-ui,sans-serif';
+    names.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n.replace(/_/g, ' '); clipPick.appendChild(o); });
+    clipPick.value = currentClip || names[0];
+    clipPick.addEventListener('change', () => { playClip(clipPick.value); emit('clip', { clip: clipPick.value }); });
+    container.appendChild(clipPick);
+  }
   function setPlaying(on) { playing = hasMotion() && !!on; clock.getDelta(); return playing; }
   function isPlaying() { return playing; }
 
@@ -1299,15 +1340,17 @@ export function createViewer(container) {
     applyMode();
     makeGrid();
     setupMotion(gltf);
+    showClipPicker();
     if (!before) setView('iso', false);
     else if (!sameFrame(before, modelBox)) fit(false);
     updateDims();
-    emit('load', { stats: getStats(), parts: getParts(), motion: hasMotion(), playing });
+    emit('load', { stats: getStats(), parts: getParts(), motion: hasMotion(), playing, clips: clipNames() });
   }
 
   function clear() {
     tween = null;
     clearMotion();
+    if (clipPick) { clipPick.remove(); clipPick = null; }
     if (measureOn || mpts.length) clearMeasure();
     if (section.on) setSection(null);
     if (selected != null || selMeshes.size) select(null);
@@ -1392,7 +1435,7 @@ export function createViewer(container) {
   return {
     load, clear, reset, setAutoRotate, setWireframe, setLighting, nextLighting,
     refreshBackground: background, hasModel: () => !!model,
-    hasMotion, setPlaying, isPlaying,
+    hasMotion, setPlaying, isPlaying, clipNames, playClip, getClip: () => currentClip,
     on(name, fn) { (listeners[name] = listeners[name] || []).push(fn); },
     fit, setView, setOrtho, isOrtho, setRotateSpeed,
     setDisplayMode, getDisplayMode: () => mode,

@@ -218,6 +218,17 @@ FAMILIES = {
             "lamps that show the body's colour mean they were built as plates: ask for the body to be rebuilt "
             "with them as openings (target `plan` when they are separate parts)."),
     },
+    "person": {
+        "what": "a person as a rigged, animated game character: any age from a baby to an old person, any sex and "
+                "build, realistic or in a drawn style (cartoon, anime)",
+        "words": r"persons?|people|humans?|man|men|woman|women|boys?|girls?|bab(y|ies)|infants?|toddlers?|kids?|"
+                 r"child|children|teens?|teenagers?|guys?|gals?|lad(y|ies)|gentlem[ae]n|grand(ma|pa|mother|father)s?|"
+                 r"nerds?|geeks?|athletes?|students?|soldiers?|doctors?|nurses?|teachers?|farmers?|workers?|"
+                 r"businessm[ae]n|businesswom[ae]n|police(m[ae]n|wom[ae]n)?|firefighters?|chefs?|grannies|granny|"
+                 r"elders?|elderly|adults?|humanoids?",
+        "budget": 20000,
+        "kit": [],
+    },
     "character": {
         "what": "a stylised figure: toy figure, mascot, statue, robot, animal, creature",
         "words": r"characters?|figures?|figurines?|mascots?|statues?|robots?|dolls?|animals?|creatures?|monsters?|"
@@ -276,6 +287,7 @@ _GUESS = [(name, re.compile(rf"\b({f['words']})\b", re.IGNORECASE)) for name, f 
 # A scene names other families' things ("a park with benches"), so it is asked first; a vehicle
 # before a building ("a bus station" is a building, but "a school bus" is a bus: the last word wins below).
 _ORDER = ["scene", "vehicle", "building", "device", "furniture", "container", "character", "mechanical"]
+_GUESS_SCENE = dict(_GUESS)["scene"]  # "a park with people" is a scene, not a person
 # A part named by its own word is the part, not the machine it comes from: "a truck gearbox", "car engine
 # piston" and "bicycle sprocket" are mechanical parts, whichever word comes last.
 _MECHANICAL_FIRST = re.compile(r"\b(gears?|gearbox(es)?|cogs?|cogwheels?|sprockets?|pistons?|crank ?shafts?|"
@@ -285,6 +297,26 @@ _MECHANICAL_FIRST = re.compile(r"\b(gears?|gearbox(es)?|cogs?|cogwheels?|sprocke
                                r"chain drives?|worm (gears?|drives?|wheels?)|planetary|epicyclic|cam followers?|"
                                r"cams? and followers?|poppet valves?|valve springs?|coil springs?|compression springs?|"
                                r"extension springs?|hex bolts?|bolts? and nuts?|nuts? and bolts?)\b", re.IGNORECASE)
+
+
+# A person is built by the character path (a rigged body, tools.character); a robot, an animal, a
+# creature, a statue or a toy is not a person even when a person word comes with it ("robot man").
+_PERSON = re.compile(rf"\b({FAMILIES['person']['words']})\b", re.IGNORECASE)
+_STYLED_CHARACTER = re.compile(r"\b(anime|manga|cartoon|toon|chibi|shonen|shounen|realistic|stylized|stylised|"
+                               r"dragon ?ball|attack on titan|game)\b.*\bcharacters?\b|\bcharacters?\b.*\b(anime|manga|"
+                               r"cartoon|toon|chibi|shonen|shounen|realistic|stylized|stylised|dragon ?ball|"
+                               r"attack on titan)\b", re.IGNORECASE)
+_NOT_A_PERSON = re.compile(r"\b(robots?|androids?|cyborgs?|mechs?|aliens?|zombies?|monsters?|creatures?|"
+                           r"dragons?(?! ?ball)|dinosaurs?|animals?|dogs?|cats?|horses?|birds?|bears?|rabbits?|"
+                           r"fish(es)?|statues?|figurines?|toys?|dolls?|mascots?|skeletons?|ghosts?|snowm[ae]n|"
+                           r"scarecrows?|mannequins?)\b", re.IGNORECASE)
+
+
+def person_word(text):
+    """Whether the text asks for a person (a man, a baby, a nerd, an anime character...) and not a
+    robot, an animal, a creature, a statue or a toy."""
+    text = str(text or "")
+    return bool(_PERSON.search(text) or _STYLED_CHARACTER.search(text)) and not _NOT_A_PERSON.search(text)
 
 
 def mechanical_word(text):
@@ -300,6 +332,8 @@ def guess(text):
     text = str(text or "")
     if mechanical_word(text):
         return "mechanical"
+    if person_word(text) and not _GUESS_SCENE.search(text):
+        return "person"
     best, where = "general", -1
     for name in _ORDER:
         rx = dict(_GUESS)[name]

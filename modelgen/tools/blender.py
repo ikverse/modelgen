@@ -83,6 +83,12 @@ try:
         elif kind == "measure":
             result["outputs"]["measure"] = measure.measure_scene(step.get("floor_tolerance", 0.002),
                                                                  step.get("contact_tolerance", 0.0015))
+        elif kind == "character":
+            from bpy_lib import character_body
+            result["outputs"]["character"] = character_body.build_character(step)
+        elif kind == "rig_report":
+            from bpy_lib import character_body
+            result["outputs"]["rig_report"] = character_body.rig_report()
         elif kind == "mesh_check":
             result["outputs"]["mesh_check"] = measure.mesh_report(step["pairs"], step.get("moments", 12))
         elif kind == "part_measure":

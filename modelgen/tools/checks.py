@@ -233,6 +233,43 @@ def parts_checks(measure, mesh, floor_tolerance=None):
     return out
 
 
+MAX_STRETCH = 4.0  # an edge in a test pose more than 4x longer or shorter than at rest: a vertex on the wrong bone
+MIN_BONES = 50  # the game skeleton has 53: spine, neck, head, arms, legs, all five fingers
+
+
+def character_checks(made, rig, sheet, floor_tolerance=None):
+    """The checks a character built by the character path is held to in place of the critic: the
+    height the sheet asks for, standing on the floor, a full game skeleton, every vertex skinned
+    with at most four bones, and the skin following the bones in test poses."""
+    tol = floor_tolerance if floor_tolerance is not None else float(config.get("model", "floor_tolerance_m", 0.002))
+    made, rig = made or {}, rig or {}
+    gates = {}
+    want = float(sheet.get("height_cm") or 0) / 100
+    got = float(made.get("height") or 0)
+    gates["correct_size"] = {"pass": want > 0 and abs(got - want) <= 0.02 * want,
+                             "detail": f"{got * 100:.1f} cm tall, the sheet asks for {want * 100:.1f} cm"}
+    ground = float(made.get("ground") or 0)
+    gates["on_floor"] = {"pass": abs(ground) <= tol, "detail": f"lowest point at Z = {ground:.4f} m"}
+    bones = int(rig.get("bones") or 0)
+    gates["skeleton"] = {"pass": bool(rig.get("rig")) and bones >= MIN_BONES,
+                         "detail": f"{bones} bones" if rig.get("rig") else "no skeleton"}
+    loose = {k: v for k, v in (rig.get("unweighted") or {}).items() if v}
+    most = int(rig.get("max_influences") or 0)
+    gates["skinned"] = {"pass": bool(rig.get("skinned")) and not loose and 0 < most <= 4,
+                        "detail": ("every vertex follows the skeleton, at most %d bones each" % most) if not loose
+                        else "vertices with no bone: " + ", ".join(f"{k} ({v})" for k, v in loose.items())}
+    stretch = rig.get("stretch") or {}
+    worst = max(stretch.values()) if stretch else None
+    bad = [k for k, v in stretch.items() if v > MAX_STRETCH]
+    gates["skin_follows"] = {"pass": worst is not None and not bad,
+                             "detail": "no test poses" if worst is None else
+                             (f"in the test poses edges stretch at most {worst:.2f}x" if not bad else
+                              "the skin tears in: " + ", ".join(f"{k} ({stretch[k]:.1f}x)" for k in bad))}
+    out = {"passed": all(g["pass"] for g in gates.values()), "gates": gates, "warnings": []}
+    out["triangles"] = sum(int(p.get("faces") or 0) * 2 for p in (made.get("parts") or {}).values())
+    return out
+
+
 def part_report(measure, expected=None, tol=None):
     """What a builder is told about the part it just built."""
     tol = tol if tol is not None else float(config.get("model", "part_size_tolerance", 0.03))

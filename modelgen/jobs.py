@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import config, db, pipeline, runner, uploads
 from .tools import agent_tools as at
-from .tools import asset_catalog, blender, mechanism
+from .tools import asset_catalog, blender, character, mechanism
 from .tools import design as design_tools
 
 OUTPUTS = ("game", "full", "views", "motion", "exploded", "cutaway")
@@ -123,9 +123,19 @@ def clean_request(payload):
         if matched:
             assumed = [f"from the design: {n} has {p['teeth']} teeth, module {p['module_mm']:g} mm "
                        f"({matched['mm_per_px']:g} mm a pixel)" for n, p in matched["parts"].items()] + assumed
+    person, person_assumed = None, []
+    if payload.get("character") not in (None, "", {}):
+        if sheet:
+            raise JobError("give character or mechanism, not both")
+        try:
+            person, person_assumed = character.clean(payload["character"])
+        except character.CharacterError as exc:
+            raise JobError(str(exc))
     obj = " ".join(str(payload.get("object") or "").split())
     if not obj and sheet:
         obj = mechanism.describe(sheet)
+    if not obj and person:
+        obj = character.who(person)
     if not obj:
         raise JobError("object is required: what to make, in a few words (\"fire hydrant\")")
     if len(obj) > 200:
@@ -180,6 +190,8 @@ def clean_request(payload):
            "references": [str(r) for r in references], "angle": angle, "colours": colours, "cut": cut}
     if sheet:
         req["mechanism"], req["assumed"] = sheet, assumed
+    if person:
+        req["character"], req["assumed"] = person, person_assumed
     if matched:
         req["design_match"] = matched
     return client, key, req
@@ -236,7 +248,7 @@ def _reference(ref):
 
 def _same(a, b):
     keys = ("object", "notes", "size", "outputs", "style", "camera", "reuse", "max_versions", "min_score",
-            "budget_usd", "references", "angle", "colours", "mechanism", "cut")
+            "budget_usd", "references", "angle", "colours", "mechanism", "cut", "character")
     return all(a.get(k) == b.get(k) for k in keys)
 
 
@@ -309,6 +321,8 @@ def source_of(project, number):
         return "ready_made"
     if pipeline.parts_sheet(project, number) is not None:
         return "part_tools"
+    if pipeline.character_sheet(project, number) is not None:
+        return "character"
     return "built"
 
 
@@ -321,6 +335,24 @@ def _mechanism_record(project, number):
         return {}
 
 
+def _character_record(project, number):
+    """A version's character.json (the sheet, what was filled in, its key), or {}."""
+    path = pipeline.version_dir(project, number) / "character.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except ValueError:
+        return {}
+
+
+def characters_catalogue():
+    """GET /v1/characters: what a character sheet takes, with units, ranges and defaults."""
+    return {"fields": character.catalogue(), "skeleton": "53-bone game skeleton (pelvis, spine_01..03, neck_01, head, "
+            "clavicle/upperarm/lowerarm/hand, thigh/calf/foot/ball, five fingers of three bones), Z up, facing -Y",
+            "clips": ["rig_test"], "outputs": {"game": "game-ready files, skinned, with the clips",
+                                               "full": "full-detail files (GLB and FBX skinned)",
+                                               "views": "the angle pictures"}}
+
+
 def public(job):
     out = {k: job.get(k) for k in ("id", "client", "request_key", "object", "status", "project", "version",
                                    "score", "passed", "source", "error", "retry_at", "created", "started",
@@ -329,7 +361,8 @@ def public(job):
     out["notes"] = [n for n in (job.get("notes") or "").split("\n") if n]
     out["assumed"] = list(job["request"].get("assumed") or [])
     if job.get("project") and job.get("version") and not out["assumed"]:
-        out["assumed"] = list(_mechanism_record(job["project"], job["version"]).get("assumed") or [])
+        out["assumed"] = list(_mechanism_record(job["project"], job["version"]).get("assumed") or []
+                              or _character_record(job["project"], job["version"]).get("assumed") or [])
     out["step"] = job.get("step") or ""
     project = job.get("project")
     if job["status"] == "building" and project:
@@ -349,6 +382,9 @@ def public(job):
         if record:
             out["mechanism"] = {"key": record.get("key"), "sizes_mm": record.get("sizes_mm"),
                                 "colours": record.get("colours")}
+        person = _character_record(project, job["version"])
+        if person:
+            out["character"] = {"key": person.get("key"), "sheet": person.get("sheet")}
     if job["request"].get("design_match"):
         out["design"] = job["request"]["design_match"]
     return out
@@ -611,6 +647,8 @@ def _new_project(job):
         options["references"] = req["reference_ids"]
     if req.get("mechanism"):
         options["mechanism"], options["assumed"] = req["mechanism"], req.get("assumed") or []
+    if req.get("character"):
+        options["character"], options["assumed"] = req["character"], req.get("assumed") or []
     proj = db.create_project(req["object"][:80], text, options=options)
     db.add_event("project_created", project=proj["name"], data={"title": proj["title"], "client": job["client"]})
     db.update_job(job["id"], project=proj["name"])

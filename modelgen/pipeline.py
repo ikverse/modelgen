@@ -21,7 +21,7 @@ from pathlib import Path
 from . import budget, config, db, families, runner
 from .bpy_lib.shells import car_sheet
 from .tools import agent_tools as at
-from .tools import asset_catalog, blender, car_library, car_request, checks, mechanism, render
+from .tools import asset_catalog, blender, car_library, car_request, character, checks, mechanism, render
 from .tools.files import ProjectFiles
 from .tools.library import Library
 
@@ -119,6 +119,8 @@ async def run(project, request=None, changes=None, on_done=None, next_version=Fa
         _report_library(project, outcome)
     elif outcome.get("parts"):
         _report_parts(project, outcome)
+    elif outcome.get("character"):
+        _report_character(project, outcome)
     elif on_done:
         try:
             await on_done(project, outcome)
@@ -162,6 +164,10 @@ async def _run(project, request, changes, next_version=False):
         sheet, custom = made["sheet"], made.get("custom") or []
     elif made is not None:
         return made
+    if sheet is None:
+        made = await _try_character(project, request, changes, next_version)
+        if made is not None:
+            return made
     if uses_remix(project, request, changes or next_version):
         return await _run_remix(project, request, changes, next_version)
     made = await _try_library(project, request, changes, next_version)
@@ -432,8 +438,8 @@ async def _try_library(project, request, changes, next_version):
         if changes:
             text += f" {changes}"
         if (not _library_on() or FROM_SCRATCH.search(text) or at.looks_like_car(text)
-                or families.guess(text) == "mechanical"):
-            return None  # a downloaded model cannot be animated part by part
+                or families.guess(text) in ("mechanical", "person")):
+            return None  # a downloaded model cannot be animated part by part, nor rigged as a character
         _phase(project, "Looking for a ready-made model", step="catalog")
         hits = asset_catalog.search(text, limit=6, entries=catalogue)
         if not hits:
@@ -695,6 +701,159 @@ def _report_parts(project, outcome):
     text = (f"v{outcome['version']} is ready. {outcome['summary']}"
             + (f" Numbers I chose: {'; '.join(filled[:8])}." if filled else "")
             + " Tell me what to change (a tooth count, a size, the speed) for the next version.")
+    card = director.version_card(project, outcome["version"])
+    db.add_message("assistant", text, project, meta={"version": card} if card else None)
+
+
+# --- a person built by the character path (tools.character): no build team --------------------
+
+def character_sheet(project, number):
+    """The character sheet a version was built from by the character path (its plan), or None."""
+    plan_file = version_dir(project, number) / "plan.json" if number else None
+    plan = json.loads(plan_file.read_text(encoding="utf-8")) if plan_file and plan_file.is_file() else {}
+    return plan.get("character") if plan.get("kind") == "character" else None
+
+
+def _designer_caps():
+    """The character designer's turn and dollar caps: config.yaml's caps.character_designer line, else these."""
+    table = (config.settings().get("caps") or {}).get("character_designer") or {}
+    return {"max_turns": 6, "max_budget_usd": 0.30, **table}
+
+
+async def _designer(project, text, before=None):
+    """The character designer turns a request for a person (or changes to one) into a character
+    sheet. Returns {"sheet", "assumed", "notes"}."""
+    sink = {}
+    prompt = [f"Design the character for this request.\n\n## Request\n{text}\n"]
+    if before:
+        prompt += ["## The character as it is now (change only what the request asks)", _json(before), ""]
+    prompt += ["## What a character sheet takes", _json(character.catalogue()), "", _options_text(project)]
+    res = None
+    for attempt in range(2):
+        res = await runner.run_agent("character_designer", "\n".join(prompt), at.character_designer_tools(sink),
+                                     project=project, doing="designing the character", step=True,
+                                     caps=_designer_caps())
+        if sink.get("character"):
+            return {"sheet": sink["character"], "assumed": sink.get("assumed") or [], "notes": sink.get("notes") or ""}
+        if _out_of_usage(res):
+            break
+        prompt.append("\nYou must call submit_character." + (f" Last error: {res.error}" if res and res.error else ""))
+    raise PipelineError("the character designer did not submit a character" + _reason(res))
+
+
+async def _try_character(project, request, changes, next_version):
+    """A person the character path builds: from the sheet a program sent (the job's character), from
+    the designer's sheet for a request in plain words that asks for a person, or a change to a
+    character built so. Returns the build's outcome, or None when this is not a person (or the body
+    data is missing: the team then builds a stylised figure)."""
+    proj = db.get_project(project) or {}
+    options = proj.get("options") or {}
+    if (changes or next_version) and db.versions(project):
+        before = character_sheet(project, base_number(project))
+        if before is None:
+            return None
+        if not changes:
+            return {"ok": False, "error": "this character was built exactly from its sheet, so another version "
+                                          "would be the same: say what to change (\"make her ten years older\")"}
+        _phase(project, "The character designer is changing the character", step="spec")
+        found = await _designer(project, changes, before)
+        return await _run_character(project, found["sheet"], found["assumed"], found["notes"])
+    if options.get("character"):
+        sheet, assumed = character.clean(options["character"])
+        return await _run_character(project, sheet, (options.get("assumed") or []) + assumed)
+    text = request or proj.get("request") or ""
+    if families.guess(text) != "person":
+        return None
+    if not character.available():
+        db.add_event("warning", project=project, agent="director",
+                     data={"text": "the body data (assets_cc0\\anny_body) is missing: the team builds a stylised "
+                                   "figure instead"})
+        return None
+    db.update_project(project, status="briefing")
+    _handoff(project, "director", "character_designer", "your request")
+    _phase(project, "The character designer is working out the character", step="spec")
+    found = await _designer(project, text)
+    return await _run_character(project, found["sheet"], found["assumed"], found["notes"])
+
+
+async def _run_character(project, sheet, assumed, notes=""):
+    """Build a character straight from its sheet: one Blender run builds the body and its skeleton,
+    skins, colours and animates it, checks the skinning in test poses and exports it; then the game
+    files and the renders. The measured checks stand in for the critic. No agent runs."""
+    proj = db.get_project(project) or {}
+    what = character.describe(sheet)
+    clips = ["rig_test"]
+    spec = {"object": character.who(sheet), "category": "character", "family": "person", "use": "game",
+            "request": proj.get("request"), "summary": what, "character": sheet, "motion": {"clips": clips}}
+    n = db.highest_version_number(project) + 1
+    folder = version_dir(project, n)
+    (folder / "exports").mkdir(parents=True, exist_ok=True)
+    files = ProjectFiles(folder)
+    key = character.key(sheet)
+    files.write("spec.json", _json(spec))
+    files.write("plan.json", _json({"kind": "character", "parts": [{"name": "body"}, {"name": "eyes"}],
+                                    "character": sheet, "key": key}))
+    files.write("character.json", _json({"sheet": sheet, "assumed": list(assumed or []), "notes": notes, "key": key}))
+    db.update_project(project, spec=spec, status="building")
+    db.add_version(project, n, note="built by the character path")
+    db.add_event("version_started", project=project, data={"version": n, "round": 1})
+    _phase(project, f"Building {what}", step="build", version=n)
+
+    def failed(error):
+        db.update_version(project, n, status="failed", note=error[:500])
+        db.add_event("version_failed", project=project, data={"version": n, "error": error[:2000]})
+        db.update_project(project, status="failed")
+        return {"ok": False, "error": error[:500]}
+
+    blend = folder / "model.blend"
+    steps = [character.build_step(sheet, clips), character.report_step(),
+             {"kind": "save", "path": str(blend), "label": "save the .blend"}, blender.measure_step(),
+             {"kind": "export", "dir": str(files.path("exports")), "basename": project, "label": "export"}]
+    with runner.acting("assembler", project, f"building {character.who(sheet)} for v{n}", "full_build") as act:
+        result = await blender.run_job_async(steps)
+        act.ok = result.ok
+    if not result.ok:
+        info = result.summary()
+        return failed(info.get("traceback") or info.get("error") or "Blender failed")
+    made = result.outputs.get("character") or {}
+    rig_report = result.outputs.get("rig_report") or {}
+    found = checks.character_checks(made, rig_report, sheet)
+    files.write("measure.json", _json(result.outputs.get("measure") or {}))
+    files.write("rig_report.json", _json(rig_report))
+    game = await _game_export(folder, project, spec)
+    if game:
+        found["game"] = game
+        found["triangles"] = (game.get("triangles") or {}).get("game") or found.get("triangles")
+    files.write("checks.json", _json(found))
+    _phase(project, "Rendering the character", step="render", version=n)
+    with runner.acting("critic", project, f"rendering v{n}", "render") as act:
+        rendered, _, sheets = await render.render_version(blend, folder / "renders", views=["front", "right"])
+        act.ok = bool(rendered.ok and sheets.get("turntable"))
+    if not rendered.ok or not sheets.get("turntable"):
+        info = rendered.summary()
+        return failed("rendering failed: " + (info.get("traceback") or info.get("error") or "no images"))
+    failing = [k for k, g in found["gates"].items() if not g["pass"]]
+    summary = (f"{what[0].upper()}{what[1:]}, built from the character sheet: a {made.get('bones')}-bone game "
+               f"skeleton, {found.get('triangles')} triangles in the game file, clips: "
+               f"{', '.join(c['name'] for c in made.get('clips') or []) or 'none'}"
+               + (". Every check passed." if not failing else f". Checks that failed: {', '.join(failing)}.")
+               + (f" {notes}" if notes else ""))
+    db.update_version(project, n, status="done", passed=int(found["passed"]), checks=found)
+    db.add_event("version_done", project=project,
+                 data={"version": n, "passed": found["passed"], "summary": summary, "changes": 0})
+    db.update_project(project, status="done" if found["passed"] else "needs_changes", base_version=n)
+    return {"ok": True, "character": True, "version": n, "score": None, "passed": found["passed"],
+            "summary": summary, "changes": [], "gates": found["gates"], "assumed": list(assumed or [])}
+
+
+def _report_character(project, outcome):
+    """The chat message for a character the character path built: what it is and what can be asked next."""
+    from . import director  # director imports this module
+    filled = outcome.get("assumed") or []
+    text = (f"v{outcome['version']} is ready. {outcome['summary']}"
+            + (f" Values I chose: {'; '.join(filled[:8])}." if filled else "")
+            + " Tell me what to change (age, height, build, skin tone) for the next version. Hair, clothes and "
+              "real animation clips come in the next stages of the character path.")
     card = director.version_card(project, outcome["version"])
     db.add_message("assistant", text, project, meta={"version": card} if card else None)
 

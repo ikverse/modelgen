@@ -239,16 +239,27 @@ def apply_transform(obj):
 
 
 def apply_modifiers(obj):
-    """Apply every modifier on the object (the result is plain mesh)."""
+    """Apply every modifier on the object (the result is plain mesh). An Armature modifier (a
+    character's skin) is kept and left out of the result: the mesh stays in its rest pose, its
+    vertex groups kept, still driven by the skeleton."""
     if obj.type == "MESH" and not obj.modifiers:
         return obj
+    skins = [m for m in obj.modifiers if m.type == "ARMATURE"] if obj.type == "MESH" else []
+    if skins and len(skins) == len(obj.modifiers):
+        return obj
+    shown = [m.show_viewport for m in skins]
+    for m in skins:
+        m.show_viewport = False
     bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get()
     ev = obj.evaluated_get(dg)
     me = bpy.data.meshes.new_from_object(ev, preserve_all_data_layers=True, depsgraph=dg)
+    for m, on in zip(skins, shown):
+        m.show_viewport = on
     if obj.type == "MESH":
         old = obj.data
-        obj.modifiers.clear()
+        for m in [m for m in obj.modifiers if m.type != "ARMATURE"]:
+            obj.modifiers.remove(m)
         obj.data = me
         if old.users == 0:
             bpy.data.meshes.remove(old)
