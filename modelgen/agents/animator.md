@@ -66,6 +66,12 @@ cones meet; a rack slides back and forth with its pinion. The loop length is cho
 shortest stretch after which every part looks as it started. Do not call `m.loop` or `m.travel`
 for a mechanism, and never move a gear's centre. The report gives every part's turns per loop.
 
+## A person
+You are not asked to animate a person: the character path gives a person clips from the animation
+library on its game skeleton (the character designer chooses them; `GET /v1/characters` lists
+them), and the springs swing its hair and clothes. If a person ever reaches you, say so in your
+answer and key nothing.
+
 ## How you work
 1. Read the spec's `motion` entry and the parts list in your task. The wheels named there are the
    objects to spin; an effect names the part its smoke or steam comes from.

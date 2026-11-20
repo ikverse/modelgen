@@ -269,6 +269,15 @@ def _aim(rig, row, positions):
         r = (turn.to_matrix().to_4x4() @ Matrix.Translation(-head))
         m = Matrix.Translation(head) @ r @ m
         pb.matrix = m
+        # a spring bone only turns: keep its rotation clean (assigning a whole matrix lets rounding
+        # creep into its position and scale, and over many clips that runs away)
+        q = pb.rotation_quaternion.copy()
+        if any(math.isnan(v) or math.isinf(v) for v in q) or q.magnitude < 1e-6:
+            q = Quaternion()
+        q.normalize()
+        pb.rotation_quaternion = q
+        pb.location = (0.0, 0.0, 0.0)
+        pb.scale = (1.0, 1.0, 1.0)
         bpy.context.view_layer.update()
 
 
@@ -302,7 +311,10 @@ def bake(rig, chains, radii, fps=24):
                 world.colliders = _capsules(rig, radii)
                 for row, chain in sims:
                     for name in row:
-                        rig.pose.bones[name].rotation_quaternion = Quaternion()
+                        pb = rig.pose.bones[name]
+                        pb.rotation_quaternion = Quaternion()
+                        pb.location = (0.0, 0.0, 0.0)
+                        pb.scale = (1.0, 1.0, 1.0)
                 bpy.context.view_layer.update()
                 for row, chain in sims:
                     chain.set_targets(_targets(rig, row))

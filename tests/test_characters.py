@@ -174,6 +174,55 @@ def test_skin_through_the_clothes_fails_the_cover_gate():
     assert not bad["gates"]["clothes_cover"]["pass"] and "arms_up" in bad["gates"]["clothes_cover"]["detail"]
 
 
+# --- stage 3: clips ---------------------------------------------------------------------------------
+
+from modelgen.tools import clips as clip_lib  # noqa: E402
+
+needs_library = pytest.mark.skipif(not clip_lib.available(), reason="the animation library is not on this PC")
+
+
+@needs_library
+def test_the_library_lists_its_clips_and_the_everyday_set_is_in_it():
+    names = clip_lib.available()
+    assert len(names) >= 40 and "A_TPose" not in names
+    assert set(clip_lib.DEFAULT) <= set(names)
+
+
+@needs_library
+def test_a_sheet_takes_default_all_or_named_clips():
+    assert ch.clean(GUY)[0]["clips"] == list(clip_lib.DEFAULT)
+    assert len(ch.clean({**GUY, "clips": "all"})[0]["clips"]) == len(clip_lib.available())
+    assert ch.clean({**GUY, "clips": ["walk_loop", "PUNCH_JAB", "Walk_Loop"]})[0]["clips"] == ["Walk_Loop", "Punch_Jab"]
+    with pytest.raises(ch.CharacterError) as exc:
+        ch.clean({**GUY, "clips": ["moonwalk"]})
+    assert "no clip 'moonwalk'" in str(exc.value)
+
+
+@needs_library
+def test_the_build_step_moves_library_clips_instead_of_the_test_clip():
+    step = ch.build_step(ch.clean({**GUY, "clips": ["Walk_Loop"]})[0])
+    assert step["library_clips"] == ["Walk_Loop"] and step["library"].endswith("UAL1_Standard.glb")
+    assert step["clips"] == []
+    assert clip_lib.nice("Armature|Walk_Loop") == "walk_loop"
+
+
+@pytest.mark.blender
+@needs_library
+def test_a_character_job_carries_its_library_clips_in_every_file():
+    sheet, assumed = ch.clean({**GUY, "clips": ["Idle_Loop", "Walk_Loop", "Punch_Jab"]})
+    proj = db.create_project("clips", "a cool guy", options={"character": sheet, "assumed": assumed})
+    out = asyncio.run(pipeline._run_character(proj["name"], sheet, assumed))
+    folder = pipeline.version_dir(proj["name"], out["version"])
+    assert out["ok"] and out["passed"], json.loads((folder / "checks.json").read_text(encoding="utf-8"))["gates"]
+    for path in [folder / "exports" / f"{proj['name']}.glb", folder / "game" / f"{proj['name']}_LOD2.glb"]:
+        data = path.read_bytes()
+        gltf = json.loads(data[20:20 + int.from_bytes(data[12:16], "little")])
+        assert sorted(a["name"] for a in gltf["animations"]) == ["idle_loop", "punch_jab", "walk_loop"], path.name
+    record = json.loads((folder / "clips.json").read_text(encoding="utf-8"))
+    assert [c["name"] for c in record["clips"]] == ["idle_loop", "punch_jab", "walk_loop"]
+    assert (folder / "renders" / "sheet_clips.jpg").is_file()
+
+
 # --- words: who is a person ------------------------------------------------------------------------
 
 @pytest.mark.parametrize("text", ["a cool guy", "old woman with a cane", "baby girl", "a nerd", "teenage boy",
@@ -357,7 +406,7 @@ AGES = [("baby", {"age": 0.5}), ("girl", {"age": 8, "sex": "female"}), ("woman",
 
 @pytest.mark.blender
 def test_every_age_builds_a_skinned_body_at_its_height_on_the_floor():
-    sheets = [ch.clean(raw)[0] for _, raw in AGES]
+    sheets = [ch.clean({**raw, "clips": []})[0] for _, raw in AGES]  # clips are tested on their own
     results = []
     for sheet in sheets:
         result = blender.run_job([ch.build_step(sheet), ch.report_step()], timeout=600)
@@ -376,7 +425,7 @@ def test_every_age_builds_a_skinned_body_at_its_height_on_the_floor():
 @pytest.mark.blender
 @pytest.mark.parametrize("style", ch.STYLES)
 def test_every_style_builds_a_dressed_character_that_passes_every_check(style):
-    raw = {**GUY, "style": style, "hair": {"style": "spiky" if "anime" in style else "short", "colour": "#1a1a22"},
+    raw = {**GUY, "clips": [], "style": style, "hair": {"style": "spiky" if "anime" in style else "short", "colour": "#1a1a22"},
            "outfit": [{"type": "tshirt", "colour": "#eeeeee"}, {"type": "jeans", "colour": "#2f3e5c"},
                       {"type": "sneakers", "colour": "#f0f0f0"}, {"type": "leather_jacket", "colour": "#1c1c1e"}],
            "accessories": [{"type": "glasses"}]}
@@ -394,7 +443,7 @@ def test_every_style_builds_a_dressed_character_that_passes_every_check(style):
 
 @pytest.mark.blender
 def test_a_real_character_job_exports_a_skinned_animated_game_file():
-    sheet, assumed = ch.clean(GUY)
+    sheet, assumed = ch.clean({**GUY, "clips": []})  # with no library clips: the rig_test loop
     proj = db.create_project("cool guy", "a cool guy", options={"character": sheet, "assumed": assumed})
     out = asyncio.run(pipeline._run_character(proj["name"], sheet, assumed))
     folder = pipeline.version_dir(proj["name"], out["version"])
@@ -412,7 +461,7 @@ def test_a_real_character_job_exports_a_skinned_animated_game_file():
 
 @pytest.mark.blender
 def test_a_skirt_coat_and_ponytail_swing_on_baked_spring_chains():
-    raw = {**GUY, "sex": "female", "hair": {"style": "ponytail", "colour": "#5a3d2b"},
+    raw = {**GUY, "clips": [], "sex": "female", "hair": {"style": "ponytail", "colour": "#5a3d2b"},
            "outfit": [{"type": "blouse", "colour": "#efe6d6"}, {"type": "skirt", "length": "long", "colour": "#7a2e3a"},
                       {"type": "boots", "colour": "#2b2018"}, {"type": "coat", "colour": "#55606e"}]}
     sheet, assumed = ch.clean(raw)
@@ -435,7 +484,7 @@ def test_a_skirt_coat_and_ponytail_swing_on_baked_spring_chains():
 
 @pytest.mark.blender
 def test_a_drawn_character_exports_cel_bands_and_outline_widths_on_every_material():
-    sheet, assumed = ch.clean({**GUY, "style": "shonen_anime", "hair": {"style": "spiky", "colour": "#1a1a22"}})
+    sheet, assumed = ch.clean({**GUY, "clips": [], "style": "shonen_anime", "hair": {"style": "spiky", "colour": "#1a1a22"}})
     proj = db.create_project("hero", "an anime hero", options={"character": sheet, "assumed": assumed})
     out = asyncio.run(pipeline._run_character(proj["name"], sheet, assumed))
     assert out["ok"] and out["passed"]

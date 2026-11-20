@@ -194,6 +194,7 @@ then no agent runs at all (`cost_usd` 0):
 | `brows` | the hair's colour | `{"colour", "thickness": 0..1, "arch": 0..1}` |
 | `accessories` | | `[{"type": "glasses", "shape": "round" or "square", "frame": "thin" or "thick", "colour"}]` |
 | `face` | | `{"slider": -1..1}`: nose, eyes, mouth, chin, head shape...; the names in `GET /v1/characters` |
+| `clips` | `"default"` | animation clips: `"default"` (12 everyday clips: idle, walk, jog, sprint, jump start/loop/land, punch, talking, dance, sitting, crouching), `"all"` (the whole library, 42), a list of clip names (`GET /v1/characters` lists them), or `[]` for none |
 
 Every value filled in is listed in `assumed`; a sheet that cannot be built is refused with the
 field named (`character.age must be from 0.0 to 95.0, not 130`). The job's answer has `source:
@@ -208,8 +209,13 @@ at most four bones per vertex, in the GLB and FBX files (full and game). The gam
 and glasses are separate meshes skinned to the same skeleton (body skin hidden under clothes is
 removed). A drawn style's materials carry `mg_toon_colors`, `mg_toon_stops`, `mg_toon_light` (cel
 bands) and `mg_outline` (outline width, metres) as material extras: draw them as toon shading with an
-inverted-hull outline. It carries one clip so far, `rig_test` (a 4-second loop that moves every main
-joint); real clips (idle, walk, run...) come in the next stage.
+inverted-hull outline. Its clips come from the free Quaternius Universal Animation Library (CC0,
+`assets_cc0\animations`), moved onto the character's own skeleton, named in lower case
+(`walk_loop`, `punch_jab`...), 30 frames a second, in place (no root motion: move the character in
+your game). The version's `clips.json` lists them with their frame counts, and
+`renders\sheet_clips.jpg` shows four frames of each. A character asked for with `clips: []`
+carries only `rig_test`, a 4-second loop that moves every main joint. A build with the 12 everyday
+clips and swinging clothes takes about 5 minutes; with `"all"`, roughly three times that.
 
 Secondary motion: what swings (a ponytail, long hair, a skirt, a dress's skirt, coat tails) hangs
 from extra spring chains in the skeleton (`spring_<piece>_<chain>_<bone>`), simulated by ModelGen's

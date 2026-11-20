@@ -122,6 +122,11 @@ try:
                                               step.get("colours"))
                 result["outputs"].setdefault("asset_views", []).append(made)
                 paths = made["files"]
+            elif which == "clip_strips":
+                from bpy_lib import character_body
+                strips = character_body.render_clip_strips(step["dir"], step.get("count", 4))
+                result["outputs"]["clip_strips"] = strips
+                paths = [p for ps in strips.values() for p in ps]
             elif which == "motion":
                 made = rig.render_motion(step["dir"], step.get("camera", "persp"), step.get("style", "explainer"),
                                          step.get("angle", "front34"), step.get("first"), step.get("last"),

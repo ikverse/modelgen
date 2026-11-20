@@ -617,6 +617,7 @@ def rig_test_clip(rig, fps=24, seconds=4.0):
     """A short loop that moves every main joint, so the skinning can be seen working before real
     clips exist: breathe, look round, raise the right arm and wave, bend a knee, back to rest."""
     action = bpy.data.actions.new("rig_test")
+    action.use_fake_user = True  # kept and exported once the skeleton is back in its rest pose
     rig.animation_data_create()
     rig.animation_data.action = action
     n = int(round(fps * seconds))
@@ -644,6 +645,34 @@ def rig_test_clip(rig, fps=24, seconds=4.0):
 CLIPS = {"rig_test": rig_test_clip}
 
 
+def clip_actions(arm):
+    """The clips on a character's skeleton (every action kept with it), in name order."""
+    acts = [a for a in bpy.data.actions if a.use_fake_user or (arm.animation_data and a == arm.animation_data.action)]
+    return sorted(acts, key=lambda a: a.name)
+
+
+def render_clip_strips(out_dir, count=4):
+    """`count` pictures across each clip (the studio's three-quarter view), for the clip strips the
+    critic and the person see. Returns {clip: [paths]}; the skeleton is left on its first clip."""
+    from . import rig as studio
+    arm = rig_object()
+    if arm is None or arm.animation_data is None:
+        return {}
+    first = arm.animation_data.action
+    out = {}
+    for act in clip_actions(arm):
+        arm.animation_data.action = act
+        a, b = (int(v) for v in act.frame_range)
+        frames = [a + (b - a) * k // max(1, count - 1) for k in range(count)] if count > 1 else [a]
+        paths = []
+        for i, f in enumerate(frames):
+            bpy.context.scene.frame_set(f)
+            paths += studio.render_views(out_dir, ["three_quarter"], prefix=f"clip_{act.name}_{i}")
+        out[act.name] = paths
+    arm.animation_data.action = first
+    return out
+
+
 def build_character(step):
     """The job step: the body for the sheet, its skin and eyes, its clips. Returns what was made."""
     made = build(step["body"], step["root"], step.get("cache"))
@@ -659,6 +688,14 @@ def build_character(step):
             character_parts.toonify([o for o in bpy.context.scene.objects if o.type == "MESH" and o.get(helpers.PART_KEY)],
                                     made["rig"], look.get("outline", 0.004))
     clips = []
+    if step.get("library") and step.get("library_clips"):
+        from . import retarget
+        moved, _ = retarget.library_clips(step["library"], made["rig"], step["library_clips"])
+        clips += moved
+        if moved:  # the first clip is the one on the skeleton when the file opens
+            made["rig"].animation_data.action = bpy.data.actions[moved[0]["name"]]
+            first = bpy.data.actions[moved[0]["name"]]
+            bpy.context.scene.frame_start, bpy.context.scene.frame_end = (int(v) for v in first.frame_range)
     for name in step.get("clips") or []:
         fn = CLIPS.get(name)
         if fn is not None:
@@ -668,9 +705,15 @@ def build_character(step):
         from . import physics_bake
         springs = physics_bake.run(made["rig"], list(pieces.values()), made["parts"]["body"],
                                    fps=bpy.context.scene.render.fps)
+    # measured and saved in the rest pose: no clip on the skeleton (every clip is kept with it, marked
+    # to keep, and exported all the same)
+    if made["rig"].animation_data:
+        made["rig"].animation_data.action = None
     for pb in made["rig"].pose.bones:
         pb.rotation_euler = Euler((0, 0, 0))
         pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.location = (0, 0, 0)
+        pb.scale = (1, 1, 1)
     bpy.context.scene.frame_set(bpy.context.scene.frame_start)
     every = {**made["parts"], **pieces}
     lo, hi = helpers.bounds(list(every.values()))
@@ -700,6 +743,8 @@ def _pose(rig, angles):
     for pb in rig.pose.bones:
         pb.rotation_euler = Euler((0, 0, 0))
         pb.rotation_quaternion = (1, 0, 0, 0)
+        pb.location = (0, 0, 0)
+        pb.scale = (1, 1, 1)
     for name, rot in angles.items():
         pb = rig.pose.bones.get(name)
         if pb is not None:

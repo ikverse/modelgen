@@ -310,6 +310,13 @@ def clean(raw):
         raise CharacterError(f"character.build {out['build']!r} does not fit a {out['age']:g}-year-old: "
                              "use slim, average or chubby")
     out.update(clean_look(raw, out, assumed))
+    from . import clips as clip_lib
+    try:
+        out["clips"] = clip_lib.clean(raw.get("clips"))
+    except clip_lib.ClipError as exc:
+        raise CharacterError(str(exc)) from None
+    if raw.get("clips") in (None, "", "default") and out["clips"]:
+        assumed.append(f"clips: the everyday set ({len(out['clips'])})")
     return out, assumed
 
 
@@ -424,7 +431,14 @@ def catalogue():
         "brows": {"about": "{colour, thickness 0..1, arch 0..1}", "default": "the hair's colour, thin for a child"},
         "accessories": {"about": "[{type: glasses, shape: round|square, frame: thin|thick, colour}]"},
         "face": {"about": "{slider: -1..1}", "sliders": list(FACE_SLIDERS)},
+        "clips": {"about": '"default" (an everyday set), "all", or a list of clip names from the animation library',
+                  "default": "the everyday set", "choices": _clip_names()},
     }
+
+
+def _clip_names():
+    from . import clips as clip_lib
+    return clip_lib.available()
 
 
 def data_root():
@@ -441,10 +455,14 @@ def available():
 
 
 def build_step(sheet, clips=None):
-    """The Blender step that builds, rigs, colours and animates the character of a cleaned sheet."""
+    """The Blender step that builds, rigs, colours and animates the character of a cleaned sheet:
+    the sheet's library clips moved onto its skeleton, or the rig_test clip when there are none."""
+    from . import clips as clip_lib
+    library = sheet.get("clips") or []
     return {"kind": "character", "body": body(sheet), "sheet": sheet, "look": look(sheet), "root": data_root(),
-            "cache": cache_dir(),
-            "clips": list(clips or ["rig_test"]), "label": f"build {who(sheet)}"}
+            "cache": cache_dir(), "library": str(clip_lib.library_path()) if library else None,
+            "library_clips": list(library),
+            "clips": list(clips or ([] if library else ["rig_test"])), "label": f"build {who(sheet)}"}
 
 
 def report_step():

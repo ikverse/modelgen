@@ -23,6 +23,7 @@ from pathlib import Path
 from . import config, db, pipeline, runner, uploads
 from .tools import agent_tools as at
 from .tools import asset_catalog, blender, character, mechanism
+from .tools import clips as clip_lib
 from .tools import design as design_tools
 
 OUTPUTS = ("game", "full", "views", "motion", "exploded", "cutaway")
@@ -348,7 +349,9 @@ def characters_catalogue():
     """GET /v1/characters: what a character sheet takes, with units, ranges and defaults."""
     return {"fields": character.catalogue(), "skeleton": "53-bone game skeleton (pelvis, spine_01..03, neck_01, head, "
             "clavicle/upperarm/lowerarm/hand, thigh/calf/foot/ball, five fingers of three bones), Z up, facing -Y",
-            "clips": ["rig_test"], "outputs": {"game": "game-ready files, skinned, with the clips",
+            "clips": character.catalogue()["clips"]["choices"] or ["rig_test"],
+            "default_clips": list(clip_lib.DEFAULT),
+            "outputs": {"game": "game-ready files, skinned, with the clips",
                                                "full": "full-detail files (GLB and FBX skinned)",
                                                "views": "the angle pictures"}}
 

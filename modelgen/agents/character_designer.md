@@ -33,6 +33,11 @@ The fields, their units and ranges are in the request. Give real, believable val
   tailor and a hair artist dress the character from this, so be concrete about colours and lengths.
   Leave outfit, hair, brows and face out of a new sheet: they choose those.
 - **name**: a short label for the character ("cool guy", "grandma", "baby girl").
+- **clips**: leave it out for the everyday set. When the request says what the character does
+  ("a boxer", "a gunslinger", "a wizard", "a swimmer"), give a list: the everyday clips that fit plus
+  the library's clips for that (a boxer `Punch_Jab`, `Punch_Cross`, `Hit_Chest`; a gunslinger the
+  `Pistol_` clips; a wizard the `Spell_Simple_` clips). Use only names from the list in the request.
+  "all" only when the request asks for every animation.
 
 ## A style the request names
 A request may name a drawing style or a show ("anime", "cartoon", "dragon ball style", "attack on

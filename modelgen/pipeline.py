@@ -22,6 +22,7 @@ from . import budget, config, db, families, runner
 from .bpy_lib.shells import car_sheet
 from .tools import agent_tools as at
 from .tools import asset_catalog, blender, car_library, car_request, character, checks, mechanism, render
+from .tools import clips as clip_lib
 from .tools.files import ProjectFiles
 from .tools.library import Library
 
@@ -825,7 +826,7 @@ async def _run_character(project, sheet, assumed, notes=""):
     files and the renders. The measured checks stand in for the critic. No agent runs."""
     proj = db.get_project(project) or {}
     what = character.describe(sheet)
-    clips = ["rig_test"]
+    clips = [clip_lib.nice(c) for c in sheet.get("clips") or []] or ["rig_test"]
     spec = {"object": character.who(sheet), "category": "character", "family": "person", "use": "game",
             "request": proj.get("request"), "summary": what, "character": sheet, "motion": {"clips": clips}}
     n = db.highest_version_number(project) + 1
@@ -849,7 +850,7 @@ async def _run_character(project, sheet, assumed, notes=""):
         return {"ok": False, "error": error[:500]}
 
     blend = folder / "model.blend"
-    steps = [character.build_step(sheet, clips), character.report_step(),
+    steps = [character.build_step(sheet), character.report_step(),
              {"kind": "save", "path": str(blend), "label": "save the .blend"}, blender.measure_step(),
              {"kind": "export", "dir": str(files.path("exports")), "basename": project, "label": "export"}]
     with runner.acting("assembler", project, f"building {character.who(sheet)} for v{n}", "full_build") as act:
@@ -863,6 +864,10 @@ async def _run_character(project, sheet, assumed, notes=""):
     found = checks.character_checks(made, rig_report, sheet)
     files.write("measure.json", _json(result.outputs.get("measure") or {}))
     files.write("rig_report.json", _json(rig_report))
+    files.write("clips.json", _json({"clips": made.get("clips") or [], "springs": made.get("springs") or {},
+                                     "skeleton": "53-bone game skeleton" + (" plus spring chains" if (made.get("springs")
+                                                                                                    or {}).get("chains")
+                                                                           else "")}))
     game = await _game_export(folder, project, spec)
     if game:
         found["game"] = game
@@ -875,6 +880,7 @@ async def _run_character(project, sheet, assumed, notes=""):
     if not rendered.ok or not sheets.get("turntable"):
         info = rendered.summary()
         return failed("rendering failed: " + (info.get("traceback") or info.get("error") or "no images"))
+    await _clip_sheet(folder, project, n)
     failing = [k for k, g in found["gates"].items() if not g["pass"]]
     summary = (f"{what[0].upper()}{what[1:]}, built from the character sheet: a {made.get('bones')}-bone game "
                f"skeleton, {found.get('triangles')} triangles in the game file, clips: "
@@ -887,6 +893,27 @@ async def _run_character(project, sheet, assumed, notes=""):
     db.update_project(project, status="done" if found["passed"] else "needs_changes", base_version=n)
     return {"ok": True, "character": True, "version": n, "score": None, "passed": found["passed"],
             "summary": summary, "changes": [], "gates": found["gates"], "assumed": list(assumed or [])}
+
+
+async def _clip_sheet(folder, project, n, count=4):
+    """A strip of pictures across every clip of a character, one row per clip, as renders/
+    sheet_clips.jpg. Never fails the build."""
+    out = folder / "renders" / "clips"
+    step = {"kind": "render", "set": "clip_strips", "dir": str(out), "count": count,
+            "size": int(config.get("render", "preview_size", 384)),
+            "samples": int(config.get("render", "preview_samples", 24)), "label": "render the clip strips"}
+    with runner.acting("animator", project, f"rendering the clips of v{n}", "render") as act:
+        result = await blender.run_job_async([step], open_blend=folder / "model.blend")
+        act.ok = result.ok
+    strips = (result.outputs or {}).get("clip_strips") or {}
+    if not result.ok or not strips:
+        db.add_event("warning", project=project, agent="animator", data={"text": "the clip strips could not be rendered"})
+        return None
+    paths, labels = [], []
+    for clip, shots in strips.items():
+        paths += shots
+        labels += [clip.replace("_", " ")] + [""] * (len(shots) - 1)
+    return render.contact_sheet(paths, folder / "renders" / "sheet_clips.jpg", columns=count, tile=256, labels=labels)
 
 
 def _report_character(project, outcome):

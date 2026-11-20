@@ -105,9 +105,16 @@ image-to-3D models (21-24 GB of video memory).
   bands as an Emission ramp so Cycles draws them, render-only ink shells; the viewer draws its own
   outline from `mg_outline`). Checks added: clothes cover the skin in the test poses. The user asked
   (2026-11-21) to test only the hardest cases while building and test the rest themselves.
-- Stage 3: waiting for the Quaternius Universal Animation Library (CC0, 15 MB). itch.io gives it only
-  through its pay-what-you-want page; a scripted download was refused by the permission guard, so the
-  user was asked to download it into `assets_cc0\animations\quaternius_ual\`.
+- Stage 3: built and tested. The user downloaded the Quaternius Universal Animation Library
+  (Standard, CC0, 43 clips incl. a T-pose) into `assets_cc0\animations\quaternius_ual\` (itch.io's
+  pay-what-you-want page; a scripted download was refused by the permission guard). Its skeleton uses
+  the same Unreal-style names; `bpy_lib/retarget.py` moves clips in world space, matching rest
+  directions only for arms and fingers (the pelvis and spine take the library's turns as they are, or
+  spring chains on them turn sideways). `tools/clips.py`: "default" (12), "all" (42), a list or [].
+  `clips.json`, `renders/sheet_clips.jpg`, `GET /v1/characters` lists the clips; `CHARACTERS_GUIDE.md`.
+  Known: a skirt's chains let a leg show through between them in wide stances.
+- Stage 5: Kimodo cannot run here (8B text encoder, ~16 GB); the switch and the closest-clip
+  fallback are in.
 - Stage 4: built and tested ahead of stage 3 (it needs no download). `modelgen/physics` (Verlet +
   XPBD, spring chains, capsules, cone limits, floor, ragdoll) with `tests/test_physics.py`;
   `bpy_lib/physics_bake.py` adds chains (ponytail 1x4, hair strands 6x3, skirt and coat tails 12x5; a

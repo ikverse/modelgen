@@ -330,8 +330,21 @@ def _crotch_to_pelvis(obj, m, width=0.08):
             pelvis.add([v.index], share, "ADD")
 
 
+def _weld(obj, distance=2e-5):
+    """Join vertices that sit on one spot (a shell's seam), so the piece cannot open along it when
+    the two sides move differently. The texture corners stay; the skin weights of the kept vertex
+    stay."""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=distance)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+
+
 def _piece(name, made, rig, faces, face_uvs, layer, colour, kind, smooth=0, bias=None, before=None):
     obj, _ = cb.skinned_part(name, made, faces, face_uvs, rig)
+    _weld(obj)
     smooth_edges(obj)
     if before:
         before(obj)

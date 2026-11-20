@@ -88,8 +88,8 @@ class ModelGen:
     def request(self, object, **options):
         """Queue a job; returns it at once. options: notes, size {w, d, h, unit}, references,
         request_key, outputs, style, camera, angle, colours, mechanism, design, design_module,
-        design_mm_per_px, reuse, max_versions, min_score, budget_usd. object may be None when a
-        mechanism or a design is given."""
+        design_mm_per_px, character, reuse, max_versions, min_score, budget_usd. object may be None
+        when a mechanism, a design or a character is given."""
         body = {"client": self.client, **options}
         if object:
             body["object"] = object
@@ -113,6 +113,18 @@ class ModelGen:
         "design" says the scale (mm_per_px), what each part came from, and what could not be matched.
         options as for request, plus design_module (mm) or design_mm_per_px to set the scale."""
         job = self.request(None, design=design, **options)
+        return job if job["status"] in FINISHED else self.wait(job["id"], timeout, poll)
+
+    def characters(self):
+        """What a character sheet takes: fields, garment and hair types, styles, face sliders, clips."""
+        return self._call("GET", "/v1/characters")
+
+    def character(self, sheet, timeout=3600, poll=10, **options):
+        """A rigged, animated person built exactly from its character sheet (no agents, about five
+        minutes with the everyday clips), waited for. Example: mg.character({"age": 26, "sex": "male",
+        "build": "athletic", "style": "shonen_anime", "hair": {"style": "spiky", "colour": "#1a1a22"},
+        "clips": ["Idle_Loop", "Walk_Loop", "Punch_Jab"]}, outputs=["game"])."""
+        job = self.request(None, character=sheet, **options)
         return job if job["status"] in FINISHED else self.wait(job["id"], timeout, poll)
 
     def job(self, job_id):
