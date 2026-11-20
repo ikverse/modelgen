@@ -60,13 +60,13 @@ Lengths in millimetres. **Required** fields must be there; the rest have sensibl
 
 ### Turbocharger: `compressor_wheel`, `turbine_wheel`, `volute`, `bearing`, `centre_housing`
 - `compressor_wheel` and `turbine_wheel`: **diameter** (the rim). Defaults follow real wheels: the
-  compressor has 6 blades and 6 splitters swept back 30°, the turbine 11 blades.
+  compressor has 6 blades and 6 splitters swept back 45°, the turbine 11 blades.
 - `volute`: the snail housing; **houses** names its wheel. It is built round that wheel, so you give
   it no size.
 - `bearing`: on the shaft; bore, outer diameter and width follow the shaft unless you give them.
 - `centre_housing`: the cast bearing housing between the two volutes; **houses** names the shaft.
   It fills the room between the volutes' back plates round the bearings, with an oil inlet on top
-  and a drain below (`oil_ports: false` leaves them off). Its body is 0.7 of the compressor wheel
+  and a drain below (`oil_ports: false` leaves them off). Its body is 1.1 of the compressor wheel
   across unless you give `outer_diameter`.
 - One `shaft` carries them front to back in the order you list them: compressor wheel, bearings,
   turbine wheel. The wheels' noses point away from each other.
