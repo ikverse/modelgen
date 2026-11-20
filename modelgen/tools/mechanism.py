@@ -314,16 +314,16 @@ TYPES = {
                                                "about": "full blades"},
                                     "splitters": {"type": "boolean", "default": True,
                                                   "about": "a shorter blade between each two"},
-                                    "length": _f("mm", 3, 2000, "0.42 x diameter", "along the axis"),
-                                    "inducer_diameter": _f("mm", 3, 2000, "0.7 x diameter", "blade tips at the nose"),
-                                    "backsweep": _f("deg", 0, 60, 30, "blade angle back at the rim"),
+                                    "length": _f("mm", 3, 2000, "0.32 x diameter", "along the axis"),
+                                    "inducer_diameter": _f("mm", 3, 2000, "0.78 x diameter", "blade tips at the nose"),
+                                    "backsweep": _f("deg", 0, 60, 45, "blade angle back at the rim"),
                                     "bore": _f("mm", 0, 500, "the shaft's", "hole for the shaft"),
                                     "colour": GEAR_FIELDS["colour"]}},
     "turbine_wheel": {"about": "a turbocharger's radial turbine wheel: exhaust in at the rim, out along the "
                                "axis; faces the back of the shaft",
                       "fields": {"diameter": _f("mm", 10, 2000, None, "rim diameter (required)"),
                                  "blades": {"type": "integer", "min": 5, "max": 20, "default": 11, "about": "blades"},
-                                 "length": _f("mm", 3, 2000, "0.38 x diameter", "along the axis"),
+                                 "length": _f("mm", 3, 2000, "0.45 x diameter", "along the axis"),
                                  "exducer_diameter": _f("mm", 3, 2000, "0.86 x diameter", "blade tips at the nose"),
                                  "bore": _f("mm", 0, 500, "the shaft's", "hole for the shaft"),
                                  "colour": GEAR_FIELDS["colour"]}},
@@ -345,7 +345,7 @@ TYPES = {
                                 "shaft (houses: the shaft's name) and stands still",
                        "fields": {"wall": _f("mm", 0.5, 100, "0.12 x the bearings' outer diameter",
                                              "wall round the bearings"),
-                                  "outer_diameter": _f("mm", 3, 3000, "0.7 x the compressor wheel (at least the "
+                                  "outer_diameter": _f("mm", 3, 3000, "1.1 x the compressor wheel (at least the "
                                                        "bearings and the wall)", "body diameter"),
                                   "oil_ports": {"type": "boolean", "default": True,
                                                 "about": "the oil inlet on top and the drain below"},
@@ -579,15 +579,15 @@ def _part(raw, i, assumed):
         d = out["diameter"] = _num(raw, "diameter", 10, 2000, float, where)
         turbine = kind == "turbine_wheel"
         take("blades", 11 if turbine else 6, 3, 20, int)
-        take("length", round((0.38 if turbine else 0.42) * d, 2), 3, 2000,
-             note=f"{0.38 if turbine else 0.42} x diameter")
+        take("length", round((0.45 if turbine else 0.32) * d, 2), 3, 2000,
+             note=f"{0.45 if turbine else 0.32} x diameter")
         tip_key = "exducer_diameter" if turbine else "inducer_diameter"
-        take(tip_key, round((0.86 if turbine else 0.7) * d, 2), 3, 2000)
+        take(tip_key, round((0.86 if turbine else 0.78) * d, 2), 3, 2000)
         if out[tip_key] >= d:
             raise MechanismError(f"{where}{tip_key} must be under the diameter ({d:g} mm)")
         if not turbine:
             out["splitters"] = bool(raw.get("splitters", True))
-            take("backsweep", 30.0, 0, 60)
+            take("backsweep", 45.0, 0, 60)
         take("bore", None, 0, 500)
     elif kind == "volute":
         take("wall", None, 0.3, 100)
@@ -1371,7 +1371,7 @@ def _shaft_parts(shaft, links, by):
 
 def _fill_centre_housings(parts, links, by, assumed):
     """A centre housing's wall and body from the bearings it carries and the compressor wheel: a real
-    one is about 0.7 of the compressor wheel across."""
+    one is about 1.0 to 1.2 of the compressor wheel across."""
     for p in [q for q in parts if q["type"] == "centre_housing"]:
         on = _shaft_parts(p["houses"], links, by)
         wheels = [g for g in on if g["type"] in WHEELS]
@@ -1385,16 +1385,16 @@ def _fill_centre_housings(parts, links, by, assumed):
             assumed.append(f"{p['name']}.wall = {p['wall']:g} (0.12 x the bearings' outer diameter)")
         comp = next(g for g in wheels if g["type"] == "compressor_wheel")
         least = seat + 0.4 + 2 * p["wall"]
+        smallest = min(g["diameter"] for g in wheels)
         if p["outer_diameter"] is None:
-            p["outer_diameter"] = round(max(least, 0.7 * comp["diameter"]), 2)
-            why = "0.7 x the compressor wheel" if 0.7 * comp["diameter"] >= least else "the bearings and the wall"
+            p["outer_diameter"] = round(max(least, min(1.1 * comp["diameter"], 1.35 * smallest)), 2)
+            why = "1.1 x the compressor wheel" if p["outer_diameter"] > least else "the bearings and the wall"
             assumed.append(f"{p['name']}.outer_diameter = {p['outer_diameter']:g} ({why})")
         if p["outer_diameter"] < least - 1e-9:
             raise MechanismError(f"centre_housing {p['name']}: outer_diameter must be at least {least:g} mm (the "
                                  "bearings and the wall)")
-        smallest = min(g["diameter"] for g in wheels)
-        if p["outer_diameter"] > 1.2 * smallest:
-            raise MechanismError(f"centre_housing {p['name']}: outer_diameter must be at most {1.2 * smallest:g} mm "
+        if p["outer_diameter"] > 1.4 * smallest:
+            raise MechanismError(f"centre_housing {p['name']}: outer_diameter must be at most {1.4 * smallest:g} mm "
                                  "(it fits inside the volutes' scrolls)")
 
 
@@ -2160,6 +2160,17 @@ def _rough_span(place, by):
     return min(xs), max(xs)
 
 
+TURBO_SPACING = 1.1  # a turbo's wheels' back faces apart, over the compressor wheel's diameter (real: 1.0 to 1.3)
+
+
+def _turbo_wheels(shaft, by, links):
+    """(compressor, turbine) names when the shaft carries one of each, else None."""
+    on = [l["a"] for l in links if l["kind"] == "shaft" and l["b"] == shaft]
+    comp = [n for n in on if by[n]["type"] == "compressor_wheel"]
+    turb = [n for n in on if by[n]["type"] == "turbine_wheel"]
+    return (comp[0], turb[0]) if comp and turb else None
+
+
 def _place_on_shaft(cur, other, by, place, put, links):
     """A gear and its shaft share one axis. The first gear on a shaft sits in its middle; each
     further gear on it sits behind the one before (further from the camera), a millimetre apart."""
@@ -2182,6 +2193,14 @@ def _place_on_shaft(cur, other, by, place, put, links):
             deepest, last = min(deepest, end), n
     wheels = [by[n]["diameter"] for n in (other, last) if n and by[n]["type"] in WHEELS]
     gap = 0.3 * max(wheels) * MM if wheels else 0.001  # room for both housings' scrolls
+    turbo = _turbo_wheels(cur, by, links)
+    if turbo and g["type"] == "bearing" and last and by[last]["type"] == "bearing" and turbo[0] in place:
+        # a turbo's bearings spread to the ends of its centre housing, which keeps the wheels' back
+        # faces TURBO_SPACING x the compressor wheel apart, as a real turbo's are
+        comp, turb = by[turbo[0]], by[turbo[1]]
+        comp_back = _dot(_sub(place[comp["name"]]["centre"], pl["centre"]), axis) - _extent(comp, None)
+        deep_end = comp_back - TURBO_SPACING * comp["diameter"] * MM + 0.3 * turb["diameter"] * MM
+        gap = max(gap, deepest - 2 * _extent(g, None) - deep_end)
     offset = deepest - gap - _extent(g, None)
     if g["type"] == "bevel_gear":
         rot = BEVEL_FRONT
@@ -2393,7 +2412,8 @@ def _place_centre_housing(p, shaft, by, place, put, links):
     end_wall = max(1.0, min(0.06 * comp["diameter"], end_room / MM - 0.5))
     numbers = {"length": round(length / MM, 3), "shaft_diameter": shaft["diameter"],
                "bore_diameter": round(seat + 0.4, 3), "outer_diameter": p["outer_diameter"],
-               "front_flange_diameter": round(max(p["outer_diameter"], 1.1 * comp["diameter"]), 3),
+               # the compressor side's back plate: a large disc, as on a real centre housing
+               "front_flange_diameter": round(max(p["outer_diameter"], 1.3 * comp["diameter"]), 3),
                "back_flange_diameter": round(max(p["outer_diameter"], 1.1 * turb["diameter"]), 3),
                "end_wall": round(end_wall, 3), "oil_ports": p["oil_ports"]}
     rot = _rot_from_axis(_mul(axis, -u))
@@ -2542,19 +2562,28 @@ def _size_shafts(by, place, links):
         on = [l["a"] for l in links if l["kind"] == "shaft" and l["b"] == s["name"]]
         pl = place[s["name"]]
         axis = _col(pl["rotation"], 2)
-        lo, hi = 0.0, 0.0
+        turbo = _turbo_wheels(s["name"], by, links)
+        # a turbo's shaft is measured from its parts alone; any other starts from where it stood
+        lo, hi = (math.inf, -math.inf) if turbo else (0.0, 0.0)
+        lo_part = hi_part = None
         for n in on:
             d = _dot(_sub(place[n]["centre"], pl["centre"]), axis)
             g = by[n]
             if g["type"] == "bevel_gear":
                 info = gear_info(g)
-                lo = min(lo, d - (g.get("hub_length") or 0) * MM - info["module"] * 2)
-                hi = max(hi, d + info["bevel"]["face"])
+                a, b = d - (g.get("hub_length") or 0) * MM - info["module"] * 2, d + info["bevel"]["face"]
             else:
                 e = _extent(g, gear_info(g))
-                lo, hi = min(lo, d - e), max(hi, d + e)
+                a, b = d - e, d + e
+            if a < lo:
+                lo, lo_part = a, g
+            if b > hi:
+                hi, hi_part = b, g
         spare = max(10.0, 1.5 * s["diameter"]) * MM
-        lo, hi = lo - spare, hi + spare
+        # a turbo's shaft ends flush with its wheels' noses: the compressor's nut boss and the turbine
+        # wheel's hub (one piece with the shaft on a real turbo) close over it
+        lo -= 0.0 if lo_part and lo_part["type"] in WHEELS else spare
+        hi += 0.0 if hi_part and hi_part["type"] in WHEELS else spare
         # a length given is kept, centred on the parts it carries (not on where the first one stood)
         pl["length_mm"] = s["length"] if s["length"] else round((hi - lo) / MM, 2)
         pl["centre"] = _add(pl["centre"], _mul(axis, (lo + hi) / 2))

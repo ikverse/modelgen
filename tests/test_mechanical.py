@@ -380,7 +380,13 @@ def test_the_turbo_layout_faces_the_wheels_apart_and_houses_them():
     assert mc._dot(comp, axis) > 0.99 and mc._dot(turb, axis) < -0.99  # noses point away from each other
     assert pl["compressor_housing"]["centre"] == pl["compressor"]["centre"]
     gap = abs(mc._dot(mc._sub(pl["turbine"]["centre"], pl["compressor"]["centre"]), axis))
-    assert 0.3 * 0.05 < gap < 1.3 * 0.05  # room for both scrolls, as close as a real turbo's wheels
+    by = {p["name"]: p for p in sheet["parts"]}
+    backs = gap - (by["compressor"]["length"] + by["turbine"]["length"]) / 2000
+    assert abs(backs - mc.TURBO_SPACING * 0.05) < 1e-6  # the back faces as far apart as a real turbo's
+    # the shaft ends flush with both wheels' noses
+    ends = sorted(mc._dot(mc._sub(pl[w]["centre"], pl["shaft"]["centre"]), axis) for w in ("compressor", "turbine"))
+    half = (ends[1] - ends[0]) / 2 + (by["compressor"]["length"] + by["turbine"]["length"]) / 4000
+    assert abs(pl["shaft"]["length_mm"] / 2000 - half) < 1e-6
     kinds = {(p["a"], p["b"]): p["kind"] for p in lay["pairs"]}
     assert kinds[("compressor", "compressor_housing")] == "housing"
     off = mc.exploded_offsets(sheet, lay)
@@ -392,7 +398,7 @@ def test_the_turbo_layout_faces_the_wheels_apart_and_houses_them():
 
 def test_the_centre_housing_fills_the_room_between_the_volutes_round_the_bearings():
     sheet, assumed = mc.clean(TURBO)
-    assert "centre_housing.outer_diameter = 35 (0.7 x the compressor wheel)" in assumed
+    assert "centre_housing.outer_diameter = 55 (1.1 x the compressor wheel)" in assumed
     lay = mc.layout(sheet)
     pl = lay["place"]
     axis = mc._col(pl["shaft"]["rotation"], 2)
@@ -414,7 +420,7 @@ def test_the_centre_housing_fills_the_room_between_the_volutes_round_the_bearing
     assert "centre_housing" in mc.housings(sheet) and mc.loop_turns(sheet) == 3  # it stands still
     off = mc.exploded_offsets(sheet, lay)
     assert off["centre_housing"][:2] == [0.0, 0.0] and off["centre_housing"][2] > 0.03  # lifted off the bearings
-    assert "k.centre_housing(length=0.03" in mc.part_code(by["centre_housing"], lay, by)
+    assert f"k.centre_housing(length={mc._m(hs['length'])}," in mc.part_code(by["centre_housing"], lay, by)
 
 
 def test_a_shaft_given_its_length_is_centred_on_the_parts_it_carries():
