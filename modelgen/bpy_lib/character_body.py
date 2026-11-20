@@ -56,6 +56,7 @@ _CAPS = [[8437, 8438, 8439, 8440], [8436, 8437, 8440, 8441], [8435, 8436, 8441, 
          [1762, 1771, 1770, 1763], [1763, 1770, 1769, 1764], [1764, 1769, 1768, 1765], [1765, 1768, 1767, 1766],
          [1762, 1777, 1772, 1771], [1777, 1776, 1773, 1772], [1776, 1775, 1774, 1773]]
 EYE_GROUPS = ("helper-l-eye", "helper-r-eye")
+HELPER_GROUPS = ("helper-tights", "helper-skirt", "helper-hair")
 
 
 def _to_z_up(a):
@@ -181,9 +182,37 @@ class BodyData:
             np.save(cached, out)
         return out
 
+    def local_targets(self):
+        """{slider name: (negative target, positive target)} of the local sliders (target.json):
+        nose, eyes, mouth, chin, head shape, torso, legs... Each slider runs from -1 to 1."""
+        if getattr(self, "_local", None) is None:
+            meta = json.load(open(os.path.join(self.root, "targets", "target.json"), encoding="utf-8"))
+            out = {}
+            for key, group in meta.items():
+                if key == "genitals":
+                    continue
+                for cat in group.get("categories", []):
+                    opp = cat.get("opposites") or {}
+                    for side in ("unsided", "left", "right"):
+                        neg, pos = opp.get(f"negative-{side}"), opp.get(f"positive-{side}")
+                        if neg and pos:
+                            name = cat["name"] if side == "unsided" else f"{cat['name']}-{side[0]}"
+                            out[name] = (f"targets/{key}/{neg}.target.gz", f"targets/{key}/{pos}.target.gz")
+            self._local = out
+        return self._local
+
     def shape(self, body):
-        """The base mesh's vertices shaped to the body's sliders."""
+        """The base mesh's vertices shaped to the body's sliders, then its local sliders
+        (body["local"]: {slider: -1..1}; a sided slider without its -l/-r suffix moves both sides)."""
         verts = self.template.copy()
+        table = self.local_targets()
+        for name, value in (body.get("local") or {}).items():
+            value = max(-1.0, min(1.0, float(value)))
+            names = [name] if name in table else [n for n in (f"{name}-l", f"{name}-r") if n in table]
+            for n in names:
+                rel = table[n][1] if value > 0 else table[n][0]
+                if abs(value) > 1e-4 and os.path.isfile(os.path.join(self.root, rel)):
+                    verts += abs(value) * self.target(rel)
         for rel, w, newborn in target_list(body):
             if rel.startswith("targets/breast/") and not os.path.isfile(os.path.join(self.root, rel)):
                 continue  # the average breast is the base shape itself: MakeHuman ships no file for it
@@ -192,6 +221,22 @@ class BodyData:
                 t = NEWBORN_SCALE[None, :] * t + ((NEWBORN_SCALE[None, :] - 1) / NEWBORN_BLOCKS) * self.template
             verts += w * t
         return verts
+
+    def region(self, folder, words=("flap", "lobe", "wing")):
+        """The vertices a folder of local targets really moves (targets/ears: the ears): those a
+        target named with one of `words` moves by at least 30% of its largest move (a target also
+        nudges the skin round it a little; that is not the ear)."""
+        key = "_region_" + folder
+        if not hasattr(self, key):
+            idx = set()
+            base = os.path.join(self.root, "targets", folder)
+            for name in os.listdir(base) if os.path.isdir(base) else []:
+                if name.endswith(".target.gz") and any(w in name for w in words):
+                    d = np.linalg.norm(self.target(f"targets/{folder}/{name}"), axis=1)
+                    if d.max() > 0:
+                        idx.update(np.where(d >= 0.5 * d.max())[0].tolist())
+            setattr(self, key, np.array(sorted(idx), dtype=np.int64))
+        return getattr(self, key)
 
     def _point(self, verts, spec):
         if spec["strategy"] == "VERTEX":
@@ -271,12 +316,63 @@ def typical_height_cm(age, female):
     return HEIGHTS[-1][1] + float(female) * (HEIGHTS[-1][2] - HEIGHTS[-1][1])
 
 
+def _bone_weight(data, n, names):
+    w = np.zeros(n)
+    for name in names:
+        for vi, wt in data.bone_weights.get(name, []):
+            w[int(vi)] += float(wt)
+    return np.clip(w, 0.0, 1.0)
+
+
+def restyle(data, verts, prop):
+    """A drawing style's proportions, before the body is scaled to its height: the head (and what
+    rides on it) and the hands grow about their joints by how much each vertex follows them, the
+    legs lengthen below the hip joints. Every vertex array (body, eyes, shells) moves together, and
+    the skeleton is placed from the result, so it fits."""
+    head, hands, legs, eyes = (float(prop.get(k, 1.0)) for k in ("head", "hands", "legs", "eyes"))
+    if all(abs(v - 1) < 1e-4 for v in (head, hands, legs, eyes)):
+        return verts
+    verts = verts.copy()
+    bones = {b["name"]: b for b in data.bones(verts)}
+    n = len(verts)
+    if abs(eyes - 1) > 1e-4:  # drawn eyes: each eyeball and the skin round it grow about the eye's centre
+        for group in EYE_GROUPS:
+            if group not in data.groups:
+                continue
+            ball = np.asarray(data.groups[group]["verts"])
+            c = verts[ball].mean(axis=0)
+            r = float(np.linalg.norm(verts[ball] - c, axis=1).max())
+            d = np.linalg.norm(verts - c, axis=1)
+            fall = np.clip(1.0 - (d - 1.2 * r) / (1.6 * r), 0.0, 1.0)  # whole within 1.2 eye radii, none past 2.8
+            fall[ball] = 1.0
+            verts += (eyes - 1) * fall[:, None] * (verts - c)
+    if abs(head - 1) > 1e-4:
+        w = _bone_weight(data, n, ["head"])
+        c = np.array(bones["head"]["head"])
+        verts += (head - 1) * w[:, None] * (verts - c)
+    if abs(hands - 1) > 1e-4:
+        for side in ("l", "r"):
+            names = [b for b in bones if b.endswith("_" + side) and (b.startswith(("hand", "thumb", "index", "middle",
+                                                                                   "ring", "pinky")))]
+            w = _bone_weight(data, n, names)
+            c = np.array(bones["hand_" + side]["head"])
+            verts += (hands - 1) * w[:, None] * (verts - c)
+    if abs(legs - 1) > 1e-4:
+        hip = float(bones["thigh_l"]["head"][2])
+        floor = float(verts[:, 2].min())
+        z = verts[:, 2]
+        below = z < hip
+        verts[:, 2] = np.where(below, hip - (hip - z) * legs, z) + (hip - floor) * (legs - 1)
+    return verts
+
+
 def make_body(body, root, cache_dir=None):
     """The body as data: {"vertices", "bones", "parts": {name: {"faces", "face_uvs", "verts"}},
     "uvs", "weights" (per vertex [[bone index, weight]]), "height"}. The mesh is scaled to the
     body's height_cm (else the median for its age and sex), feet on the floor, centred on X and Y."""
     data = body_data(root, cache_dir)
     verts = data.shape(body)
+    verts = restyle(data, verts, body.get("style_proportions") or {})
     body_faces, body_uvs = data.faces(["body"])
     used = sorted({v for f in body_faces for v in f})
     lo, hi = verts[used].min(axis=0), verts[used].max(axis=0)
@@ -299,8 +395,19 @@ def make_body(body, root, cache_dir=None):
     eye_faces, eye_uvs = data.faces([g for g in EYE_GROUPS if g in data.groups])
     if eye_faces:
         parts["eyes"] = {"faces": eye_faces, "face_uvs": eye_uvs}
+    lashes = [g for g in data.groups if "eyelashes" in g]
+    if lashes:
+        f, u = data.faces(lashes)
+        parts["eyelashes"] = {"faces": f, "face_uvs": u}
+    # the fitted shells clothes and hair are made from: shaped and skinned with the body
+    helpers = {}
+    for name in HELPER_GROUPS:
+        if name in data.groups:
+            f, u = data.faces([name])
+            helpers[name] = {"faces": f, "face_uvs": u}
     return {"vertices": verts, "bones": bones, "parts": parts, "uvs": data.uvs, "weights": weights,
-            "height": want, "head_top": float((hi[2] - lo[2]) * scale)}
+            "height": want, "head_top": float((hi[2] - lo[2]) * scale), "helpers": helpers,
+            "ears": data.region("ears")}
 
 
 # --- into the scene ---------------------------------------------------------------------
@@ -406,7 +513,22 @@ def build(body, root, cache_dir=None):
         mod.use_vertex_groups = True
         parts[name] = obj
     bpy.context.view_layer.update()
-    return {"rig": rig, "parts": parts, "height": made["height"], "bones": len(names)}
+    return {"rig": rig, "parts": parts, "height": made["height"], "bones": len(names), "data": made}
+
+
+def skinned_part(name, made, faces, face_uvs, rig, tag=True):
+    """A mesh of the body data's vertices for these faces, skinned to the rig like the body."""
+    me, used = _part_mesh(name, made["vertices"], faces, made["uvs"], face_uvs)
+    obj = _link(bpy.data.objects.new(name, me))
+    if tag:
+        obj[helpers.PART_KEY] = name
+        obj[helpers.NO_BEVEL_KEY] = True
+    _weights(obj, [b["name"] for b in made["bones"]], made["weights"], used)
+    obj.parent = rig
+    mod = obj.modifiers.new("rig", "ARMATURE")
+    mod.object = rig
+    mod.use_vertex_groups = True
+    return obj, used
 
 
 def skinned(obj):
@@ -447,12 +569,19 @@ def dress(parts, sheet):
     body = parts.get("body")
     if body is not None:
         body.data.materials.append(skin)
+    lashes = parts.get("eyelashes")
+    if lashes is not None:
+        lashes.data.materials.append(_material("eyelashes", "#1a1410", 0.6))
     eyes = parts.get("eyes")
     if eyes is None:
         return
     for m in (_material("sclera", "#ece8e2", 0.25, specular=0.6), _material("iris", sheet.get("eyes") or "#4a3322", 0.3),
-              _material("pupil", "#050505", 0.15)):
+              _material("pupil", "#050505", 0.15), _material("eye_glint", "#ffffff", 0.2)):
         eyes.data.materials.append(m)
+    iris_deg = float(sheet.get("iris_deg") or IRIS_DEG)
+    pupil_deg = PUPIL_DEG * iris_deg / IRIS_DEG
+    glint = sheet.get("glint")  # a drawn eye's white highlight, up and to one side of the pupil
+    glint_dir = np.array([-0.35, -1.0, 0.4]) / np.linalg.norm([-0.35, -1.0, 0.4])
     me = eyes.data
     co = np.empty(len(me.vertices) * 3)
     me.vertices.foreach_get("co", co)
@@ -465,7 +594,9 @@ def dress(parts, sheet):
         d = c - centres[bool(c[0] > 0)]
         d /= max(np.linalg.norm(d), 1e-9)
         angle = math.degrees(math.acos(max(-1.0, min(1.0, float(d @ forward)))))
-        poly.material_index = 2 if angle < PUPIL_DEG else 1 if angle < IRIS_DEG else 0
+        poly.material_index = 2 if angle < pupil_deg else 1 if angle < iris_deg else 0
+        if glint and math.degrees(math.acos(max(-1.0, min(1.0, float(d @ glint_dir))))) < 0.28 * iris_deg:
+            poly.material_index = 3
 
 
 # --- clips ----------------------------------------------------------------------------
@@ -516,7 +647,17 @@ CLIPS = {"rig_test": rig_test_clip}
 def build_character(step):
     """The job step: the body for the sheet, its skin and eyes, its clips. Returns what was made."""
     made = build(step["body"], step["root"], step.get("cache"))
-    dress(made["parts"], step.get("sheet") or {})
+    look = step.get("look") or {}
+    dress(made["parts"], {**(step.get("sheet") or {}),
+                          **{k: look[k] for k in ("skin", "eyes", "iris_deg", "glint") if look.get(k)}})
+    pieces = {}
+    if look:
+        from . import character_parts
+        dressed = character_parts.dress_up(look, made["data"], made["rig"], made["parts"])
+        pieces = dressed["pieces"]
+        if look.get("shading") == "toon":
+            character_parts.toonify([o for o in bpy.context.scene.objects if o.type == "MESH" and o.get(helpers.PART_KEY)],
+                                    made["rig"], look.get("outline", 0.004))
     clips = []
     for name in step.get("clips") or []:
         fn = CLIPS.get(name)
@@ -525,15 +666,17 @@ def build_character(step):
     for pb in made["rig"].pose.bones:
         pb.rotation_euler = Euler((0, 0, 0))
     bpy.context.scene.frame_set(bpy.context.scene.frame_start)
-    lo, hi = helpers.bounds(list(made["parts"].values()))
+    every = {**made["parts"], **pieces}
+    lo, hi = helpers.bounds(list(every.values()))
     return {"height": round(made["height"], 4), "bones": made["bones"], "clips": clips,
             "size": [round(v, 4) for v in (hi - lo)], "ground": round(lo.z, 5),
-            "parts": {k: {"vertices": len(o.data.vertices), "faces": len(o.data.polygons)}
-                      for k, o in made["parts"].items()}}
+            "parts": {o.name: {"vertices": len(o.data.vertices), "faces": len(o.data.polygons)}
+                      for o in every.values()}}
 
 
 # --- checks ---------------------------------------------------------------------------
 
+MIN_EDGE = 0.004  # edges shorter than this are left out of the stretch test
 TEST_POSES = {
     "arms_up": {"upperarm_l": (0, 0, 60), "upperarm_r": (0, 0, -60)},
     "elbows_bent": {"lowerarm_l": (0, 0, 70), "lowerarm_r": (0, 0, -70)},
@@ -598,15 +741,53 @@ def rig_report(test_poses=None):
         out["max_influences"] = max(out["max_influences"], most)
         out["foreign_groups"][obj.name] = sorted(g.name for g in obj.vertex_groups if g.name not in names)
     rest = {o.name: _edge_lengths(o, evaluated=False) for o in bodies}
+    out["stretch_by_part"] = {}
     for label, angles in test_poses.items():
         _pose(rig, angles)
         worst = 1.0
         for obj in bodies:
             posed = _edge_lengths(obj)
             r = rest[obj.name]
-            ok = r > 1e-6
-            ratio = np.maximum(posed[ok] / r[ok], r[ok] / np.maximum(posed[ok], 1e-9))
-            worst = max(worst, float(np.percentile(ratio, 99.9)) if ratio.size else 1.0)
+            ok = r > MIN_EDGE  # a cloth's thickness edges are a few mm: their ratio swings without meaning
+            ratio = posed[ok] / r[ok]  # stretching tears; squeezing (cloth bunching in a bend) does not
+            value = float(np.percentile(ratio, 99.9)) if ratio.size else 1.0
+            worst = max(worst, value)
+            part = out["stretch_by_part"].setdefault(obj.name, {})
+            part[label] = round(value, 3)
         out["stretch"][label] = round(worst, 3)
+        if label in POKE_POSES:
+            out.setdefault("poke", {})[label] = poke_through(bodies)
+    out.setdefault("poke", {})["rest"] = (_pose(rig, {}), poke_through(bodies))[1]
     _pose(rig, {})
     return out
+
+
+POKE_POSES = ("arms_up", "knee_up", "twist")
+SKIN_PARTS = ("body",)
+NOT_CLOTH = ("body", "eyes", "eyelashes", "brows", "hair", "hair_strands", "hair_spikes", "ponytail", "bun", "glasses")
+
+
+def poke_through(objs, near=0.03):
+    """How much skin shows through the clothes as the body is posed now: of the body vertices with
+    a garment within `near` metres outside them, the share whose garment surface is found inside
+    the skin instead (cast inwards along the vertex normal, up to 2 cm). 0 is perfect."""
+    from mathutils.bvhtree import BVHTree
+    dg = bpy.context.evaluated_depsgraph_get()
+    cloth = [o for o in objs if not o.name.split(".")[0].startswith(NOT_CLOTH)]
+    body = next((o for o in objs if o.name.split(".")[0] == "body"), None)
+    if not cloth or body is None:
+        return {"checked": 0, "through": 0, "share": 0.0}
+    trees = [BVHTree.FromObject(o, dg) for o in cloth]
+    ev = body.evaluated_get(dg)
+    me = ev.to_mesh()
+    checked = through = 0
+    for v in me.vertices:
+        p, n = v.co, v.normal
+        outside = any(t.ray_cast(p + n * 0.0005, n, near)[0] is not None for t in trees)
+        inside = any(t.ray_cast(p - n * 0.0005, -n, 0.012)[0] is not None for t in trees)
+        if outside or inside:
+            checked += 1
+            if inside and not outside:
+                through += 1
+    ev.to_mesh_clear()
+    return {"checked": checked, "through": through, "share": round(through / checked, 4) if checked else 0.0}

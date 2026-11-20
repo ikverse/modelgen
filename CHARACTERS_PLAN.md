@@ -99,3 +99,9 @@ image-to-3D models (21-24 GB of video memory).
 ## Progress
 
 - Stage 1: built and tested (46 tests in `tests/test_characters.py`, real Blender jobs included).
+- Stage 2: built and tested. Clothes come from the helper-tights and helper-skirt shells; hair grows
+  from the scalp (ears found from the ear targets); brows are arched strips laid on the skin; face
+  sliders from the local targets; styles in `modelgen/character_styles.yaml` (eye-region scale, cel
+  bands as an Emission ramp so Cycles draws them, render-only ink shells; the viewer draws its own
+  outline from `mg_outline`). Checks added: clothes cover the skin in the test poses. The user asked
+  (2026-11-21) to test only the hardest cases while building and test the rest themselves.

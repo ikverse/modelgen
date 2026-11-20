@@ -574,6 +574,61 @@ def character_designer_tools(sink):
                       CHARACTER_SCHEMA, submit)]
 
 
+def character_tailor_tools(sink, sheet):
+    """submit_outfit: the outfit and accessories are checked on the character's sheet by the same
+    code that dresses it (tools.character.clean_look)."""
+    from . import character
+
+    def submit(args):
+        raw = {"outfit": args.get("outfit"), "accessories": args.get("accessories") or [],
+               "hair": sheet.get("hair"), "brows": sheet.get("brows"), "face": sheet.get("face")}
+        try:
+            got = character.clean_look(raw, sheet, [])
+        except character.CharacterError as exc:
+            return {"ok": False, "error": str(exc)}
+        sink.update(outfit=got["outfit"], accessories=got["accessories"], notes=str(args.get("notes") or ""))
+        return {"ok": True, "outfit": [g["type"] for g in got["outfit"]],
+                "accessories": [a["type"] for a in got["accessories"]]}
+
+    schema = {"type": OBJ, "properties": {
+        "outfit": {"type": "array", "items": {"type": OBJ, "properties": {
+            "type": {"type": "string", "enum": list(character.GARMENT_TYPES)},
+            "colour": {"type": "string"},
+            "length": {"type": "string", "enum": list(character.SKIRT_LENGTHS)}}, "required": ["type", "colour"]}},
+        "accessories": {"type": "array", "items": {"type": OBJ}},
+        "notes": {"type": "string"}}, "required": ["outfit"]}
+    return [AgentTool("submit_outfit", "Submit what the character wears: outfit [{type, colour, length}] and "
+                      "accessories [{type: glasses, shape, frame, colour}]. Checked at once; a mistake comes back "
+                      "with the field named.", schema, submit)]
+
+
+def character_hair_tools(sink, sheet):
+    """submit_hair: hair, brows and face sliders, checked by tools.character.clean_look."""
+    from . import character
+
+    def submit(args):
+        raw = {"outfit": sheet.get("outfit"), "accessories": sheet.get("accessories"),
+               "hair": args.get("hair"), "brows": args.get("brows") or {}, "face": args.get("face") or {}}
+        try:
+            got = character.clean_look(raw, sheet, [])
+        except character.CharacterError as exc:
+            return {"ok": False, "error": str(exc)}
+        sink.update(hair=got["hair"], brows=got["brows"], face=got["face"], notes=str(args.get("notes") or ""))
+        return {"ok": True, "hair": got["hair"], "brows": got["brows"], "face": got["face"]}
+
+    schema = {"type": OBJ, "properties": {
+        "hair": {"type": OBJ, "properties": {"style": {"type": "string", "enum": list(character.HAIR_STYLES)},
+                                             "colour": {"type": "string"}, "length": {"type": "number"}},
+                 "required": ["style", "colour"]},
+        "brows": {"type": OBJ, "properties": {"colour": {"type": "string"}, "thickness": {"type": "number"},
+                                              "arch": {"type": "number"}}},
+        "face": {"type": OBJ, "description": "{slider: -1..1} from the list in the request"},
+        "notes": {"type": "string"}}, "required": ["hair"]}
+    return [AgentTool("submit_hair", "Submit the hair {style, colour}, brows {colour, thickness, arch} and face "
+                      "sliders {name: -1..1}. Checked at once; a mistake comes back with the field named.",
+                      schema, submit)]
+
+
 def caster_tools(sink, ids):
     """choose: the caster names the ready-made model that is the object asked for, or "none"."""
     def choose(args):
@@ -1093,6 +1148,7 @@ def animator_tools(rnd):
 # --- critic and librarian ---------------------------------------------------------------
 
 MECHANICAL_RUBRIC_FILE = config.PACKAGE / "rubric_mechanical.yaml"
+CHARACTER_RUBRIC_FILE = config.PACKAGE / "rubric_character.yaml"  # a person built by the character path
 
 
 def rubric_file(plan=None, spec=None):
@@ -1104,6 +1160,8 @@ def rubric_file(plan=None, spec=None):
         return config.SHELL_RUBRICS[shell]
     if families.of(spec) == "mechanical" and MECHANICAL_RUBRIC_FILE.is_file():
         return MECHANICAL_RUBRIC_FILE
+    if families.of(spec) == "person" and CHARACTER_RUBRIC_FILE.is_file():
+        return CHARACTER_RUBRIC_FILE
     if str((spec or {}).get("use") or "").lower() == "game" and config.GAME_RUBRIC_FILE.is_file():
         return config.GAME_RUBRIC_FILE
     return config.RUBRIC_FILE

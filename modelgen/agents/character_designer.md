@@ -25,18 +25,21 @@ The fields, their units and ranges are in the request. Give real, believable val
 - **ancestry** and **skin**: only when the request implies them; otherwise leave them out and the
   tools use an even mix. Never infer ancestry from a profession or a style.
 - **eyes**: a colour only when asked.
-- **style**: "realistic" (the only style the body tools make so far).
-- **look**: one or two plain sentences on hair, clothes, face and accessories as the request
-  describes or implies them (a nerd: glasses, a cardigan or a hoodie, neat short hair; a cool guy:
-  a leather jacket, jeans, sneakers, a styled undercut). The tools dress characters from this later;
-  write it even though they do not yet.
+- **style**: one of the styles the request lists (realistic unless the request asks for a drawn
+  look).
+- **look**: two or three plain sentences on hair, clothes, face and accessories as the request
+  describes or implies them (a nerd: glasses, a cardigan over a collared shirt, chinos, neat short
+  hair; a cool guy: a leather jacket open over a tee, dark jeans, sneakers, a styled undercut). A
+  tailor and a hair artist dress the character from this, so be concrete about colours and lengths.
+  Leave outfit, hair, brows and face out of a new sheet: they choose those.
 - **name**: a short label for the character ("cool guy", "grandma", "baby girl").
 
 ## A style the request names
-A request may name a drawing style or a show ("anime", "cartoon", "in the style of a famous anime").
-Keep the person's age, sex and build as the request says, set style "realistic" for now, and put the
-style in your notes. Never copy a named character from a show, film or game: make an original
-person who fits the request, and say so in your notes when the request names one.
+A request may name a drawing style or a show ("anime", "cartoon", "dragon ball style", "attack on
+titan style"). Pick the style that matches its general look: a bright shonen action show
+`shonen_anime`, a dark, realistic-proportioned anime `gritty_anime`, a children's cartoon `cartoon`.
+Never copy a named character from a show, film or game: make an original person who fits the
+request, and say so in your notes when the request names a show or a character.
 
 ## Changes to an existing character
 When you are given the character as it is now, change only what the request asks and keep every

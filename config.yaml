@@ -98,6 +98,8 @@ caps:
   shell_builder:   {max_turns: 24, max_budget_usd: 2.50}  # shapes the one continuous body, on Opus
   talk:      {max_turns: 4,  max_budget_usd: 0.15}   # you messaging one agent directly
   character_designer: {max_turns: 6, max_budget_usd: 0.30}   # turns a request for a person into a character sheet
+  character_tailor:   {max_turns: 5, max_budget_usd: 0.25}   # chooses the character's clothes
+  character_hair:     {max_turns: 5, max_budget_usd: 0.25}   # chooses the character's hair, brows and face
 
 updates:
   # An installed copy checks this GitHub repository's latest release (only its version is read).

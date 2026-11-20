@@ -173,9 +173,14 @@ clip picker appears when it has more than one. Ask for changes in words ("make h
 older"). A robot, an animal, a statue or a monster is not a person: the team builds those as
 stylised figures.
 
-So far a character is a bare, uniformly coloured body with eyes and one test clip; hair, clothes,
-drawn styles (cartoon, anime), real clips (idle, walk, run) and hair and cloth physics are the next
-stages of `CHARACTERS_PLAN.md`.
+A tailor agent chooses the clothes and a hair agent the hair, brows and face from the designer's
+words; the tools cut every garment from shells that already fit the body (tops, trousers, skirts,
+dresses, coats, shoes) and grow the hair from the scalp, so everything fits and moves with the
+skeleton. Four styles: realistic, cartoon, shonen anime and gritty anime (bigger heads and eyes,
+cel shading and an ink outline for the drawn ones; never a copy of a named character). Real clips
+(idle, walk, run) and hair and cloth physics are the next stages of `CHARACTERS_PLAN.md`. Honest
+limits: faces are clean but plain, hair is a solid shape rather than strands, and the drawn styles
+are a general look, not a studio's art.
 
 Every finished model, however it was made, also gets **game-ready files** in its `game` folder
 (they are listed in the Export stage and are in the *All of it* zip): `<name>_game.glb` within the triangle limit of its family, with

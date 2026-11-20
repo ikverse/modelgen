@@ -187,8 +187,13 @@ then no agent runs at all (`cost_usd` 0):
 | `muscle`, `weight`, `proportions` | from `build`; `0.5` | 0 to 1, 0.5 average; they override `build` |
 | `ancestry` | an even mix | `african`, `asian` or `caucasian`, or shares `{"asian": 3, "caucasian": 1}` |
 | `skin`, `eyes` | typical for the ancestry | `#rrggbb` |
-| `style` | `realistic` | the only style so far; drawn styles come later |
-| `look` | | hair, clothes and face in words (used once characters are dressed) |
+| `style` | `realistic` | `realistic`, `cartoon`, `shonen_anime` or `gritty_anime`: proportions (head, eyes, legs), face, cel shading and an outline width for the drawn ones |
+| `look` | | hair, clothes and face in words (with plain words, the tailor and hair agents dress the character from it) |
+| `outfit` | plain clothes for the age | `[{"type", "colour", "length"}]`: one inner top, one outer top (`cardigan`, `jacket`, `leather_jacket`, `coat`), one bottom or a `dress` or a `onesie`, one pair of shoes; types in `GET /v1/characters` |
+| `hair` | by age and sex | `{"style", "colour"}`: `bald`, `buzz`, `short`, `crew`, `undercut`, `medium`, `bob`, `long`, `ponytail`, `bun`, `spiky`, `curly`, `afro` |
+| `brows` | the hair's colour | `{"colour", "thickness": 0..1, "arch": 0..1}` |
+| `accessories` | | `[{"type": "glasses", "shape": "round" or "square", "frame": "thin" or "thick", "colour"}]` |
+| `face` | | `{"slider": -1..1}`: nose, eyes, mouth, chin, head shape...; the names in `GET /v1/characters` |
 
 Every value filled in is listed in `assumed`; a sheet that cannot be built is refused with the
 field named (`character.age must be from 0.0 to 95.0, not 130`). The job's answer has `source:
@@ -199,9 +204,12 @@ standing on the floor at the origin, Z up, facing -Y, with a **53-bone game skel
 `spine_01`..`03`, `neck_01`, `head`, `clavicle_l`, `upperarm_l`, `lowerarm_l`, `hand_l`, three bones
 per finger, `thigh_l`, `calf_l`, `foot_l`, `ball_l` and the same on the right) and skin weights of
 at most four bones per vertex, in the GLB and FBX files (full and game). The game file is held to
-20 000 triangles, with lower-detail versions that keep the skeleton. It carries one clip so far,
-`rig_test` (a 4-second loop that moves every main joint); real clips (idle, walk, run...), hair,
-clothes and drawn styles come in the next stages.
+20 000 triangles, with lower-detail versions that keep the skeleton. Clothes, shoes, hair, brows
+and glasses are separate meshes skinned to the same skeleton (body skin hidden under clothes is
+removed). A drawn style's materials carry `mg_toon_colors`, `mg_toon_stops`, `mg_toon_light` (cel
+bands) and `mg_outline` (outline width, metres) as material extras: draw them as toon shading with an
+inverted-hull outline. It carries one clip so far, `rig_test` (a 4-second loop that moves every main
+joint); real clips (idle, walk, run...) come in the next stage.
 
 ## Mechanisms (gears and other mechanical parts)
 

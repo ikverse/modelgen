@@ -93,6 +93,12 @@ each one on its own against the real car (or the references), and give every cha
 improves. At least one change must aim at one of your two weakest areas. Spend the list on what
 looks worst; an area that already looks right (7 or more) is left alone, and the builder is told so.
 
+## People
+A person (the spec's family is person) is scored by the character rubric: who the person is
+against real people of that age and build first, then the face, the hair and clothes, how the skin
+and clothes follow the skeleton, the style. Its changes are words for the character designer ("ten
+years older", "a red coat instead of the cardigan", "spikier hair"), never geometry.
+
 Do not ask for changes that fight the spec. Do not list a change the checks already show as
 passing. Judge silhouette first, then proportions, then parts and details, then surfaces and
 materials. If a hard gate fails in the checks, the first change must fix it.

@@ -10,6 +10,7 @@ Everything here is plain Python: the host checks a sheet without Blender, and th
 reach Blender in the job.
 """
 
+import functools
 import hashlib
 import json
 
@@ -20,7 +21,31 @@ SEXES = {"female": 1.0, "woman": 1.0, "girl": 1.0, "f": 1.0, "male": 0.0, "man":
 # build -> (muscle, weight) sliders, 0..1 with 0.5 average
 BUILDS = {"skinny": (0.15, 0.0), "slim": (0.3, 0.15), "average": (0.5, 0.5), "athletic": (0.9, 0.4),
           "muscular": (1.0, 0.65), "stocky": (0.7, 0.8), "chubby": (0.3, 0.85), "heavy": (0.4, 1.0)}
-STYLES = ("realistic",)  # stage 2 adds the stylised looks
+STYLES = ("realistic", "cartoon", "shonen_anime", "gritty_anime")
+# what the clothes and hair tools make (bpy_lib.character_parts GARMENTS and HAIR_STYLES; a test keeps
+# the two lists the same)
+GARMENT_TYPES = ("tshirt", "tank_top", "shirt", "blouse", "sweater", "hoodie", "cardigan", "turtleneck", "jacket",
+                 "leather_jacket", "coat", "pants", "jeans", "chinos", "shorts", "leggings", "skirt", "dress", "onesie",
+                 "sneakers", "shoes", "flats", "boots")
+GARMENT_KIND = {**{t: "top" for t in ("tshirt", "tank_top", "shirt", "blouse", "sweater", "hoodie", "cardigan",
+                                      "turtleneck", "jacket", "leather_jacket", "coat")},
+                **{t: "bottom" for t in ("pants", "jeans", "chinos", "shorts", "leggings", "skirt")},
+                "dress": "dress", "onesie": "onesie", **{t: "shoes" for t in ("sneakers", "shoes", "flats", "boots")}}
+OUTER = ("cardigan", "jacket", "leather_jacket", "coat")  # tops worn over another top
+HAIR_STYLES = ("bald", "buzz", "short", "crew", "undercut", "medium", "bob", "long", "ponytail", "bun", "spiky",
+               "curly", "afro")
+SKIRT_LENGTHS = ("mini", "knee", "midi", "long")
+ACCESSORIES = ("glasses",)
+# the face and body sliders the agents are shown (the body model has about 190; these shape a face)
+FACE_SLIDERS = ("head-scale-horiz-decr-incr", "head-scale-vert-decr-incr", "head-fat-decr-incr",
+                "head-age-decr-incr", "eye-scale-decr-incr", "eye-trans-down-up", "eye-corner1-down-up",
+                "eye-epicanthus-in-out", "eyebrows-trans-down-up", "eyebrows-angle-down-up",
+                "nose-scale-horiz-decr-incr", "nose-scale-vert-decr-incr", "nose-hump-decr-incr",
+                "nose-point-width-decr-incr", "mouth-scale-horiz-decr-incr", "mouth-lowerlip-volume-decr-incr",
+                "mouth-upperlip-height-decr-incr", "mouth-angles-down-up", "chin-width-decr-incr",
+                "chin-prominent-decr-incr", "chin-height-decr-incr", "cheek-bones-decr-incr",
+                "ear-scale-decr-incr", "neck-scale-horiz-decr-incr", "torso-vshape-decr-incr")
+MAX_GARMENTS = 6
 # typical skin tones (sRGB) by the largest ancestry share, light to deep within each
 SKIN = {"african": "#6b4430", "asian": "#d9ae8c", "caucasian": "#e3b9a0", "mixed": "#b9876a"}
 EYES = {"african": "#3b2416", "asian": "#3b2416", "caucasian": "#5a6e8a", "mixed": "#4a3322"}
@@ -112,6 +137,132 @@ def _main_ancestry(shares):
     return best if shares[best] >= 0.6 else "mixed"
 
 
+@functools.lru_cache(maxsize=1)
+def face_sliders():
+    """The local sliders the body model has (nose, eyes, mouth, chin, head shape, torso...), named as
+    bpy_lib.character_body.local_targets names them; each runs from -1 to 1."""
+    path = config.ROOT / str(config.get("characters", "data", "assets_cc0/anny_body")) / "targets" / "target.json"
+    if not path.is_file():
+        return ()
+    out = []
+    for key, group in json.loads(path.read_text(encoding="utf-8")).items():
+        if key == "genitals":
+            continue
+        for cat in group.get("categories", []):
+            opp = cat.get("opposites") or {}
+            if opp.get("negative-unsided") and opp.get("positive-unsided"):
+                out.append(cat["name"])
+            elif opp.get("negative-left") and opp.get("positive-left"):
+                out.append(cat["name"])  # sided: one value moves both sides
+    return tuple(sorted(out))
+
+
+def _grey_for(age):
+    return "#d8d6d2" if age >= 72 else "#b9b6b0" if age >= 60 else None
+
+
+def default_look(sheet):
+    """A plain look for the age and sex when the sheet gives none: what most people wear."""
+    age, sex = sheet["age"], sheet["sex"]
+    hair_colour = _grey_for(age) or "#3b2a1e"
+    if age < 2:
+        return {"hair": {"style": "buzz", "colour": "#6b4a2b"}, "outfit": [{"type": "onesie", "colour": "#a9cbe6"}]}
+    hair = {"style": "ponytail" if sex == "female" and age < 60 else "bob" if sex == "female" else "short",
+            "colour": hair_colour}
+    if sex == "female":
+        outfit = [{"type": "blouse", "colour": "#e9e4dc"}, {"type": "jeans", "colour": "#3d5a80"},
+                  {"type": "flats", "colour": "#3a2a22"}]
+    else:
+        outfit = [{"type": "tshirt", "colour": "#e8e8e8"}, {"type": "jeans", "colour": "#3d5a80"},
+                  {"type": "sneakers", "colour": "#f2f2f2"}]
+    return {"hair": hair, "outfit": outfit}
+
+
+def clean_look(raw, sheet, assumed):
+    """The structured look (hair, outfit, accessories, brows, face) of a sheet, checked; what was
+    filled in goes to assumed. Raises CharacterError naming the field."""
+    out = {}
+    given = {k: raw.get(k) for k in ("hair", "outfit", "accessories", "brows", "face") if raw.get(k) is not None}
+    plain = default_look(sheet)
+    if "outfit" not in given:
+        assumed.append("outfit: " + ", ".join(g["type"].replace("_", " ") for g in plain["outfit"]))
+    if "hair" not in given:
+        assumed.append(f"hair: {plain['hair']['style']}")
+    outfit = given.get("outfit", plain["outfit"])
+    if not isinstance(outfit, list) or len(outfit) > MAX_GARMENTS:
+        raise CharacterError(f"character.outfit must be a list of at most {MAX_GARMENTS} garments")
+    clean_outfit, kinds = [], {}
+    for i, g in enumerate(outfit):
+        where = f"character.outfit[{i}]"
+        if not isinstance(g, dict) or g.get("type") not in GARMENT_TYPES:
+            raise CharacterError(f"{where}.type must be one of {', '.join(GARMENT_TYPES)}, not "
+                                 f"{(g or {}).get('type') if isinstance(g, dict) else g!r}")
+        item = {"type": g["type"], "colour": _hex(g.get("colour") or "#777777", f"{where}.colour")}
+        if g["type"] in ("skirt", "dress"):
+            length = g.get("length") or "knee"
+            if length not in SKIRT_LENGTHS:
+                raise CharacterError(f"{where}.length must be one of {', '.join(SKIRT_LENGTHS)}")
+            item["length"] = length
+        kind = GARMENT_KIND[g["type"]]
+        slot = "outer" if g["type"] in OUTER else kind
+        if slot in kinds:
+            raise CharacterError(f"{where}: two {slot} garments ({kinds[slot]} and {g['type']}); one {slot} at most")
+        kinds[slot] = g["type"]
+        clean_outfit.append(item)
+    if "onesie" in kinds.values() and len(kinds) > 2:
+        raise CharacterError("character.outfit: a onesie is worn alone (shoes at most)")
+    if "dress" in kinds and ("top" in kinds or "bottom" in kinds):
+        raise CharacterError("character.outfit: a dress takes no other top or bottom (an outer layer and shoes are fine)")
+    order = {"top": 0, "dress": 0, "onesie": 0, "bottom": 1, "shoes": 2, "outer": 3}
+    clean_outfit.sort(key=lambda g: order["outer" if g["type"] in OUTER else GARMENT_KIND[g["type"]]])
+    out["outfit"] = clean_outfit
+    hair = given.get("hair", plain["hair"])
+    if not isinstance(hair, dict) or hair.get("style") not in HAIR_STYLES:
+        raise CharacterError(f"character.hair.style must be one of {', '.join(HAIR_STYLES)}")
+    out["hair"] = {"style": hair["style"],
+                   "colour": _hex(hair.get("colour") or _grey_for(sheet["age"]) or "#3b2a1e", "character.hair.colour")}
+    if hair.get("length") is not None and hair["style"] == "long":
+        out["hair"]["length"] = _num(hair, "length", 0.0, 0.4, "character.hair")
+    brows = given.get("brows") or {}
+    if not isinstance(brows, dict):
+        raise CharacterError("character.brows must be {colour, thickness, arch}")
+    age_thick = 0.05 if sheet["age"] < 2 else 0.3 if sheet["age"] < 12 else 0.5
+    out["brows"] = {"colour": _hex(brows.get("colour") or (_lighter(out["hair"]["colour"]) if sheet["age"] < 2
+                                                             else out["hair"]["colour"]), "character.brows.colour"),
+                    "thickness": _num(brows, "thickness", 0, 1, "character.brows") if brows.get("thickness") is not None
+                    else age_thick,
+                    "arch": _num(brows, "arch", 0, 1, "character.brows") if brows.get("arch") is not None else 0.5}
+    accessories = given.get("accessories") or []
+    if not isinstance(accessories, list):
+        raise CharacterError("character.accessories must be a list")
+    out["accessories"] = []
+    for i, a in enumerate(accessories):
+        if not isinstance(a, dict) or a.get("type") not in ACCESSORIES:
+            raise CharacterError(f"character.accessories[{i}].type must be one of {', '.join(ACCESSORIES)}")
+        item = {"type": a["type"], "shape": a.get("shape") or "round", "frame": a.get("frame") or "thin",
+                "colour": _hex(a.get("colour") or "#1b1b1b", f"character.accessories[{i}].colour")}
+        if item["shape"] not in ("round", "square") or item["frame"] not in ("thin", "thick"):
+            raise CharacterError(f"character.accessories[{i}]: shape round or square, frame thin or thick")
+        out["accessories"].append(item)
+    face = given.get("face") or {}
+    if not isinstance(face, dict):
+        raise CharacterError("character.face must be {slider: -1..1}")
+    names = set(face_sliders())
+    out["face"] = {}
+    for k, v in face.items():
+        if names and k not in names:
+            close = [n for n in names if n.split("-")[0] == str(k).split("-")[0]][:6]
+            raise CharacterError(f"character.face has no slider {k!r}" + (f"; for example {', '.join(close)}"
+                                                                         if close else ""))
+        out["face"][k] = round(_num(face, k, -1.0, 1.0, "character.face"), 3)
+    return out
+
+
+def _lighter(hex_colour, amount=0.45):
+    c = [int(hex_colour[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (255 - x) * amount):02x}" for x in c)
+
+
 def clean(raw):
     """Check a character sheet and fill in what it leaves out. Returns (sheet, assumed): assumed
     lists each value chosen by default, in words. Raises CharacterError naming the field."""
@@ -154,17 +305,62 @@ def clean(raw):
     if style not in STYLES:
         raise CharacterError(f"character.style must be one of {', '.join(STYLES)}, not {style!r}")
     out["style"] = style
-    out["look"] = str(raw.get("look") or "").strip()[:600]  # hair, clothes, face in words: used from stage 2
+    out["look"] = str(raw.get("look") or "").strip()[:600]  # hair, clothes, face in words
     if out["age"] < 3 and out["build"] in ("athletic", "muscular"):
         raise CharacterError(f"character.build {out['build']!r} does not fit a {out['age']:g}-year-old: "
                              "use slim, average or chubby")
+    out.update(clean_look(raw, out, assumed))
     return out, assumed
 
 
+STYLES_FILE = config.PACKAGE / "character_styles.yaml"
+
+
+@functools.lru_cache(maxsize=1)
+def _styles():
+    import yaml
+    return yaml.safe_load(STYLES_FILE.read_text(encoding="utf-8")) or {}
+
+
+def style(name):
+    """A drawing style's profile (character_styles.yaml): proportions, face, shading, outline,
+    saturation, hair volume."""
+    return _styles().get(name) or _styles()["realistic"]
+
+
 def body(sheet):
-    """The body model's sliders for a cleaned sheet (bpy_lib.character_body.coefficients)."""
+    """The body model's sliders for a cleaned sheet (bpy_lib.character_body.coefficients), with the
+    style's proportions and face sliders added to the sheet's own."""
+    prof = style(sheet.get("style", "realistic"))
+    local = dict(prof.get("face") or {})
+    for k, v in (sheet.get("face") or {}).items():
+        local[k] = max(-1.0, min(1.0, local.get(k, 0.0) + v))
     return {"age": sheet["age"], "female": sheet["female"], "muscle": sheet["muscle"], "weight": sheet["weight"],
-            "proportions": sheet["proportions"], "height_cm": sheet["height_cm"], **sheet["ancestry"]}
+            "proportions": sheet["proportions"], "height_cm": sheet["height_cm"], **sheet["ancestry"],
+            "local": local, "style_proportions": dict(prof.get("proportions") or {})}
+
+
+def _saturate(hex_colour, amount):
+    import colorsys
+    r, g, b = (int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    h, lum, s = colorsys.rgb_to_hls(r, g, b)
+    r, g, b = colorsys.hls_to_rgb(h, lum, max(0.0, min(1.0, s * amount)))
+    return "#" + "".join(f"{round(x * 255):02x}" for x in (r, g, b))
+
+
+def look(sheet):
+    """What Blender dresses the character in: the sheet's look with the style's colours and hair
+    volume, and how it is shaded."""
+    prof = style(sheet.get("style", "realistic"))
+    sat = float(prof.get("saturation", 1.0))
+    paint = (lambda c: _saturate(c, sat)) if sat != 1.0 else (lambda c: c)
+    return {"outfit": [{**g, "colour": paint(g["colour"])} for g in sheet.get("outfit") or []],
+            "hair": {**sheet["hair"], "colour": paint(sheet["hair"]["colour"]),
+                     "volume": float(prof.get("hair_volume", 1.0))} if sheet.get("hair") else None,
+            "brows": sheet.get("brows"), "accessories": sheet.get("accessories") or [],
+            "skin": paint(sheet["skin"]), "eyes": sheet["eyes"],
+            "shading": prof.get("shading", "pbr"), "outline": float(prof.get("outline", 0) or 0),
+            "iris_deg": float(prof.get("iris_deg", 30)), "glint": bool(prof.get("glint", False))}
 
 
 def key(sheet):
@@ -218,8 +414,16 @@ def catalogue():
                      "default": "an even mix"},
         "skin": {"type": "colour", "default": "a typical tone for the ancestry"},
         "eyes": {"type": "colour", "default": "a typical colour for the ancestry"},
-        "style": {"choices": list(STYLES), "default": "realistic"},
+        "style": {"choices": list(STYLES), "default": "realistic",
+                  "about": {k: style(k).get("about") for k in STYLES}},
         "look": {"type": "text", "about": "hair, clothes and face in words"},
+        "outfit": {"about": "[{type, colour, length}]: one inner top, one outer top, one bottom (or a dress, or a "
+                            "onesie alone), one pair of shoes", "types": list(GARMENT_TYPES),
+                   "outer": list(OUTER), "lengths": list(SKIRT_LENGTHS), "default": "plain clothes for the age"},
+        "hair": {"about": "{style, colour}", "styles": list(HAIR_STYLES)},
+        "brows": {"about": "{colour, thickness 0..1, arch 0..1}", "default": "the hair's colour, thin for a child"},
+        "accessories": {"about": "[{type: glasses, shape: round|square, frame: thin|thick, colour}]"},
+        "face": {"about": "{slider: -1..1}", "sliders": list(FACE_SLIDERS)},
     }
 
 
@@ -238,7 +442,8 @@ def available():
 
 def build_step(sheet, clips=None):
     """The Blender step that builds, rigs, colours and animates the character of a cleaned sheet."""
-    return {"kind": "character", "body": body(sheet), "sheet": sheet, "root": data_root(), "cache": cache_dir(),
+    return {"kind": "character", "body": body(sheet), "sheet": sheet, "look": look(sheet), "root": data_root(),
+            "cache": cache_dir(),
             "clips": list(clips or ["rig_test"]), "label": f"build {who(sheet)}"}
 
 

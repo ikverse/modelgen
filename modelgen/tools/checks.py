@@ -265,9 +265,20 @@ def character_checks(made, rig, sheet, floor_tolerance=None):
                              "detail": "no test poses" if worst is None else
                              (f"in the test poses edges stretch at most {worst:.2f}x" if not bad else
                               "the skin tears in: " + ", ".join(f"{k} ({stretch[k]:.1f}x)" for k in bad))}
+    poke = {k: v for k, v in (rig.get("poke") or {}).items() if v.get("checked")}
+    if poke:
+        bad = {k: v["share"] for k, v in poke.items() if v["share"] > MAX_POKE}
+        worst = max(v["share"] for v in poke.values())
+        gates["clothes_cover"] = {"pass": not bad, "detail": (
+            f"at most {worst * 100:.1f}% of the skin under the clothes shows through, at rest and in the test poses"
+            if not bad else "skin shows through the clothes in: " +
+            ", ".join(f"{k} ({v * 100:.0f}%)" for k, v in bad.items()))}
     out = {"passed": all(g["pass"] for g in gates.values()), "gates": gates, "warnings": []}
     out["triangles"] = sum(int(p.get("faces") or 0) * 2 for p in (made.get("parts") or {}).values())
     return out
+
+
+MAX_POKE = 0.05  # share of the skin next to clothes that may show through them in a pose
 
 
 def part_report(measure, expected=None, tol=None):

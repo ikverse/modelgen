@@ -34,7 +34,9 @@ exactly once with the full spec, then you stop. Do not write anything else.
 - `family`: what kind of thing it is, from the list of object families in your task. It decides
   which rules and building blocks the team uses, so choose the one the whole object belongs to
   (a park with benches is a `scene`, not `furniture`; a school bus is a `vehicle`; a bus station is
-  a `building`). `general` when none fits.
+  a `building`). `general` when none fits. A person is normally built by the character path before
+  you are asked; if one still reaches you (a statue of a person, a robot), it is a `character`, not
+  a `person`.
 - `motion`: only when the model should move; leave it out for a still object. The animator then
   gives it a looping motion the page plays and the GLB and FBX carry. It has `speed_kmh` (how fast
   the vehicle travels; the wheels roll at that speed), `wheels` (the names of the parts that turn:

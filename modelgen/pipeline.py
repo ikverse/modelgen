@@ -741,6 +741,46 @@ async def _designer(project, text, before=None):
     raise PipelineError("the character designer did not submit a character" + _reason(res))
 
 
+def _look_caps(name):
+    table = (config.settings().get("caps") or {}).get(name) or {}
+    return {"max_turns": 5, "max_budget_usd": 0.25, **table}
+
+
+async def _dress(project, text, sheet):
+    """The tailor and the hair artist, side by side, turn the sheet's look in words into what the
+    tools make: the outfit and accessories, the hair, brows and face sliders. Returns the sheet
+    with them, cleaned; a part neither agent submitted keeps the sheet's defaults."""
+    shown = {k: sheet[k] for k in ("name", "age", "sex", "build", "style", "look", "ancestry")}
+    base = f"## Request\n{text}\n\n## The character sheet\n{_json(shown)}\n\n"
+    tailor, hairs = {}, {}
+    tailor_prompt = (base + "## What the clothing tools make\n" + _json({
+        "garments": {t: character.GARMENT_KIND[t] for t in character.GARMENT_TYPES},
+        "outer_tops": list(character.OUTER), "skirt_and_dress_lengths": list(character.SKIRT_LENGTHS),
+        "accessories": {"glasses": {"shape": ["round", "square"], "frame": ["thin", "thick"]}}})
+        + "\n\nCall `submit_outfit` once.")
+    hair_prompt = (base + "## What the hair and face tools make\n" + _json({
+        "hair_styles": list(character.HAIR_STYLES), "face_sliders": list(character.FACE_SLIDERS)})
+        + "\n\nCall `submit_hair` once.")
+    _phase(project, "The tailor and the hair artist are dressing the character", step="plan")
+    await asyncio.gather(
+        runner.run_agent("character_tailor", tailor_prompt, at.character_tailor_tools(tailor, sheet), project=project,
+                         doing="choosing the clothes", step=True, caps=_look_caps("character_tailor")),
+        runner.run_agent("character_hair", hair_prompt, at.character_hair_tools(hairs, sheet), project=project,
+                         doing="choosing the hair and face", step=True, caps=_look_caps("character_hair")))
+    raw = dict(sheet)
+    if tailor.get("outfit"):
+        raw.update(outfit=tailor["outfit"], accessories=tailor.get("accessories") or [])
+    if hairs.get("hair"):
+        raw.update(hair=hairs["hair"], brows=hairs.get("brows"), face=hairs.get("face") or {})
+    for who, got in (("tailor", tailor), ("hair artist", hairs)):
+        if not got:
+            db.add_event("warning", project=project, agent="director",
+                         data={"text": f"the {who} submitted nothing: the plain default is used"})
+    notes = " ".join(n for n in (tailor.get("notes"), hairs.get("notes")) if n)
+    cleaned, _ = character.clean(raw)
+    return cleaned, notes
+
+
 async def _try_character(project, request, changes, next_version):
     """A person the character path builds: from the sheet a program sent (the job's character), from
     the designer's sheet for a request in plain words that asks for a person, or a change to a
@@ -773,7 +813,10 @@ async def _try_character(project, request, changes, next_version):
     _handoff(project, "director", "character_designer", "your request")
     _phase(project, "The character designer is working out the character", step="spec")
     found = await _designer(project, text)
-    return await _run_character(project, found["sheet"], found["assumed"], found["notes"])
+    sheet, look_notes = await _dress(project, text, found["sheet"])
+    assumed = [a for a in found["assumed"] if not a.startswith(("outfit:", "hair:"))]
+    notes = " ".join(n for n in (found["notes"], look_notes) if n)
+    return await _run_character(project, sheet, assumed, notes)
 
 
 async def _run_character(project, sheet, assumed, notes=""):

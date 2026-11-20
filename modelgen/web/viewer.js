@@ -1289,6 +1289,25 @@ export function createViewer(container) {
       if (def && !(def.pbrMetallicRoughness && def.pbrMetallicRoughness.baseColorFactor)) mat.color.set(PATTERNS[kind].colour);
       applyPattern(mat, kind);
     }));
+    // a drawn character's ink outline: the mesh again, pushed out along its normals by the width
+    // the file gives, its inside drawn black; skinned like the mesh, so it follows every clip
+    meshes.slice().forEach((m) => {
+      const width = Math.max(0, ...[].concat(m.userData.mgBase).map((mat) => +(mat.userData && mat.userData.mg_outline) || 0));
+      if (!width || !m.isSkinnedMesh || m.userData.mgInk) return;
+      const ink = new THREE.MeshBasicMaterial({ color: 0x050505, side: THREE.BackSide, toneMapped: false });
+      ink.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>',
+          `#include <begin_vertex>\n  transformed += normalize(normal) * ${fx(width)};`);
+      };
+      ink.customProgramCacheKey = () => 'mg-outline-' + fx(width);
+      disposables.push(ink);
+      const line = new THREE.SkinnedMesh(m.geometry, ink);
+      line.bind(m.skeleton, m.bindMatrix);
+      line.userData.mgOutlineOf = m.uuid;
+      line.raycast = () => {};   // never picked: clicking selects the part itself
+      m.parent.add(line);
+      line.position.copy(m.position); line.quaternion.copy(m.quaternion); line.scale.copy(m.scale);
+    });
     buildGroups();
   }
 

@@ -1,0 +1,74 @@
+# How the critic scores a character (the spec's family is person): a rigged, animated game
+# character of a person. Who the person is comes first (age, sex, build and the look asked for,
+# judged against real people of that age and build), then the face, the hair and clothes, how well the
+# skin and clothes follow the skeleton, the style, and fitness as a game asset. The weighted mean times
+# ten is the score out of 100; a version passes at loop.pass_score in config.yaml when every hard gate
+# passes too. The gates are measured (tools.checks.character_checks); the critic judges by eye as well.
+
+criteria:
+  - id: who
+    name: The person asked for
+    weight: 3
+    guide: >
+      Compare the turntable with real people of the sheet's age, sex and build: the head-to-height
+      ratio (a newborn about 4 heads tall, a two-year-old 5, a six-year-old 6, an adult 7.5 to 8),
+      the shoulders, waist and hips, how an old body differs from a young one. Then the look the
+      request asked for ("a cool guy", "a nerd", "a grandma"): would a stranger name the character
+      that? 10: unmistakably that person. 5: right age and sex, the type not obvious. 0: the wrong
+      age, sex or type.
+  - id: face
+    name: The face
+    weight: 2
+    guide: >
+      Eyes set right (about halfway down the head in an adult, lower in a child), irises the sheet's
+      colour, brows that read as hair and fit the age, a face that differs from the average body
+      model's, ears and nose in proportion. In a drawn style, the style's large eyes and simple
+      features. 10: a face a game would ship. 5: a mannequin's face. 0: broken eyes, brows floating
+      off the skin.
+  - id: hair_clothes
+    name: Hair and clothes
+    weight: 2
+    guide: >
+      Hair: the style and colour asked for, a clean hairline (no flaps by the ears), believable volume.
+      Clothes: the garments and colours of the sheet, hems and necklines clean lines (not zig-zags),
+      layers that sit over each other without the inner one showing through in flecks, shoes on the
+      feet. 10: a tidy game character's outfit. 5: right garments, rough edges. 0: missing or broken.
+  - id: rig
+    name: Skin and clothes follow the skeleton
+    weight: 2
+    guide: >
+      In the motion strip and the test poses, joints bend without the skin tearing or collapsing,
+      clothes move with the body and no skin shows through them. The skinned and clothes_cover gates
+      measure this: a failed one caps this at 4.
+  - id: style
+    name: The drawing style
+    weight: 1
+    guide: >
+      The sheet's style: realistic light and proportions; or a drawn style's big head and eyes, flat
+      cel bands and ink outline. An original character in that style, never a copy of a named one.
+  - id: game
+    name: Game-ready
+    weight: 1
+    guide: >
+      Within the triangle limit, lower-detail versions that keep the skeleton, real scale, standing on
+      the floor at the origin facing -Y, parts named plainly.
+
+gates:
+  - id: correct_size
+    name: Correct height
+    guide: The character is the sheet's height within 2%.
+  - id: on_floor
+    name: On the floor
+    guide: The lowest point (the soles) is at Z = 0.
+  - id: skeleton
+    name: Game skeleton
+    guide: The 53-bone game skeleton is there.
+  - id: skinned
+    name: Skinned
+    guide: Every vertex follows the skeleton, with at most four bones each.
+  - id: skin_follows
+    name: Skin follows the bones
+    guide: In the test poses no edge stretches more than 4 times its rest length.
+  - id: clothes_cover
+    name: Clothes cover
+    guide: In the test poses at most 5% of the skin next to the clothes shows through them.

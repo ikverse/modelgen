@@ -1,0 +1,57 @@
+# How a character is drawn: its proportions, face, shading and colours per style.
+#
+# proportions: head (scale of the head), hands, legs (leg length), eyes (eyeballs and sockets): 1 is a real person
+# face: local sliders of the body model (-1..1) added to the sheet's own face sliders
+# shading: pbr (realistic light) or toon (flat colour in bands, with an ink outline of `outline` metres)
+# saturation: colour saturation of skin, hair and clothes (1 unchanged)
+# hair_volume: scale of the hair's volume (anime hair is big)
+# iris_deg: how much of the eyeball the iris covers (degrees from its centre; a real eye about 30)
+# glint: a white highlight drawn in the eye
+#
+# A style is a general drawing direction, never a particular show's character: the designer makes
+# original people in it.
+
+realistic:
+  about: real proportions and real light
+  proportions: {head: 1.0, hands: 1.0, legs: 1.0}
+  face: {}
+  shading: pbr
+  outline: 0
+  saturation: 1.0
+  hair_volume: 1.0
+
+cartoon:
+  about: a big round head, big eyes, a small nose, soft simple shapes, bright colours
+  proportions: {head: 1.6, hands: 1.2, legs: 0.85, eyes: 1.45}
+  face: {eye-scale-decr-incr: 1.0, nose-scale-horiz-decr-incr: -0.5, nose-scale-vert-decr-incr: -0.5,
+         mouth-scale-horiz-decr-incr: -0.3, chin-prominent-decr-incr: -0.4}
+  shading: toon
+  outline: 0.005
+  iris_deg: 44
+  glint: true
+  saturation: 1.3
+  hair_volume: 1.5
+
+shonen_anime:
+  about: a slightly large head, large eyes, a small sharp nose and mouth, long legs, bright flat colour, clean outline, big spiky hair
+  proportions: {head: 1.15, hands: 1.0, legs: 1.1, eyes: 1.35}
+  face: {eye-scale-decr-incr: 0.9, nose-scale-horiz-decr-incr: -0.8, nose-scale-vert-decr-incr: -0.4,
+         mouth-scale-horiz-decr-incr: -0.5, chin-width-decr-incr: -0.5, chin-prominent-decr-incr: 0.3}
+  shading: toon
+  outline: 0.004
+  iris_deg: 42
+  glint: true
+  saturation: 1.2
+  hair_volume: 1.7
+
+gritty_anime:
+  about: realistic head size, narrow eyes, strong jaw and cheekbones, muscular, muted colours, heavy outline
+  proportions: {head: 1.0, hands: 1.05, legs: 1.05, eyes: 1.1}
+  face: {eye-scale-decr-incr: 0.2, chin-prominent-decr-incr: 0.6, chin-width-decr-incr: 0.4,
+         nose-scale-horiz-decr-incr: -0.2}
+  shading: toon
+  outline: 0.006
+  iris_deg: 34
+  glint: true
+  saturation: 0.75
+  hair_volume: 1.2

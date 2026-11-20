@@ -63,6 +63,117 @@ def test_the_same_sheet_gives_the_same_key_and_the_name_does_not_count():
     assert ch.key(a) == ch.key(ch.clean({**GUY, "name": "other"})[0]) != ch.key(ch.clean({**GUY, "age": 27})[0])
 
 
+# --- stage 2: the look, styles ------------------------------------------------------------------------
+
+def _bpy_dict_keys(path, name):
+    """The keys of a dict literal assigned at the top of a bpy_lib file (read without Blender)."""
+    import ast
+    from pathlib import Path
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == name for t in node.targets):
+            return [ast.literal_eval(k) for k in node.value.keys] if isinstance(node.value, ast.Dict) else \
+                list(ast.literal_eval(node.value))
+    raise AssertionError(f"{name} not found")
+
+
+def test_the_host_lists_match_what_the_blender_tools_make():
+    parts = config.PACKAGE / "bpy_lib" / "character_parts.py"
+    assert set(_bpy_dict_keys(parts, "GARMENTS")) == set(ch.GARMENT_TYPES)
+    assert tuple(_bpy_dict_keys(parts, "HAIR_STYLES")) == ch.HAIR_STYLES
+    kinds = {}
+    for t in ch.GARMENT_TYPES:
+        kinds[t] = ch.GARMENT_KIND[t]
+    assert set(kinds) == set(ch.GARMENT_TYPES)
+
+
+def test_every_named_face_slider_exists_in_the_body_model():
+    names = set(ch.face_sliders())
+    assert len(names) > 150 and set(ch.FACE_SLIDERS) <= names
+    for st in ch.STYLES:
+        assert set(ch.style(st)["face"]) <= names, st
+
+
+def test_a_plain_look_is_filled_in_for_the_age_and_listed():
+    baby, assumed = ch.clean({"age": 0.5})
+    assert [g["type"] for g in baby["outfit"]] == ["onesie"] and baby["hair"]["style"] == "buzz"
+    assert baby["brows"]["thickness"] == 0.05 and any(a.startswith("outfit:") for a in assumed)
+    old = ch.clean({"age": 80, "sex": "female"})[0]
+    assert old["hair"]["colour"] == "#d8d6d2" and old["hair"]["style"] == "bob"
+
+
+def test_layers_are_ordered_inner_to_outer():
+    sheet = ch.clean({**GUY, "outfit": [{"type": "leather_jacket", "colour": "#111111"},
+                                        {"type": "sneakers", "colour": "#ffffff"},
+                                        {"type": "tshirt", "colour": "#eeeeee"}, {"type": "jeans", "colour": "#223344"}]})[0]
+    assert [g["type"] for g in sheet["outfit"]] == ["tshirt", "jeans", "sneakers", "leather_jacket"]
+
+
+@pytest.mark.parametrize("outfit, words", [
+    ([{"type": "tshirt"}, {"type": "sweater"}], "two top garments"),
+    ([{"type": "dress"}, {"type": "jeans"}], "a dress takes no other"),
+    ([{"type": "onesie"}, {"type": "jeans"}, {"type": "flats"}], "onesie is worn alone"),
+    ([{"type": "cape"}], "outfit[0].type"),
+    ([{"type": "skirt", "length": "ankle"}], "length must be one of"),
+    ([{"type": "jeans", "colour": "blue"}], "outfit[0].colour")])
+def test_an_outfit_that_cannot_be_worn_is_refused_by_name(outfit, words):
+    with pytest.raises(ch.CharacterError) as exc:
+        ch.clean({**GUY, "outfit": outfit})
+    assert words in str(exc.value)
+
+
+def test_bad_hair_face_and_glasses_are_refused_by_name():
+    for raw, words in [({"hair": {"style": "mohawk"}}, "hair.style"), ({"face": {"nose-length": 0.5}}, "no slider"),
+                       ({"face": {"chin-width-decr-incr": 3}}, "chin-width-decr-incr"),
+                       ({"accessories": [{"type": "glasses", "shape": "heart"}]}, "shape round or square")]:
+        with pytest.raises(ch.CharacterError) as exc:
+            ch.clean({**GUY, **raw})
+        assert words in str(exc.value), raw
+
+
+def test_a_style_sets_proportions_face_shading_and_colours():
+    sheet = ch.clean({**GUY, "style": "shonen_anime", "face": {"chin-width-decr-incr": 0.8}})[0]
+    body = ch.body(sheet)
+    assert body["style_proportions"]["head"] > 1 and body["style_proportions"]["eyes"] > 1
+    assert body["local"]["eye-scale-decr-incr"] == 0.9
+    assert body["local"]["chin-width-decr-incr"] == pytest.approx(0.3)  # the style's -0.5 plus the sheet's 0.8
+    look = ch.look(sheet)
+    assert look["shading"] == "toon" and look["outline"] > 0 and look["glint"] and look["hair"]["volume"] > 1
+    real = ch.look(ch.clean(GUY)[0])
+    assert real["shading"] == "pbr" and real["outline"] == 0 and not real["glint"]
+    assert ch.look(ch.clean({**GUY, "style": "gritty_anime"})[0])["skin"] != real["skin"]  # muted colours
+
+
+def test_the_tailor_and_hair_tools_check_against_the_sheet():
+    sheet = ch.clean(GUY)[0]
+    sink = {}
+    tailor = at.character_tailor_tools(sink, sheet)[0]
+    assert tailor.fn({"outfit": [{"type": "dress", "colour": "#ff0000"}, {"type": "jeans", "colour": "#000000"}]})[
+        "ok"] is False and not sink
+    assert tailor.fn({"outfit": [{"type": "hoodie", "colour": "#ff0000"}]})["ok"] and sink["outfit"][0]["type"] == "hoodie"
+    hair_sink = {}
+    hair = at.character_hair_tools(hair_sink, sheet)[0]
+    assert hair.fn({"hair": {"style": "mullet", "colour": "#000000"}})["ok"] is False
+    assert hair.fn({"hair": {"style": "spiky", "colour": "#000000"}, "brows": {"thickness": 0.9}})["ok"]
+    assert hair_sink["brows"]["thickness"] == 0.9
+
+
+def test_a_person_is_scored_by_the_character_rubric():
+    assert at.rubric_file(None, {"family": "person"}).name == "rubric_character.yaml"
+    rubric = at.load_rubric(None, {"family": "person"})
+    assert {c["id"] for c in rubric["criteria"]} >= {"who", "face", "hair_clothes", "rig", "style"}
+    assert {"clothes_cover", "skinned"} <= {g["id"] for g in rubric["gates"]}
+
+
+def test_skin_through_the_clothes_fails_the_cover_gate():
+    sheet = ch.clean(GUY)[0]
+    made = {"height": sheet["height_cm"] / 100, "ground": 0.0, "parts": {}}
+    good = checks.character_checks(made, _rig(poke={"rest": {"checked": 60, "through": 1, "share": 0.017}}), sheet)
+    assert good["gates"]["clothes_cover"]["pass"]
+    bad = checks.character_checks(made, _rig(poke={"arms_up": {"checked": 60, "through": 12, "share": 0.2}}), sheet)
+    assert not bad["gates"]["clothes_cover"]["pass"] and "arms_up" in bad["gates"]["clothes_cover"]["detail"]
+
+
 # --- words: who is a person ------------------------------------------------------------------------
 
 @pytest.mark.parametrize("text", ["a cool guy", "old woman with a cane", "baby girl", "a nerd", "teenage boy",
@@ -108,9 +219,19 @@ def test_the_designer_writes_the_sheet_for_a_request_in_words(monkeypatch):
     seen = {}
 
     async def agent(name, prompt, tools, **kw):
-        seen["name"], seen["prompt"] = name, prompt
-        tools[0].fn({"character": {"name": "nerd", "age": 22, "sex": "male", "build": "slim",
-                                   "look": "glasses, a hoodie"}})
+        seen.setdefault("order", []).append(name)
+        if name == "character_designer":
+            seen["name"], seen["prompt"] = name, prompt
+            tools[0].fn({"character": {"name": "nerd", "age": 22, "sex": "male", "build": "slim",
+                                       "look": "glasses, a hoodie"}})
+        elif name == "character_tailor":
+            assert "hoodie" in prompt and "cardigan" in prompt  # the look and the garment list
+            tools[0].fn({"outfit": [{"type": "hoodie", "colour": "#445566"}, {"type": "chinos", "colour": "#c2b08a"},
+                                    {"type": "sneakers", "colour": "#333333"}],
+                         "accessories": [{"type": "glasses", "shape": "square"}]})
+        elif name == "character_hair":
+            assert "spiky" in prompt and "chin-width-decr-incr" in prompt
+            tools[0].fn({"hair": {"style": "short", "colour": "#3b2a1e"}, "face": {"chin-width-decr-incr": -0.3}})
         return None
 
     built = {}
@@ -124,7 +245,12 @@ def test_the_designer_writes_the_sheet_for_a_request_in_words(monkeypatch):
     monkeypatch.setattr(ch, "available", lambda: True)
     out = asyncio.run(pipeline._try_character(proj["name"], "a nerd", None, False))
     assert out["character"] and seen["name"] == "character_designer" and '"build"' in seen["prompt"]
-    assert built["sheet"]["build"] == "slim" and built["sheet"]["look"] == "glasses, a hoodie"
+    assert seen["order"][0] == "character_designer" and set(seen["order"][1:]) == {"character_tailor", "character_hair"}
+    sheet = built["sheet"]
+    assert sheet["build"] == "slim" and sheet["look"] == "glasses, a hoodie"
+    assert [g["type"] for g in sheet["outfit"]] == ["hoodie", "chinos", "sneakers"]
+    assert sheet["accessories"][0]["shape"] == "square" and sheet["face"] == {"chin-width-decr-incr": -0.3}
+    assert not any(a.startswith(("outfit:", "hair:")) for a in built["assumed"])  # chosen, not defaulted
 
 
 def test_a_request_that_is_not_a_person_is_left_to_the_other_paths(monkeypatch):
@@ -240,9 +366,28 @@ def test_every_age_builds_a_skinned_body_at_its_height_on_the_floor():
     for sheet, out in results:
         found = checks.character_checks(out["character"], out["rig_report"], sheet)
         assert found["passed"], (ch.who(sheet), {k: g for k, g in found["gates"].items() if not g["pass"]})
-        assert out["rig_report"]["bones"] == 53 and set(out["character"]["parts"]) == {"body", "eyes"}
+        assert out["rig_report"]["bones"] == 53 and {"body", "eyes", "brows"} <= set(out["character"]["parts"])
     heights = [out["character"]["height"] for _, out in results]
     assert heights[0] < heights[1] < heights[2] and 0.55 < heights[0] < 0.75
+
+
+@pytest.mark.blender
+@pytest.mark.parametrize("style", ch.STYLES)
+def test_every_style_builds_a_dressed_character_that_passes_every_check(style):
+    raw = {**GUY, "style": style, "hair": {"style": "spiky" if "anime" in style else "short", "colour": "#1a1a22"},
+           "outfit": [{"type": "tshirt", "colour": "#eeeeee"}, {"type": "jeans", "colour": "#2f3e5c"},
+                      {"type": "sneakers", "colour": "#f0f0f0"}, {"type": "leather_jacket", "colour": "#1c1c1e"}],
+           "accessories": [{"type": "glasses"}]}
+    sheet = ch.clean(raw)[0]
+    result = blender.run_job([ch.build_step(sheet), ch.report_step()], timeout=600)
+    assert result.ok, result.traceback
+    made, rig = result.outputs["character"], result.outputs["rig_report"]
+    found = checks.character_checks(made, rig, sheet)
+    assert found["passed"], {k: g for k, g in found["gates"].items() if not g["pass"]}
+    assert "clothes_cover" in found["gates"]
+    names = {n.split(".")[0] for n in made["parts"]}
+    assert {"body", "tshirt", "jeans", "sneakers", "leather_jacket", "hair", "brows", "glasses"} <= names
+    assert ("hair_spikes" in names) == ("anime" in style)
 
 
 @pytest.mark.blender
@@ -261,3 +406,17 @@ def test_a_real_character_job_exports_a_skinned_animated_game_file():
         assert [len(s["joints"]) for s in gltf["skins"]] == [53], path.name
         assert [a["name"] for a in gltf["animations"]] == ["rig_test"], path.name
     assert jobs.source_of(proj["name"], out["version"]) == "character"
+
+
+@pytest.mark.blender
+def test_a_drawn_character_exports_cel_bands_and_outline_widths_on_every_material():
+    sheet, assumed = ch.clean({**GUY, "style": "shonen_anime", "hair": {"style": "spiky", "colour": "#1a1a22"}})
+    proj = db.create_project("hero", "an anime hero", options={"character": sheet, "assumed": assumed})
+    out = asyncio.run(pipeline._run_character(proj["name"], sheet, assumed))
+    assert out["ok"] and out["passed"]
+    data = (pipeline.version_dir(proj["name"], out["version"]) / "game" / f"{proj['name']}_game.glb").read_bytes()
+    gltf = json.loads(data[20:20 + int.from_bytes(data[12:16], "little")])
+    for mat in gltf["materials"]:
+        extras = mat.get("extras") or {}
+        assert "mg_toon_colors" in extras and extras.get("mg_outline", 0) > 0, mat["name"]
+    assert not any("outline" in m["name"] for m in gltf["meshes"])  # the render-only ink shells stay out
