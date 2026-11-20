@@ -45,7 +45,8 @@ GARMENTS = {
     "jacket": {"kind": "top", "layer": "jacket", "sleeves": 0.99, "hem": "hip", "neck": "collar", "open": 0.05},
     "leather_jacket": {"kind": "top", "layer": "jacket", "sleeves": 0.99, "hem": "waist", "neck": "collar",
                        "open": 0.06, "material": "leather"},
-    "coat": {"kind": "top", "layer": "coat", "sleeves": 0.99, "hem": "hip", "neck": "collar", "tails": "knee"},
+    # a coat's body ends at the waist; below it the tails (the skirt shell, on spring chains) hang free
+    "coat": {"kind": "top", "layer": "coat", "sleeves": 0.99, "hem": "waist", "neck": "collar", "tails": "knee"},
     "pants": {"kind": "bottom", "layer": "pants", "length": 0.98},
     "jeans": {"kind": "bottom", "layer": "pants", "length": 0.98, "material": "denim"},
     "chinos": {"kind": "bottom", "layer": "pants", "length": 0.98},

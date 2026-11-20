@@ -663,12 +663,19 @@ def build_character(step):
         fn = CLIPS.get(name)
         if fn is not None:
             clips.append(fn(made["rig"]))
+    springs = {}
+    if pieces and step.get("physics", True):
+        from . import physics_bake
+        springs = physics_bake.run(made["rig"], list(pieces.values()), made["parts"]["body"],
+                                   fps=bpy.context.scene.render.fps)
     for pb in made["rig"].pose.bones:
         pb.rotation_euler = Euler((0, 0, 0))
+        pb.rotation_quaternion = (1, 0, 0, 0)
     bpy.context.scene.frame_set(bpy.context.scene.frame_start)
     every = {**made["parts"], **pieces}
     lo, hi = helpers.bounds(list(every.values()))
-    return {"height": round(made["height"], 4), "bones": made["bones"], "clips": clips,
+    return {"height": round(made["height"], 4), "bones": len(made["rig"].data.bones), "clips": clips,
+            "springs": springs,
             "size": [round(v, 4) for v in (hi - lo)], "ground": round(lo.z, 5),
             "parts": {o.name: {"vertices": len(o.data.vertices), "faces": len(o.data.polygons)}
                       for o in every.values()}}
@@ -687,14 +694,20 @@ TEST_POSES = {
 
 
 def _pose(rig, angles):
-    """Rotate pose bones by {name: (x, y, z) degrees}; names missing from the rig are skipped."""
+    """Rotate pose bones by {name: (x, y, z) degrees} from rest; names missing from the rig are
+    skipped. A bone keeps its rotation mode (a spring bone's baked keys are quaternions, and a bone
+    switched to Euler would ignore them)."""
     for pb in rig.pose.bones:
-        pb.rotation_mode = "XYZ"
         pb.rotation_euler = Euler((0, 0, 0))
+        pb.rotation_quaternion = (1, 0, 0, 0)
     for name, rot in angles.items():
         pb = rig.pose.bones.get(name)
         if pb is not None:
-            pb.rotation_euler = Euler([math.radians(a) for a in rot])
+            e = Euler([math.radians(a) for a in rot])
+            if pb.rotation_mode == "QUATERNION":
+                pb.rotation_quaternion = e.to_quaternion()
+            else:
+                pb.rotation_euler = e
     bpy.context.view_layer.update()
 
 

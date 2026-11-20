@@ -366,7 +366,9 @@ def test_every_age_builds_a_skinned_body_at_its_height_on_the_floor():
     for sheet, out in results:
         found = checks.character_checks(out["character"], out["rig_report"], sheet)
         assert found["passed"], (ch.who(sheet), {k: g for k, g in found["gates"].items() if not g["pass"]})
-        assert out["rig_report"]["bones"] == 53 and {"body", "eyes", "brows"} <= set(out["character"]["parts"])
+        names = out["rig_report"]["bone_names"]
+        assert len([n for n in names if not n.startswith("spring_")]) == 53  # the game skeleton, plus any springs
+        assert {"body", "eyes", "brows"} <= set(out["character"]["parts"])
     heights = [out["character"]["height"] for _, out in results]
     assert heights[0] < heights[1] < heights[2] and 0.55 < heights[0] < 0.75
 
@@ -406,6 +408,29 @@ def test_a_real_character_job_exports_a_skinned_animated_game_file():
         assert [len(s["joints"]) for s in gltf["skins"]] == [53], path.name
         assert [a["name"] for a in gltf["animations"]] == ["rig_test"], path.name
     assert jobs.source_of(proj["name"], out["version"]) == "character"
+
+
+@pytest.mark.blender
+def test_a_skirt_coat_and_ponytail_swing_on_baked_spring_chains():
+    raw = {**GUY, "sex": "female", "hair": {"style": "ponytail", "colour": "#5a3d2b"},
+           "outfit": [{"type": "blouse", "colour": "#efe6d6"}, {"type": "skirt", "length": "long", "colour": "#7a2e3a"},
+                      {"type": "boots", "colour": "#2b2018"}, {"type": "coat", "colour": "#55606e"}]}
+    sheet, assumed = ch.clean(raw)
+    proj = db.create_project("coat", "a woman in a coat", options={"character": sheet, "assumed": assumed})
+    out = asyncio.run(pipeline._run_character(proj["name"], sheet, assumed))
+    folder = pipeline.version_dir(proj["name"], out["version"])
+    assert out["ok"] and out["passed"], json.loads((folder / "checks.json").read_text(encoding="utf-8"))["gates"]
+    data = (folder / "exports" / f"{proj['name']}.glb").read_bytes()
+    gltf = json.loads(data[20:20 + int.from_bytes(data[12:16], "little")])
+    nodes = {n.get("name"): n for n in gltf["nodes"]}
+    roots = [n for n in nodes if n.startswith("spring_") and n.endswith("_0") and "mg_spring" in (nodes[n].get("extras") or {})]
+    assert any(n.startswith("spring_ponytail") for n in roots) and any(n.startswith("spring_coat_tails") for n in roots)
+    assert not any(n.startswith("spring_skirt") for n in nodes)  # the skirt under the coat hangs from the coat's chains
+    assert "mg_collider" in (nodes["thigh_l"].get("extras") or {})
+    joints = {gltf["nodes"][j]["name"] for j in gltf["skins"][0]["joints"]}
+    anim = gltf["animations"][0]
+    animated = {gltf["nodes"][c["target"]["node"]]["name"] for c in anim["channels"]}
+    assert {n for n in joints if n.startswith("spring_")} <= animated  # every chain bone carries baked keys
 
 
 @pytest.mark.blender

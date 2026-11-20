@@ -211,6 +211,14 @@ bands) and `mg_outline` (outline width, metres) as material extras: draw them as
 inverted-hull outline. It carries one clip so far, `rig_test` (a 4-second loop that moves every main
 joint); real clips (idle, walk, run...) come in the next stage.
 
+Secondary motion: what swings (a ponytail, long hair, a skirt, a dress's skirt, coat tails) hangs
+from extra spring chains in the skeleton (`spring_<piece>_<chain>_<bone>`), simulated by ModelGen's
+own physics engine and **baked into every clip**, so any engine that plays the clips shows it. Each
+chain's root bone also carries `mg_spring` in its extras (JSON: `stiffness`, `drag`, `gravity`,
+`radius`, `chain`: its bones) and the body bones carry `mg_collider` (a capsule radius, metres along
+the bone): an engine can drop the baked spring keys and run the springs live instead, as ModelGen's
+viewer does (it can also drop the character as a ragdoll).
+
 ## Mechanisms (gears and other mechanical parts)
 
 A job can carry `mechanism`: the parts by their engineering numbers. When every part has a tool

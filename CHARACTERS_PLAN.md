@@ -105,3 +105,12 @@ image-to-3D models (21-24 GB of video memory).
   bands as an Emission ramp so Cycles draws them, render-only ink shells; the viewer draws its own
   outline from `mg_outline`). Checks added: clothes cover the skin in the test poses. The user asked
   (2026-11-21) to test only the hardest cases while building and test the rest themselves.
+- Stage 3: waiting for the Quaternius Universal Animation Library (CC0, 15 MB). itch.io gives it only
+  through its pay-what-you-want page; a scripted download was refused by the permission guard, so the
+  user was asked to download it into `assets_cc0\animations\quaternius_ual\`.
+- Stage 4: built and tested ahead of stage 3 (it needs no download). `modelgen/physics` (Verlet +
+  XPBD, spring chains, capsules, cone limits, floor, ragdoll) with `tests/test_physics.py`;
+  `bpy_lib/physics_bake.py` adds chains (ponytail 1x4, hair strands 6x3, skirt and coat tails 12x5; a
+  skirt under a coat shares the coat's chains), fits colliders, bakes every clip (two passes, the
+  second keyed); `web/physics.js` runs the springs live in the viewer and the ragdoll drop. Known: the
+  rig_test clip's deep knee lift still opens a long coat at the knee.

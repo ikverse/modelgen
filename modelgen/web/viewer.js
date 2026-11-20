@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { characterSprings, ragdoll } from './physics.js';
 
 // Where the camera looks from for each view. glTF is Y-up with the front facing +Z.
 const VIEWS = {
@@ -308,6 +309,8 @@ export function createViewer(container) {
 
   // ---- motion: the animator's loop, puffs at the smoke and steam markers, the sliding ground
   let mixer = null, clips = [], playing = false, fx = [], travel = null, currentClip = null;
+  let springs = null, rag = null, standAt = null;   // a character's live spring chains; its ragdoll while it falls
+  const RAGDOLL = 'ragdoll drop';
   const clock = new THREE.Clock();
   let puffTexture = null;
   const FX_COLOURS = { smoke: 0x4a4a4a, steam: 0xf4f4f4 };
@@ -359,6 +362,12 @@ export function createViewer(container) {
   function setupMotion(gltf) {
     clips = gltf.animations || [];
     currentClip = null;
+    springs = isCharacter() ? characterSprings(model) : null;
+    if (springs) {
+      // the viewer runs the springs live (they follow any clip and the ragdoll): the clips' baked
+      // spring keys, there for engines that only play clips, are left out here
+      clips.forEach((c) => { c.tracks = c.tracks.filter((t) => !springs.chainBones.has(t.name.split('.')[0])); });
+    }
     if (clips.length) {
       mixer = new THREE.AnimationMixer(model);
       if (isCharacter()) playClip(clips[0].name);
@@ -377,15 +386,35 @@ export function createViewer(container) {
 
   function clearMotion() {
     if (mixer) { mixer.stopAllAction(); if (model) mixer.uncacheRoot(model); mixer = null; }
-    clips = []; playing = false; travel = null;
+    clips = []; playing = false; travel = null; springs = null; rag = null; standAt = null;
     fx.forEach((f) => { scene.remove(f.group); f.puffs.forEach((p) => p.s.material.dispose()); });
     fx = [];
   }
 
   function hasMotion() { return !!(clips.length || fx.length); }
   // The named clips a character can play ([] for any other model), and the one playing.
-  function clipNames() { return isCharacter() ? clips.map((c) => c.name) : []; }
+  function clipNames() { return isCharacter() ? clips.map((c) => c.name).concat([RAGDOLL]) : []; }
+  function dropRagdoll() {
+    if (!model || !isCharacter()) return false;
+    if (mixer) mixer.stopAllAction();
+    standAt = standAt || model.position.clone();
+    rag = ragdoll(model, modelBox.min.y);
+    currentClip = RAGDOLL;
+    if (!playing) setPlaying(true);
+    return !!rag;
+  }
+
+  function standUp() {
+    if (!rag) return;
+    rag = null;
+    if (standAt) model.position.copy(standAt);
+    model.traverse((o) => { if (o.isBone && o.userData.mgRest) o.quaternion.copy(o.userData.mgRest); });
+    model.updateMatrixWorld(true);
+  }
+
   function playClip(name) {
+    if (name === RAGDOLL) return dropRagdoll();
+    standUp();
     const clip = clips.find((c) => c.name === name);
     if (!clip || !mixer) return false;
     mixer.stopAllAction();
@@ -402,7 +431,8 @@ export function createViewer(container) {
   function showClipPicker() {
     if (clipPick) { clipPick.remove(); clipPick = null; }
     const names = clipNames();
-    if (names.length < 2) return;
+    if (names.length < 2) return;   // a character has at least one clip and the ragdoll drop
+    model.traverse((o) => { if (o.isBone) o.userData.mgRest = o.quaternion.clone(); });
     clipPick = document.createElement('select');
     clipPick.className = 'v3-clip-pick';
     clipPick.title = 'Choose the animation clip to play';
@@ -420,7 +450,11 @@ export function createViewer(container) {
   function stepMotion() {
     const dt = Math.min(clock.getDelta(), 0.1);
     if (!playing || !model) return;
-    if (mixer) mixer.update(dt);
+    if (rag) rag.update(dt);
+    else {
+      if (mixer) mixer.update(dt);
+      if (springs) springs.update(dt);
+    }
     fx.forEach((f) => {
       f.node.getWorldPosition(f.origin);
       f.next -= dt;
