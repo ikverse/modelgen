@@ -1,7 +1,7 @@
 @echo off
 rem Builds dist\ModelGen-Setup.exe and its SHA-256 fingerprint (dist\ModelGen-Setup.exe.sha256).
 rem What ships: the code, the agents, the studio page, the free model packs (assets_cc0), the icon,
-rem config.yaml, ModelGen.bat, the README and credits, the 3D viewer files the page uses, and the
+rem config.yaml, ModelGen.bat and ModelGen.vbs, the README and credits, the 3D viewer files the page uses, and the
 rem ClaudeIn client. Never shipped: your projects, library, data, car_examples, the before/after
 rem pictures, the tests and .venv.
 rem Needs: ModelGen's .venv, ..\ClaudeIn\client, Node's three.js in modelgen\web\vendor (Setup-ModelGen.bat)
@@ -47,7 +47,7 @@ for %%f in (build\three.module.js examples\jsm\controls\OrbitControls.js example
     copy /y "%THREE%\%%f" "%S3%\%%f" >nul || goto failed
 )
 
-for %%f in (config.yaml requirements.txt ModelGen.bat README.md CREDITS.md) do copy /y "%%f" "%STAGE%\%%f" >nul || goto failed
+for %%f in (config.yaml requirements.txt ModelGen.bat ModelGen.vbs README.md CREDITS.md) do copy /y "%%f" "%STAGE%\%%f" >nul || goto failed
 mkdir "%STAGE%\installer\wheels"
 copy /y installer\install-deps.ps1 "%STAGE%\installer\install-deps.ps1" >nul || goto failed
 

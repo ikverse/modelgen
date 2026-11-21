@@ -20,3 +20,9 @@ dist/
 PLAN.md
 NEXT_SESSION_PROMPT.md
 .claude/
+
+# Downloaded animation library extras nothing uses (only UAL1_Standard.glb is kept)
+/Universal Animation Library*.zip
+assets_cc0/animations/quaternius_ual/Unity/
+assets_cc0/animations/quaternius_ual/*_Setup.png
+assets_cc0/animations/quaternius_ual/Unreal-Godot/UAL1_Standard_RM.glb

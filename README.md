@@ -39,8 +39,11 @@ A source folder never updates itself. To publish a new version for installed cop
 
 ## Use
 
-Start ModelGen from the Start menu (or double-click `ModelGen.bat`). The page opens at
-http://127.0.0.1:8770/ (it moves to `/map/`).
+Start ModelGen from the Start menu (or double-click `ModelGen.vbs`). It runs with no window and the
+page opens at http://127.0.0.1:8770/ (it moves to `/map/`). ModelGen closes by itself about 15
+seconds after you close its page, once no build or job is running; **Settings → Restart ModelGen**
+starts it fresh. `ModelGen.bat` does the same with its window showing, and the server's messages
+from a start without a window are in `data\server.log`.
 
 The page is the studio. The chat with Hange is on the left; the open model's work is on the right,
 split into four stages you move between with the tabs under its name: **Brief** (what was asked
