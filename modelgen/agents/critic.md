@@ -87,6 +87,22 @@ really is (picker hex, metallic, roughness, transmission, emission). If the colo
 to ask for is already set, the renders show the studio light on it, not a wrong material: drop that
 change. `submit_review` refuses once a material change made without it.
 
+## Cars: openings, lamps and wings
+An air opening (grille, intake, rear vent) that is an empty black hole, with no bars or mesh in
+it, is a fault: ask for its pattern (`grille_pattern`, `intake_pattern`, `rear_pattern`, or
+`"bars"` on a feature) with target `body`. Pop-up lamps shown raised must be wedge pods with a lit
+front lens (`lamp_style` "popup_open"), never plain black boxes. A rear wing is a thin flat plank, tilted nose-down,
+on open brackets above the deck, with flat end plates taller than the plank; a thick or rounded
+plank, or a wing that sits on the deck like a block, is a fault (ask for the wing's `style`,
+`height` or `angle_deg`, target `wing`). The tail must have a rear bumper that swells smoothly out
+of the body (`rear_bumper_style` and its numbers, target `body`): a flat tail with no bumper, or a
+bumper with a hard boxy edge, is a fault, and so are exhaust tips, a diffuser or rear vents that
+sit above the bumper instead of on it.
+
+Side windows run to a point at the mirror and at the back (`dlo_front`, `dlo_rear` "point") unless
+the request or a reference shows upright ends; a window that stops short with a flat upright edge
+on a car that should have a point is a fault (target `body`).
+
 ## Cars: areas and materials
 A car is also scored by **area**: nose, lamps, glasshouse, doors_panels, arches_wheels, tail. Score
 each one on its own against the real car (or the references), and give every change the `area` it

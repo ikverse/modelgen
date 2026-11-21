@@ -301,6 +301,55 @@ def flare(obj, centres, radius, amount, spread=0.16, x_from=0.5, z_top=None, str
     return obj
 
 
+def bumper(obj, end_y, direction, out, top_z, edge, wrap, side=0.35):
+    """Swell a bumper out of one end of a skin, as one smooth surface with it: below top_z the end
+    face moves outward by `out` along its own horizontal direction (so it follows the end's curve and
+    rounds its corners), the swell rolling off to nothing over `edge` under top_z and fading out along
+    the sides over `wrap` from the end, where it stands out only `side` of the full amount. end_y: the
+    skin's end before the swell; direction: +1 for the rear (toward +Y), -1 for the front. Edge loops
+    are cut through the rolled top edge and the side fade first, so the curve is smooth however coarse
+    the skin is. The mesh stays one closed piece."""
+    y0 = end_y - direction * wrap  # where the swell begins along the sides
+    fade = wrap * 0.7
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+
+    def near_end(f, margin=0.05):
+        return max((v.co.y - y0) * direction for v in f.verts) > -margin
+
+    def cut(co, no, keep):
+        faces = [f for f in bm.faces if keep(f)]
+        geom = list({e for f in faces for e in f.edges}) + faces + list({v for f in faces for v in f.verts})
+        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no, dist=1e-5)
+
+    for k in range(7):  # through the rolled top edge
+        cut((0, 0, top_z - edge * k / 6), (0, 0, 1), near_end)
+    for k in range(6):  # through the fade along the sides
+        cut((0, y0 + direction * fade * k / 5, 0), (0, 1, 0),
+            lambda f: near_end(f) and min(v.co.z for v in f.verts) < top_z + 0.02)
+    bm.normal_update()
+    moves = []
+    for v in bm.verts:
+        d = (v.co.y - y0) * direction
+        if d <= 0 or v.co.z >= top_z:
+            continue
+        nx, ny = v.normal.x, v.normal.y
+        flat = math.hypot(nx, ny)
+        if flat < 1e-3:
+            continue  # the underside: nothing to push outward
+        facing = max(0.0, ny * direction / flat)  # 1 on the end face, 0 on the side
+        amount = (out * _smooth((top_z - v.co.z) / edge) * _smooth(d / fade) * min(1.0, flat * 1.5)
+                  * (side + (1 - side) * facing))
+        moves.append((v, nx / flat * amount, ny / flat * amount))
+    for v, dx, dy in moves:
+        v.co.x += dx
+        v.co.y += dy
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return obj
+
+
 def cut_wells(obj, centres, radius, x_from, material="trim", segments=64):
     """Wheel openings: cylinders along X of `radius` around each (y, z) centre, from |x| = x_from out
     through the side on both sides; the well walls get `material`."""
@@ -774,34 +823,64 @@ def _airfoil(chord, thickness, camber=0.02, n=12):
     return h._dedupe(top + list(reversed(bottom[1:-1])))
 
 
-def wing(span=1.62, chord=0.26, height=0.30, upright_spacing=0.95, endplates=True, uprights=2, angle_deg=6.0):
-    """A rear wing: a cambered blade along X on uprights, with end plates; `height` is its top above
-    the upright feet, which sit on Z = 0 around the origin (the assembly seats them on the deck).
-    Slot "accent"."""
-    thick = max(0.025, chord * 0.12)
-    half = max(0.06, height * 0.22)  # half the end plate's height; the plate's top is the wing's top
-    blade_z = height - half * 0.9
-    blade = h.extrude(_airfoil(chord, thick / chord), span, plane="YZ", center=True, name="blade")
-    _rotate(blade, Matrix.Translation((0, 0, blade_z)) @ Matrix.Rotation(math.radians(angle_deg), 4, "X"))
+def popup_pod(width, length, face, rise=0.0, bury=0.04):
+    """A raised pop-up headlight: seen from the side a wedge, its upright front face (the lamp) at
+    y = 0 facing -Y, its lid sloping back to the hinge at y = length. The front face's foot is at z = 0
+    and the hinge at z = rise (the hood's slope); both run `bury` down into the hood. Centred on x = 0.
+    The lid is slot "paint", the face's surround "trim" and the lens "lamp_led" (lit)."""
+    top = 0.025  # a short flat top behind the face before the lid slopes away
+    pod = h.extrude([(0.0, -bury), (0.0, face), (top, face), (length, rise + 0.006), (length, rise - bury)],
+                    width, plane="YZ", center=True, name="popup_pod")
+    h.bevel(pod, 0.006, segments=2, angle_deg=40.0)
+    _set_material(pod, "paint")
+    surround = h.box((width - 0.008, 0.006, face - 0.006), location=(0, -0.002, face / 2 - 0.002),
+                     name="popup_surround")
+    _set_material(surround, "trim")
+    lens = h.box((width - 0.03, 0.006, face - 0.03), location=(0, -0.005, face / 2), name="popup_lens")
+    h.bevel(lens, 0.004, segments=2)
+    _set_material(lens, "lamp_led")  # lit: the lamps are shown raised and on
+    return [pod, surround, lens]
+
+
+def wing(span=1.62, chord=None, height=None, upright_spacing=0.95, endplates=True, uprights=2, angle_deg=None,
+         style="gt", plate_height=None):
+    """A rear wing: a thin flat plank along X, tilted nose-down, on open truss brackets (two legs and a
+    cross brace on a foot plate each), with flat angular end plates. style "gt" (tall brackets, big
+    plates), "street" (lower, smaller plates) or "curved" (the plank dips in the middle and rises to the
+    plates). `height` is the plank's middle above the bracket feet, which sit on Z = 0 around the origin
+    (the assembly seats them on the deck); it is never less than car_sheet.MIN_WING_LIFT. chord, height,
+    angle_deg and plate_height default to the style's own. Slot "accent". Every shape comes from
+    car_sheet.wing_geometry, which also gives the plan the wing's size."""
+    from .shells.car_sheet import wing_geometry  # plain Python, shared with the pipeline
+    g = wing_geometry(span=span, chord=chord, height=height, upright_spacing=upright_spacing, endplates=endplates,
+                      uprights=uprights, angle_deg=angle_deg, style=style, plate_height=plate_height)
+    blade = h.extrude(g["blade"], span, plane="YZ", center=True, name="blade")
+    if g["dip"]:  # the plank dips in the middle: edge loops along the span, then each lowered by its place
+        bm = bmesh.new()
+        bm.from_mesh(blade.data)
+        for k in range(1, 16):
+            geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+            bmesh.ops.bisect_plane(bm, geom=geom, plane_co=(-span / 2 + span * k / 16, 0, 0), plane_no=(1, 0, 0),
+                                   dist=1e-6)
+        for v in bm.verts:
+            v.co.z += g["lift"](v.co.x)
+        bm.to_mesh(blade.data)
+        bm.free()
+        blade.data.update()
     pieces = [blade]
-    if endplates:
-        plate = h.extrude(h.rounded_rect_points(chord * 1.15, half * 2, 0.03), 0.01, plane="YZ", center=True,
-                          name="endplate")
-        for sign in (1, -1):
-            p = plate.copy()
-            p.data = plate.data.copy()
-            bpy.context.scene.collection.objects.link(p)
-            _rotate(p, Matrix.Translation((sign * (span / 2 + 0.005), chord * 0.04, height - half)))
-            pieces.append(p)
-        bpy.data.objects.remove(plate, do_unlink=True)
-    xs = [0.0] if uprights == 1 else [upright_spacing * (i / (uprights - 1) - 0.5) for i in range(uprights)]
-    for x in xs:
-        stand = h.extrude([(-0.06, -0.01), (0.05, -0.01), (0.03, blade_z), (-0.03, blade_z)],
-                          0.014, plane="YZ", center=True, name="upright")
-        _rotate(stand, Matrix.Translation((x, 0.0, 0.0)))
-        pieces.append(stand)
-    for p in pieces:
-        _set_material(p, "accent")
+    for sign in (1, -1) if g["plate"] else ():
+        plate = h.extrude(g["plate"], g["sheet"], plane="YZ", center=True, name="endplate")
+        _rotate(plate, Matrix.Translation((sign * (span / 2 + g["sheet"] / 2), 0, 0)))
+        pieces.append(plate)
+    for x, bars in g["brackets"]:
+        for bar in bars:
+            leg = h.extrude(bar, g["sheet"], plane="YZ", center=True, name="bracket")
+            _rotate(leg, Matrix.Translation((x, 0, 0)))
+            pieces.append(leg)
+        fy0, fy1, fz = g["foot"]
+        pieces.append(h.box((0.035, fy1 - fy0, fz), location=(x, (fy0 + fy1) / 2, fz / 2), name="foot"))
+    for piece in pieces:
+        _set_material(piece, "accent")
     return pieces
 
 

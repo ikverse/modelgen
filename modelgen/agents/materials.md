@@ -59,7 +59,9 @@ dropped from the game file: do not spend attempts on them.
 3. Judge it like a product photographer: is the wood grain the right scale for the object's size,
    is the metal believable, is the colour right for the style, does the glass read as glass, do
    the materials differ enough to tell parts apart? Tune parameters and call `write_materials`
-   again. Two to four attempts is normal.
+   again. Two to four attempts is normal. For a small fix to a file you already have (one
+   colour, one roughness), call `edit_materials` instead: it takes only the lines to replace and
+   answers as `write_materials` does.
 4. Call `finish` with a sentence on the materials you chose.
 
 No black outlines (inverted hulls, Freestyle or similar) unless the spec's style or notes ask for

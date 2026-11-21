@@ -52,7 +52,7 @@ game:
 # How a request for a car is built. remix: the car generator makes it in under a minute from a free
 # ready-made base car (assets_cc0), with no agents. agents: the agent team builds it, as before.
 cars:
-  generator: remix
+  generator: agents
 
 # How a request for a person is built: the character designer writes a character sheet, then the
 # body, its 53-bone game skeleton and skin weights are made from the CC0 MakeHuman body data in this
@@ -74,8 +74,8 @@ motion:
 # Spending limits (the Settings page can change them; its values are kept in data\settings.json).
 # Before an agent run that could go over either limit, the run waits and the director asks you.
 budget:
-  daily_usd: 25           # every agent run started today, all models
-  per_model_usd: 6        # one model, all its versions (a model's own Budget overrides this)
+  daily_usd: 0            # every agent run started today, all models (0: no limit)
+  per_model_usd: 0        # one model, all its versions (a model's own Budget overrides this; 0: no limit)
 
 questions:
   timeout_s: 540          # an agent's question waits this long for you, then the agent decides itself
@@ -97,6 +97,7 @@ caps:
   critic:    {max_turns: 12, max_budget_usd: 1.20}   # room to measure parts before the review
   librarian: {max_turns: 8,  max_budget_usd: 0.20}
   researcher: {max_turns: 14, max_budget_usd: 0.60}  # web searches for the real object's size and features
+  router:    {max_turns: 3,  max_budget_usd: 0.10}   # reads a change and says which agents it needs
   caster:    {max_turns: 3,  max_budget_usd: 0.05}   # picks a ready-made model for the request, or none
   shell_architect: {max_turns: 8, max_budget_usd: 1.20}   # plans a car (or other shell) as a sheet
   shell_builder:   {max_turns: 24, max_budget_usd: 2.50}  # shapes the one continuous body, on Opus

@@ -278,6 +278,46 @@ def _live(rnd, key, n, result, kind):
                        "file": f"v{rnd.number}/previews/{key}/{n:02d}/live.glb"})
 
 
+EDIT_SCHEMA = {"type": OBJ, "properties": {"edits": {"type": "array", "items": {
+    "type": OBJ, "properties": {"old": {"type": "string"}, "new": {"type": "string"}}, "required": ["old", "new"]}}},
+    "required": ["edits"]}
+
+
+def patched(code, edits):
+    """A module's code with each edit applied in order: `old` (text found exactly once in the code as
+    it stands when its turn comes) replaced by `new`. Returns (code, None), or (None, why not)."""
+    if not (code or "").strip():
+        return None, "there is no code to edit yet: write the whole file first"
+    edits = [e for e in (edits or []) if isinstance(e, dict)]
+    if not edits:
+        return None, "give at least one edit: {\"old\": text in the file, \"new\": what replaces it}"
+    for i, e in enumerate(edits, 1):
+        old, new = str(e.get("old") or ""), str(e.get("new") or "")
+        found = code.count(old) if old else 0
+        if found != 1:
+            return None, (f"edit {i}: `old` must be text that appears exactly once in the file as it is now; it "
+                          f"appears {found} times. Copy it exactly (spaces and line breaks too)"
+                          + (" and add the lines around it so it is unique" if found > 1 else ""))
+        code = code.replace(old, new, 1)
+    return code, None
+
+
+def _edit_tool(rnd, name, path, write, writer):
+    """The edit tool that goes with a write tool: it changes a few lines of the file already there
+    and then does exactly what the write tool does with the result (build, measure, pictures)."""
+    async def edit(args):
+        current = rnd.files.read(path) if rnd.files.exists(path) else ""
+        code, problem = patched(current, args.get("edits"))
+        if problem:
+            return {"ok": False, "error": problem}
+        return await write({"code": code})
+
+    return AgentTool(name, "Change a few lines of the file you already have instead of sending it whole: each edit "
+                     "replaces `old` (text that appears exactly once in the current file) with `new`, in order. "
+                     f"Then it builds and answers exactly as `{writer}` does. Use it for a small change; use "
+                     f"`{writer}` for a new file or a rewrite.", EDIT_SCHEMA, edit)
+
+
 NOTE_ANSWER = {"type": OBJ, "properties": {"note": {"type": "integer"}, "done": {"type": "boolean"},
                                            "how": {"type": "string"}}, "required": ["note", "done"]}
 
@@ -932,7 +972,7 @@ def builder_tools(rnd, part, library=None):
         reference images this builder was given and has not looked at."""
         if (rnd.notes or {}).get(part) and rnd.attempts.get(part, 0) == built_before:
             return ["you have notes for this round but have not built your part since getting them: call "
-                    "write_part with the changes, look at the pictures (in the model too), then finish"]
+                    "write_part or edit_part with the changes, look at the pictures (in the model too), then finish"]
         if (not shell_body and part in rnd.sink.get("refs_offered", ())
                 and part not in rnd.sink.get("refs_seen", ())):
             return ["this model has reference images and you have not looked at them: call view_reference, "
@@ -955,6 +995,7 @@ def builder_tools(rnd, part, library=None):
                       "in a next version also the part placed in the whole model (painted orange in the whole "
                       "views) with its measured gaps to the parts around it.",
                       _schema({"code": {"type": "string"}}), write_part),
+            _edit_tool(rnd, "edit_part", f"parts/{part}.py", write_part, "write_part"),
             _finish_tool(rnd, part, problems, blocking=blocking, evidence=True, ask=ask)]
 
 
@@ -1035,6 +1076,7 @@ def assembler_tools(rnd):
             AgentTool("write_assembly", "Save the assembly module (the whole file, with assemble(parts)), build "
                       "the model and run the geometric checks. Returns the checks and a picture.",
                       _schema({"code": {"type": "string"}}), write_assembly),
+            _edit_tool(rnd, "edit_assembly", "assembly.py", write_assembly, "write_assembly"),
             _finish_tool(rnd, "assembly")]
 
 
@@ -1079,6 +1121,7 @@ def materials_tools(rnd, library=None):
             AgentTool("write_materials", "Save the materials module (the whole file, with apply(parts)) and render "
                       "the model in two views with the final lighting.", _schema({"code": {"type": "string"}}),
                       write_materials),
+            _edit_tool(rnd, "edit_materials", "materials.py", write_materials, "write_materials"),
             _finish_tool(rnd, "materials")]
 
 
@@ -1142,6 +1185,7 @@ def animator_tools(rnd):
             AgentTool("write_motion", "Save the motion module (the whole file, with animate(parts)), build the "
                       "model, run it, and get back what moved, the markers, the checks at frame 1 and a strip "
                       "of frames across one loop.", _schema({"code": {"type": "string"}}), write_motion),
+            _edit_tool(rnd, "edit_motion", "motion.py", write_motion, "write_motion"),
             _finish_tool(rnd, "motion", problems)]
 
 
@@ -1566,7 +1610,7 @@ def reference_tools(project=None, paths=None, on_view=None):
 # --- director ---------------------------------------------------------------------------
 
 def director_tools(start_build, request_changes, project_status, team_member=None, reference_images=(),
-                   stop_build=None):
+                   stop_build=None, review_again=None):
     """The callables come from director.py; each takes the arguments dict and returns a dict.
     reference_images: files attached to the current request, which the director can look at."""
     extra = []
@@ -1580,6 +1624,11 @@ def director_tools(start_build, request_changes, project_status, team_member=Non
             "latest work. name: their name (Armin, Pieck, Eren, Mikasa, Reiner, Jean, Annie, Historia) or role.",
             _schema({"name": {"type": "string"}}), team_member))
     extra += reference_tools(paths=list(reference_images)) if reference_images else []
+    if review_again:
+        extra.append(AgentTool(
+            "review_again", "Have the critic review a built version of the current model again, nothing rebuilt: "
+            "when a version could not be reviewed (no score), or the person asks for it to be scored again. "
+            "version: its number.", _schema({"version": {"type": "integer"}}, ["version"]), review_again))
     return extra + [
         AgentTool("start_build", "Start building a new model. title: two to four English words. request: the "
                   "full request in English with everything the person said and your defaults.",

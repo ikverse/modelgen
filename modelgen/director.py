@@ -91,7 +91,7 @@ async def report(project, outcome):
               f"## The result\n{at.dumps(facts)}\n\n## The conversation so far\n{_history()}")
     res = await runner.run_agent("director", prompt, [], project=project, doing="reporting the result")
     text = res.text if res.ok and res.text else (
-        f"The build of {project} finished: {outcome.get('error') or 'score ' + str(outcome.get('score'))}.")
+        f"The build of {project} finished: {outcome.get('error') or ('not reviewed' if outcome.get('score') is None else 'score ' + str(outcome.get('score')))}.")
     card = version_card(project, outcome["version"]) if outcome.get("version") else None
     return db.add_message("assistant", text, project, meta={"version": card} if card else None)
 
@@ -162,6 +162,24 @@ async def chat_turn(text, project=None, query_fn=None, attachments=None, options
     def status(args):
         return project_summary(state["project"]) if state["project"] else {"project": None}
 
+    def review_again(args):
+        name = state["project"]
+        if not name:
+            return {"ok": False, "error": "there is no model yet"}
+        try:
+            number = int(args.get("version") or 0)
+        except (TypeError, ValueError):
+            number = 0
+        v = db.get_version(name, number) if number else None
+        if not v or v["status"] != "done":
+            return {"ok": False, "error": f"there is no finished v{number} to review"}
+        try:
+            pipeline.start(name, on_done=report, review=number)
+        except pipeline.Busy:
+            return {"ok": False, "busy": True, "error": "the team is still working on this model; ask again when "
+                                                        "it finishes"}
+        return {"ok": True, "project": name, "note": f"the critic is reviewing v{number} again; a report follows"}
+
     def team_member(args):
         return talk.work_summary(args.get("name", ""), state["project"])
 
@@ -175,7 +193,8 @@ async def chat_turn(text, project=None, query_fn=None, attachments=None, options
     prompt = (f"## The current model\n{current}\n\n## The conversation so far (the last line is new)\n{_history()}"
               f"{extra}\n\nReply to the person's latest message.")
     tools = at.director_tools(start_build, request_changes, status, team_member,
-                              [uploads.path(r) for r in refs], stop_build=stop_build)
+                              [uploads.path(r) for r in refs], stop_build=stop_build,
+                              review_again=review_again)
     res = await runner.run_agent("director", prompt, tools, project=state["project"], doing="chatting",
                                  query_fn=query_fn)
     reply = res.text if res.ok and res.text.strip() else FALLBACK.format(error=res.error or "no reply")

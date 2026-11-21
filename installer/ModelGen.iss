@@ -53,14 +53,15 @@ Name: "desktopicon"; Description: "Add a ModelGen shortcut to the desktop"
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\ModelGen"; Filename: "{app}\ModelGen.bat"; WorkingDir: "{app}"; IconFilename: "{app}\assets\modelgen.ico"
-Name: "{autodesktop}\ModelGen"; Filename: "{app}\ModelGen.bat"; WorkingDir: "{app}"; IconFilename: "{app}\assets\modelgen.ico"; Tasks: desktopicon
+; ModelGen.vbs starts ModelGen.bat with no cmd window; the server stops a little after its page closes
+Name: "{autoprograms}\ModelGen"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\ModelGen.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\modelgen.ico"
+Name: "{autodesktop}\ModelGen"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\ModelGen.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\modelgen.ico"; Tasks: desktopicon
 
 [Run]
 ; after a normal install: a "Start ModelGen" box on the last page
-Filename: "{app}\ModelGen.bat"; Description: "Start ModelGen"; WorkingDir: "{app}"; Flags: postinstall nowait shellexec skipifsilent; Check: DepsReady
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\ModelGen.vbs"""; Description: "Start ModelGen"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent; Check: DepsReady
 ; after a quiet install (an update from inside ModelGen): start it again; the open page reconnects
-Filename: "{app}\ModelGen.bat"; Parameters: "/noopen"; WorkingDir: "{app}"; Flags: nowait shellexec; Check: WizardSilent and DepsReady
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\ModelGen.vbs"" /noopen"; WorkingDir: "{app}"; Flags: nowait; Check: WizardSilent and DepsReady
 
 [UninstallDelete]
 ; the program and what setup made for it; the person's own work (projects, library, data) stays

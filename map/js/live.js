@@ -195,6 +195,7 @@ window.MG = window.MG || {};
     saveSettings(change) { return post('/api/settings', change); },
     updateCheck() { return post('/api/update/check'); },
     updateInstall(force) { return post('/api/update/install', { force: !!force }); },
+    restart(force) { return post('/api/restart', { force: !!force }); },
     loadActivity(agent) { return call('/api/activity' + (agent ? '?agent=' + encodeURIComponent(agent) : '')); },
     async mountViewer(el) {
       if (app().viewerAvailable === false) throw new Error('the viewer library is not installed (run Setup-ModelGen.bat)');

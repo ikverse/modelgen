@@ -15,6 +15,7 @@ import math
 
 import bmesh
 import bpy
+from mathutils import Vector
 
 from .. import helpers as h
 from .. import shell
@@ -88,9 +89,15 @@ def _cut_cleanly(obj, feature, inner, previous=None):
     before = obj.data.copy()
     wrecked = False
     try:
-        for du, dv in ((0.0, 0.0),) + NUDGES:
+        # a detail on the nose that will not cut cleanly along the surface's own direction is tried
+        # again turned toward straight back (its `aim_fallbacks`), each with the same nudges
+        aims = [feature.get("aim")] + list(feature.get("aim_fallbacks") or [])
+        for aim, (du, dv) in ((a, n) for a in aims for n in ((0.0, 0.0),) + NUDGES):
             try:
-                shell.apply_feature(obj, car_sheet.nudged(feature, du, dv), inner)
+                tried = car_sheet.nudged(feature, du, dv)
+                if aim is not None and aim != feature.get("aim"):
+                    tried = dict(tried, aim=aim)
+                shell.apply_feature(obj, tried, inner)
             except Exception as exc:
                 raise ValueError(f"feature '{name}' failed: {exc}") from exc
             if _counts(obj.data) == _counts(before):
@@ -112,13 +119,69 @@ def _cut_cleanly(obj, feature, inner, previous=None):
                      "crosses itself, or runs along the edge of another detail. Change or remove it.")
 
 
+def _on_the_nose(skin, feats):
+    """The details placed on the nose by the sheet's estimate (`on_nose`), put on the built skin
+    instead: each one's `at` moved to the real surface in front of it and its `aim` turned to that
+    surface's inward normal, so the cut goes straight in instead of grazing a nose the estimate got
+    wrong. Details that share a place (a lamp's housing, lenses and strip) share the measurement and
+    stay lined up; where the surface is not found the sheet's own numbers are kept."""
+    found = {}
+    out = []
+    for f in feats:
+        if not f.get("on_nose") or f.get("view") != "aim":
+            out.append(f)
+            continue
+        key = tuple(round(float(c), 4) for c in f["at"])
+        if key not in found:
+            x, y, z = key
+            pts = car_sheet.outline_points(f["outline"]) if f.get("outline") else [tuple(p) for p in f["path"]]
+            pts = pts[::max(1, len(pts) // 8)]
+            found[key] = None
+            # a detail whose outline would run over the nose's top edge onto the hood (the sheet's
+            # estimate put it too high) slides down the nose until it is all on the nose
+            for drop in (0.0, 0.015, 0.03, 0.045, 0.06, 0.075, 0.09):
+                hit = shell.surface_point(skin, (x, y - 1.0, z - drop), (0, 1, 0))
+                if hit is None or hit[1].y > -0.2:
+                    continue
+                at, inward = hit[0], -hit[1]
+                # a wide detail lies on more than one facet: the surface's direction is taken over its
+                # whole outline, not at its middle alone
+                view = shell.Aim(tuple(inward), tuple(at))
+                total, n, over = Vector(inward), 1, False
+                for u, v in pts:
+                    p = view.to_world(u, v, 0.0)
+                    more = shell.surface_point(skin, (p.x, p.y - 1.0, p.z), (0, 1, 0))
+                    if more is None or more[1].z > 0.8:
+                        over = True  # past the nose's edge: on the hood, or off the body
+                    elif more[1].y < -0.2:
+                        total, n = total - more[1], n + 1
+                inward = (total / n).normalized()
+                # should the cut still graze the nose, it is tried again turned toward straight back
+                back = Vector((0.0, 1.0, 0.0))
+                place = ([round(c, 4) for c in at], [round(c, 4) for c in inward],
+                         [[round(c, 4) for c in (inward * (1 - k) + back * k).normalized()] for k in (0.5, 1.0)])
+                if found[key] is None:
+                    found[key] = place  # where the sheet put it, unless a lower place is all on the nose
+                if not over:
+                    found[key] = place
+                    break
+        if found[key] is None:
+            out.append(f)
+        else:
+            at, aim, turned = found[key]
+            out.append(dict(f, at=at, aim=aim, aim_fallbacks=turned))
+    return out
+
+
 def _skin(s, feats, name="body"):
     """The clean skin of a resolved sheet, before any detail: skinned, fitted to size, flared."""
     obj = shell.skin(car_sheet.rings(s), levels=int(s["detail"]), name=name, end_crease=car_sheet.end_crease(s),
                      creases=car_sheet.creases(s), ring_creases=car_sheet.ring_creases(s),
                      end_centre_lines=car_sheet.end_centre_lines(s))
     front, rear = car_sheet.end_protrusion(feats)  # the bumpers bring the ends back out to the full length
-    shell.fit(obj, half_width=s["half_width"], y_range=(s["y_front"] + front, s["y_rear"] - rear),
+    bumper = car_sheet.rear_bumper(s)  # the rear one swells out of the skin itself, below
+    y_end = s["y_rear"] - rear
+    shell.fit(obj, half_width=s["half_width"], y_range=(s["y_front"] + front, y_end - (bumper["out"] if bumper else 0)),
               z_range=(s["ride_height"], s["height"]))
     # the fenders: a soft swell, or a blister (boxed) whose raised edge rolls off quickly but smoothly;
     # the front one fades forward into the bumper, the rear haunch reaches forward into the door
@@ -131,6 +194,9 @@ def _skin(s, feats, name="body"):
     else:
         shell.flare(obj, axles, r, s["flare"], s["flare_spread"], x_from=s["half_width"] * 0.6,
                     z_top=s["belt_z"] - 0.04, stretch=stretch)
+    if bumper:  # built short by the bumper's depth, then the bumper swells out to the sheet's length
+        shell.bumper(obj, y_end - bumper["out"], 1.0, bumper["out"], bumper["top"], bumper["edge"], bumper["wrap"])
+        shell.fit(obj, y_range=(s["y_front"] + front, y_end))
     return obj
 
 
@@ -283,7 +349,7 @@ def interior(body_obj):
     feats = car_sheet.features(s)
     skin = _skin(s, feats, name="interior_skin")
     if body_obj.get(STRETCH_KEY):
-        lo, k = body_obj[STRETCH_KEY]
+        lo, k = json.loads(body_obj[STRETCH_KEY])
         _stretch(skin.data, s, lo, k)
     inner = shell._Inner(skin)
     pieces = []
@@ -369,6 +435,7 @@ def body(sheet):
     s = car_sheet.resolve(sheet)
     feats = car_sheet.features(s)
     obj = _skin(s, feats)
+    feats = _on_the_nose(obj, feats)
     axles = [(s["axle_front"], s["wheel_radius"]), (s["axle_rear"], s["wheel_radius"])]
     inner = shell._Inner(obj)
     previous, skipped = None, []
@@ -420,9 +487,19 @@ def body(sheet):
                 bpy.data.meshes.remove(kept)
             else:
                 _apply_cleanly(obj, feature, inner, previous)
+                # any cut can chip a sliver off as a tiny shell of its own: a skin is one piece, so the
+                # chip goes; a cut that took a real piece off the body is an error
+                faces = len(obj.data.polygons)
+                shell.keep_largest(obj)
+                if len(obj.data.polygons) < faces * 0.99:
+                    raise ValueError(f"feature '{feature.get('name')}' cut a piece off the body: keep its "
+                                     "outline inside the surface it is cut into, or remove it.")
             previous = feature.get("name")
         if not wells:
             cut_wells(previous)
+        # a cut at the very tip of the nose or tail (an intake's mouth, the plate) takes a centimetre or
+        # two off the length: the finished body is brought back to the sheet's length
+        _true_length(obj, s, inner)
         _carve_cabin(obj, s, feats, inner)  # last: nothing is cut after the hollow
     finally:
         inner.free()
@@ -452,7 +529,12 @@ def _true_length(obj, s, inner):
     if abs(lo - s["y_front"]) < 1e-4 and abs(hi - s["y_rear"]) < 1e-4:
         return
     k = (s["y_rear"] - s["y_front"]) / (hi - lo)
-    obj[STRETCH_KEY] = [lo, k]  # car.interior builds the glass panes on a skin stretched the same way
+    if obj.get(STRETCH_KEY):  # stretched before: the two stretches as one, from the first one's start
+        lo1, k1 = json.loads(obj[STRETCH_KEY])
+        obj[STRETCH_KEY] = json.dumps([lo1 - (s["y_front"] - lo) / k1, k1 * k])
+    else:
+        # (kept as text: Blender crashes when a list property is set a second time)
+        obj[STRETCH_KEY] = json.dumps([lo, k])  # car.interior builds the glass panes on a skin stretched the same way
     _stretch(obj.data, s, lo, k)
     _stretch(inner.source, s, lo, k)
     for cached in inner.cache.values():  # rebuilt from the stretched source when next asked for
@@ -476,6 +558,60 @@ def _seat(body_obj, origin, direction, fallback, embed=0.006):
         return fallback
     loc, normal = hit
     return tuple(loc - normal * embed)
+
+
+def _popup_pods(body_obj, s):
+    """The raised pop-up lamps of a "popup_open" sheet, each standing on its lid on the hood: its front
+    face's foot and its hinge seated on the hood surface, so the lid slopes back into the hood."""
+    pieces = []
+    for pod in car_sheet.popup_pods(s):
+        x, y0 = pod["x"], pod["y"]
+        front = shell.surface_point(body_obj, (x, y0 + 0.01, 5.0), (0, 0, -1))
+        back = shell.surface_point(body_obj, (x, y0 + pod["length"], 5.0), (0, 0, -1))
+        if not front or not back:
+            continue
+        zf = front[0].z
+        made = shell.popup_pod(pod["width"], pod["length"], pod["face"], rise=back[0].z - zf)
+        for m in made:
+            m.location = (x, y0, zf)
+        pieces += made
+    return pieces
+
+
+BAR_STEP = 0.025   # a grille bar follows the opening's floor through a point this often
+
+
+def _grille_bars(body_obj, s):
+    """The bars across the openings that have a pattern (car_sheet.grille_bars): each a square rod on
+    the floor of its recessed opening, following that floor as it curves round the nose, standing
+    proud of it by about the bar's depth. A bar breaks where the floor is not there (a wall, a miss)."""
+    pieces = []
+    for bar in car_sheet.grille_bars(s):
+        out = -1.0 if bar["view"] == "front" else 1.0  # which way along Y is outward
+        u0, u1, v0, v1 = bar["u0"], bar["u1"], bar["v0"], bar["v1"]
+        along_u = (u1 - u0) >= (v1 - v0)
+        length = (u1 - u0) if along_u else (v1 - v0)
+        half = min(u1 - u0, v1 - v0) / 2
+        lift = max(half, min(bar["depth"], 0.012) / 2)  # the rod's centre this far out from the floor
+        count = max(1, math.ceil(length / BAR_STEP))
+        runs, run = [], []
+        for k in range(count + 1):
+            t = (u0 if along_u else v0) + length * k / count
+            u, v = (t, (v0 + v1) / 2) if along_u else ((u0 + u1) / 2, t)
+            hit = shell.surface_point(body_obj, (u, out * 5.0, v), (0, -out, 0))
+            if hit is None or abs(hit[1].y) < 0.5:  # missed, or met a wall of the opening
+                if len(run) >= 2:
+                    runs.append(run)
+                run = []
+                continue
+            run.append((u, hit[0].y + out * (lift - 0.003), v))
+        if len(run) >= 2:
+            runs.append(run)
+        for points in runs:
+            rod = h.sweep(points, radius=max(half, lift), smooth=False, profile_segments=4, name="grille_bar")
+            shell._set_material(rod, "gloss_black")
+            pieces.append(rod)
+    return pieces
 
 
 def assemble(parts):
@@ -503,6 +639,14 @@ def assemble(parts):
         left = h.instance(right)
         h.place(left, location=(-x, y, z), scale=(-1, 1, 1))
         h.attach(left, "body")
+    pods = _popup_pods(body_obj, s)
+    if pods:  # lamp_style "popup_open": the raised lamps stand on their lids, a part of their own
+        piece = h.finalize_part(pods, "popup_lamps")
+        h.attach(piece, "body")
+    bars = _grille_bars(body_obj, s)
+    if bars:  # the grille bars across the openings, a part of their own
+        piece = h.finalize_part(bars, "grilles")
+        h.attach(piece, "body")
     if "wing" in parts:
         zs = []
         for x in (-s["wing_spacing"] / 2, s["wing_spacing"] / 2):

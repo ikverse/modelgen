@@ -81,7 +81,9 @@ answer and key nothing.
    from the side close up on the biggest wheel, then a close-up of each marker as a ball.
 3. Look at the strip: do the spokes move between frames, does every ball sit on top of its part?
    A wheel with a `speed_error_pct` past 10 is probably the wrong part or the wrong axis. Fix and
-   call `write_motion` again. One or two attempts is normal.
+   call `write_motion` again. One or two attempts is normal. For a small fix to a motion file
+   you already have, call `edit_motion` instead: it takes only the lines to replace and answers
+   as `write_motion` does.
 4. Call `finish` with a sentence on what moves. `finish` refuses once if nothing moves although the
    spec asks for it.
 

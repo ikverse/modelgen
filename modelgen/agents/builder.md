@@ -45,11 +45,18 @@ materials), so the materials agent can fill them.
    the count of non-manifold (open) edges, and a picture of the part from four views.
 3. Look at the picture critically against the plan and the spec. Compare the measured size with
    the plan's dimensions: it must match within 3 percent, so work the numbers out, do not eyeball
-   them. When you have `view_reference`, call it and set your part's picture beside the photos of
+   them. Never squash or stretch a ready-made shell piece after building it (a wing from
+   `shell.wing`, a mirror): give the function the size you want instead. A wing scaled flat loses
+   its brackets and sits on the deck like a block. `shell.wing` takes `style` ("gt", "street",
+   "curved"), `span`, `chord`, `height`, `angle_deg` and `plate_height`: a thin flat tilted plank on
+   open brackets with angular end plates. Keep it that: never thicken the plank or round it over.
+   When you have `view_reference`, call it and set your part's picture beside the photos of
    the real thing: outline, proportions, where each detail sits. When the spec has `research`, go
    through its features and proportions and check each one that belongs to your part. Fix and call
    `write_part` again until the part is correct, clean and believable. Three to six attempts is
    normal; one attempt is never enough for a part written from nothing, and `finish` says so.
+   For a small fix to code you already have (a number, a few lines), call `edit_part` instead: it
+   takes only the lines to replace, builds the part and answers exactly as `write_part` does.
 4. When it is right, call `finish` with one or two sentences on what you built, and in
    `research_check` (when the spec has research) the research features and proportions your part
    carries, each with whether it is built and what it measures. `finish` refuses until you have

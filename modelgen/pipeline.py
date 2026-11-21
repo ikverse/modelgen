@@ -15,10 +15,11 @@ import math
 import random
 import re
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import budget, config, db, families, runner
+from . import budget, change_router, config, db, families, runner
 from .bpy_lib.shells import car_sheet
 from .tools import agent_tools as at
 from .tools import asset_catalog, blender, car_library, car_request, character, checks, mechanism, render
@@ -64,13 +65,14 @@ def is_running(project):
     return bool(task and not task.done())
 
 
-def start(project, request=None, changes=None, on_done=None, next_version=False):
+def start(project, request=None, changes=None, on_done=None, next_version=False, review=None):
     """Start the loop for a project in the background. Raises Busy if it is already running.
     changes: the person's comments for the next version (the critic's open changes go with them).
-    next_version: build the next version from the critic's change list alone."""
+    next_version: build the next version from the critic's change list alone.
+    review: a version number to have the critic review again, nothing rebuilt."""
     if is_running(project):
         raise Busy(f"'{project}' is still being built")
-    task = asyncio.create_task(run(project, request, changes, on_done, next_version))
+    task = asyncio.create_task(run(project, request, changes, on_done, next_version, review))
     RUNNING[project] = task
     return task
 
@@ -91,11 +93,13 @@ def _mark_stopped(project):
             db.update_version(project, v["number"], status="failed", note="stopped")
 
 
-async def run(project, request=None, changes=None, on_done=None, next_version=False):
-    kind = "changes" if changes else "next" if next_version else "new"
-    db.add_event("build_started", project=project, data={"kind": kind, "text": changes or request or ""})
+async def run(project, request=None, changes=None, on_done=None, next_version=False, review=None):
+    kind = "review" if review else "changes" if changes else "next" if next_version else "new"
+    text = f"review v{review} again" if review else changes or request or ""
+    began = db.add_event("build_started", project=project, data={"kind": kind, "text": text})
+    clock = time.monotonic()
     try:
-        outcome = await _run(project, request, changes, next_version)
+        outcome = await (_review_again(project, review) if review else _run(project, request, changes, next_version))
     except asyncio.CancelledError:
         # stop() cancelled the build; finish recording it and report, instead of ending silently
         asyncio.current_task().uncancel()
@@ -111,24 +115,142 @@ async def run(project, request=None, changes=None, on_done=None, next_version=Fa
         outcome = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         db.update_project(project, status="failed")
         db.add_event("error", project=project, data={"text": outcome["error"]})
+    keep = outcome.pop("keep", None)  # the version whose good parts the librarian keeps
     db.add_event("finished", project=project, data=outcome)
-    if db.project_client(project):
-        pass  # made for another program (the /v1 API): its job reports to it, not to the chat
-    elif outcome.get("remix"):
-        _report_remix(project, outcome)  # said plainly: no agent writes the report of a car made without agents
-    elif outcome.get("library"):
-        _report_library(project, outcome)
-    elif outcome.get("parts"):
-        _report_parts(project, outcome)
-    elif outcome.get("character"):
-        _report_character(project, outcome)
-    elif on_done:
-        try:
-            await on_done(project, outcome)
-        except Exception as exc:
-            db.add_event("error", project=project, data={"text": f"reporting failed: {exc}"})
+
+    async def tell():
+        if db.project_client(project):
+            pass  # made for another program (the /v1 API): its job reports to it, not to the chat
+        elif outcome.get("remix"):
+            _report_remix(project, outcome)  # said plainly: no agent writes the report of a car made without agents
+        elif outcome.get("library"):
+            _report_library(project, outcome)
+        elif outcome.get("parts"):
+            _report_parts(project, outcome)
+        elif outcome.get("character"):
+            _report_character(project, outcome)
+        elif on_done:
+            try:
+                await on_done(project, outcome)
+            except Exception as exc:
+                db.add_event("error", project=project, data={"text": f"reporting failed: {exc}"})
+
+    # the person gets the report while the librarian files the good parts: neither waits for the other
+    await asyncio.gather(tell(), *([_keep_parts(project, keep)] if keep else []))
+    _write_timings(project, began["id"], kind, outcome, time.monotonic() - clock)
     return outcome
 
+
+async def _keep_parts(project, number):
+    """The librarian's step, after the build's result is known. Never fails the build."""
+    try:
+        _handoff(project, "critic", "librarian", f"v{number} to keep")
+        _phase(project, "The librarian is keeping the good parts", step="library", version=number)
+        await _librarian(project, number, Library())
+    except Exception as exc:
+        db.add_event("warning", project=project, agent="librarian",
+                     data={"text": f"the library was not updated ({type(exc).__name__}: {exc})"})
+
+
+def _seconds(event):
+    return time.mktime(time.strptime(event["created"][:19], "%Y-%m-%dT%H:%M:%S"))
+
+
+def _write_timings(project, after_id, kind, outcome, total):
+    """Where a build's time went, as timings.json in its version's folder: seconds per step of the
+    loop, per agent and per tool, read from the build's own events. Never fails the build."""
+    try:
+        number = outcome.get("version")
+        if not number or kind == "review":  # a review again builds nothing: the version keeps its build's timings
+            return
+        events = db.events(project, after_id=after_id, limit=20000)
+        steps, agents, tools, opened = {}, {}, {}, {}
+        phases = [e for e in events if e["kind"] == "phase" and e["data"].get("step")]
+        ends = [_seconds(e) for e in phases[1:]] + ([_seconds(events[-1])] if events else [])
+        for e, end in zip(phases, ends):
+            step = e["data"]["step"]
+            steps[step] = steps.get(step, 0) + max(0, round(end - _seconds(e)))
+        for e in events:
+            data = e["data"]
+            if e["kind"] == "run":
+                a = agents.setdefault(data.get("role") or e["agent"], {"runs": 0, "seconds": 0.0, "usd": 0.0})
+                a["runs"] += 1
+                a["seconds"] = round(a["seconds"] + float(data.get("seconds") or 0), 1)
+                a["usd"] = round(a["usd"] + float(data.get("cost_usd") or 0), 4)
+            elif e["kind"] == "tool_call":
+                opened.setdefault((e["agent"], data.get("tool")), []).append(_seconds(e))
+            elif e["kind"] == "tool_done" and opened.get((e["agent"], data.get("tool"))):
+                t = tools.setdefault(data.get("tool"), {"calls": 0, "seconds": 0})
+                t["calls"] += 1
+                t["seconds"] += max(0, round(_seconds(e) - opened[(e["agent"], data.get("tool"))].pop(0)))
+        out = {"build": kind, "total_seconds": round(total, 1), "steps": steps, "agents": agents, "tools": tools}
+        (version_dir(project, number) / "timings.json").write_text(_json(out), encoding="utf-8")
+    except Exception as exc:
+        db.add_event("warning", project=project, data={"text": f"the timings were not written ({exc})"})
+
+
+
+def _saved_sheets(renders):
+    """The contact sheets a finished version's render left in its renders folder, by name, as the
+    critic's tools take them."""
+    sheets = {}
+    for name in ("turntable", "wireframe", "closeups", "car_views", "reference_pairs", "family_views", "motion"):
+        f = renders / f"sheet_{name}.jpg"
+        if f.is_file():
+            sheets[name] = str(f)
+    large = [str(f) for f in sorted(renders.glob("critic_turntable_*.jpg"))]
+    if large:
+        sheets["turntable_large"] = large
+    return sheets
+
+
+def _built_for_changes(project, number):
+    """Whether a version was built for the person's own changes: the build that started it, read
+    from the build's own events. False when those events are gone."""
+    kind = None
+    for e in db.events_of(["build_started", "version_started"], project=project, limit=5000):
+        if e["kind"] == "build_started":
+            kind = e["data"].get("kind")
+        elif e["data"].get("version") == number:
+            return kind == "changes"
+    return False
+
+
+async def _review_again(project, number):
+    """Have the critic review a built version again (one it could not review, or to check it anew):
+    nothing is rebuilt; the version gets the new score and review."""
+    v = db.get_version(project, number)
+    folder = version_dir(project, number)
+    renders = folder / "renders"
+    checks_file = folder / "checks.json"
+    if not v or v["status"] != "done" or not checks_file.is_file() or not (renders / "sheet_turntable.jpg").is_file():
+        return {"ok": False, "error": f"v{number} has no finished renders to review"}
+    spec = json.loads((folder / "spec.json").read_text(encoding="utf-8"))
+    plan = json.loads((folder / "plan.json").read_text(encoding="utf-8"))
+    rnd = Round(project=project, number=number, dir=folder, files=ProjectFiles(folder), spec=spec, plan=plan)
+    found = json.loads(checks_file.read_text(encoding="utf-8"))
+    outcome = {"ok": True, "checks": found, "sheets": _saved_sheets(renders)}
+    earlier = [x for x in db.versions(project) if x["number"] < number and x.get("review")]
+    last_review = earlier[-1]["review"] if earlier else None
+    prev_dir = version_dir(project, earlier[-1]["number"]) if earlier else None
+    _phase(project, f"The critic is reviewing v{number} again", step="review", version=number)
+    # a version built for the person's own changes was not built from the earlier change list: the
+    # critic sees that list for what it is and marks none of it, as when the version was built
+    review = await _critic(rnd, outcome, last_review, prev_dir, judge=not _built_for_changes(project, number))
+    reviewed = review.get("score") is not None
+    pass_score = float(config.get("loop", "pass_score", 80))
+    passed = reviewed and found["passed"] and review["score"] >= pass_score
+    rnd.files.write("review.json", _json(review))
+    db.update_version(project, number, score=review["score"], passed=int(passed),
+                      review=review if reviewed else None)
+    db.add_event("version_done", project=project,
+                 data={"version": number, "score": review["score"], "passed": passed, "summary": review["summary"],
+                       "changes": len(review.get("changes") or [])})
+    if reviewed:
+        db.update_project(project, status="done" if passed else "needs_changes")
+    return {"ok": True, "version": number, "score": review["score"], "passed": passed, "summary": review["summary"],
+            "changes": (review.get("changes") or [])[:3], "gates": found.get("gates"),
+            **({} if reviewed else {"not_reviewed": True})}
 
 STEPS = ["catalog", "research", "spec", "plan", "build", "assemble", "materials", "render", "review", "library"]
 
@@ -178,6 +300,7 @@ async def _run(project, request, changes, next_version=False):
     fresh = bool(existing) and library_asset(project, base_number(project)) is not None
     library = Library()
     start_from = None  # in next_version mode: the version this build starts from, to beat
+    judge = True  # the critic marks the last review's changes landed or not (not after the person's own changes)
 
     if (changes or next_version) and existing and not fresh:
         base = base_number(project)
@@ -186,27 +309,41 @@ async def _run(project, request, changes, next_version=False):
         plan = json.loads((base_dir / "plan.json").read_text(encoding="utf-8"))
         if changes:
             db.update_project(project, status="planning")
-            _handoff(project, "director", "architect", "your changes")
-            _phase(project, f"Planning the changes on top of v{base}", step="plan", base=base)
-            note = (f"The person asked for these changes (they come before the critic's notes where the two "
-                    f"conflict): {changes}")
-            if at.shell_template(plan=plan):
-                plan, rebuild = await _shell_architect_change(project, spec, plan, changes, library, base_dir)
-                notes = {name: [note] for name in rebuild} | {"materials": [note]}  # the assembly follows the sheet
+            _phase(project, f"Reading what your changes need on top of v{base}", step="plan", base=base)
+            note = f"The person asked for these changes: {changes}"
+            routed = await change_router.route(project, changes, spec, plan)
+            if routed:
+                # only what the change touches is worked on: every other part and stage keeps the base's files
+                mine = note + ("\nDo exactly what in this concerns your own work and nothing else: the rest of it "
+                               "goes to the others it names, and everything it does not mention stays as it is.")
+                rebuild = set(routed["parts"])
+                notes = {name: [mine] for name in rebuild} | {k: [mine] for k in change_router.STAGES if routed[k]}
+                _handoff(project, "director", "builder" if rebuild else _role_of(next(iter(notes))), "your changes")
+                _phase(project, f"Your changes go straight to {change_router.describe(routed)}", step="plan",
+                       base=base, routed=routed)
             else:
-                plan, rebuild = await _architect_change(project, spec, plan, changes, library)
-                notes = {name: [note] for name in rebuild} | {"assembly": [note], "materials": [note]}
-            if at.has_motion(spec):
-                notes["motion"] = [note]
+                _handoff(project, "director", "architect", "your changes")
+                _phase(project, f"Planning the changes on top of v{base}", step="plan", base=base)
+                if at.shell_template(plan=plan):
+                    plan, rebuild = await _shell_architect_change(project, spec, plan, changes, library, base_dir)
+                    notes = {name: [note] for name in rebuild} | {"materials": [note]}  # the assembly follows the sheet
+                else:
+                    plan, rebuild = await _architect_change(project, spec, plan, changes, library)
+                    notes = {name: [note] for name in rebuild} | {"assembly": [note], "materials": [note]}
+                if at.has_motion(spec):
+                    notes["motion"] = [note]
+            # the person's own changes are built alone: the critic's open list waits for "Build next version"
+            _, last_review = critic_notes_of(project, base, at.plan_parts(plan))
+            judge = False
         else:
             _phase(project, f"Building the next version on top of v{base} with the critic's changes", step="plan",
                    base=base)
             rebuild, notes = set(), {}
-        critic_notes, last_review = critic_notes_of(project, base, at.plan_parts(plan))
-        for target, items in critic_notes.items():
-            notes.setdefault(target, []).extend(items)
-        rebuild |= {k for k in critic_notes if k in at.plan_parts(plan)}
-        plan, rebuild = await _plan_changes(project, spec, plan, notes, rebuild, library)
+            critic_notes, last_review = critic_notes_of(project, base, at.plan_parts(plan))
+            for target, items in critic_notes.items():
+                notes.setdefault(target, []).extend(items)
+            rebuild |= {k for k in critic_notes if k in at.plan_parts(plan)}
+            plan, rebuild = await _plan_changes(project, spec, plan, notes, rebuild, library)
         if next_version and last_review:
             start_from = {"version": base, "score": last_review["score"], "dir": base_dir}
         prev_dir = base_dir
@@ -232,7 +369,8 @@ async def _run(project, request, changes, next_version=False):
         if spec.get("mechanism"):
             plan = with_tool_parts(plan, spec["mechanism"])
         rebuild, notes, prev_dir, last_review = set(at.plan_parts(plan)), {}, None, None
-    _handoff(project, "architect", "builder", f"plan: {len(at.plan_parts(plan))} parts")
+    if rebuild or not prev_dir:
+        _handoff(project, "architect", "builder", f"plan: {len(at.plan_parts(plan))} parts")
 
     db.update_project(project, spec=spec, status="building")
     max_rounds = max(1, int(config.get("loop", "max_rounds", 1)))
@@ -250,29 +388,61 @@ async def _run(project, request, changes, next_version=False):
 
         parts = at.plan_parts(plan)
         todo = [p for p in parts if p in rebuild or not rnd.files.exists(f"parts/{p}.py")]
+        # Parts rebuilt on top of a finished model: its assembly, materials and motion are kept and
+        # checked against how they came out before, and an agent redoes one only when it has notes or
+        # the check finds it no longer fits. `before` is read while the builders work.
+        carried = bool(prev_dir) and all(rnd.files.exists(f) for f in ("assembly.py", "materials.py"))
+        before, sizes = None, {p: (rnd.part_reports.get(p) or {}).get("size_m") for p in todo}
         if todo:
             _phase(project, f"Builders are writing {len(todo)} part(s): {', '.join(todo)}", step="build",
                    version=n, parts=todo)
-            await _build_parts(rnd, todo, notes, library, prev_dir)
+            _, before = await asyncio.gather(_build_parts(rnd, todo, notes, library, prev_dir),
+                                             _stage_report(_round_of(project, prev_dir)) if carried else _none())
             _handoff(project, "builder", "assembler", f"{len(todo)} built part{'s' if len(todo) != 1 else ''}")
-        if todo or notes.get("assembly") or not rnd.files.exists("assembly.py"):
+        asm_notes, assembled = list(notes.get("assembly", [])), False
+        if at.shell_template(plan=plan):
+            if todo or asm_notes or not rnd.files.exists("assembly.py"):
+                _phase(project, "Assembling the parts", step="assemble", version=n)
+                assembled = await _assemble_shell(rnd, asm_notes)
+        elif asm_notes or not rnd.files.exists("assembly.py"):
             _phase(project, "Assembling the parts", step="assemble", version=n)
-            if at.shell_template(plan=plan):
-                await _assemble_shell(rnd, notes.get("assembly", []))
-            else:
-                await _assemble(rnd, notes.get("assembly", []))
+            await _assemble(rnd, asm_notes)
+            assembled = True
+        elif todo:
+            _phase(project, "Checking that the rebuilt parts still fit the model", step="assemble", version=n)
+            faults = await _assembly_faults(rnd) + _size_notes(rnd, todo, sizes)
+            if faults:
+                _phase(project, "Assembling the parts again", step="assemble", version=n)
+                await _assemble(rnd, faults)
+                assembled = True
+        if todo or assembled:
             _handoff(project, "assembler", "materials", "the assembled model")
-        if todo or notes.get("materials") or not rnd.files.exists("materials.py"):
+        if notes.get("materials") or not rnd.files.exists("materials.py"):
             _phase(project, "Choosing and tuning materials", step="materials", version=n)
             await _materials(rnd, notes.get("materials", []), library)
-        # the motion follows the parts and their placement, so it is redone when either changed
+        elif todo:
+            _phase(project, "Checking the materials still reach the rebuilt parts", step="materials", version=n)
+            fault = await _stage_fault(rnd, before, "materials", todo)
+            if fault:
+                _phase(project, "Tuning the materials again", step="materials", version=n)
+                await _materials(rnd, [fault], library)
+        # the motion follows the parts and their placement: redone when the placement changed or it has
+        # notes, checked when only parts were rebuilt
         moved = False
-        if at.has_motion(spec) and (todo or notes.get("assembly") or notes.get("motion")
-                                    or not rnd.files.exists("motion.py")):
-            _handoff(project, "materials", "animator", "the model with materials")
-            _phase(project, "Adding the motion", step="motion", version=n)
-            await _animate(rnd, notes.get("motion", []))
-            moved = True
+        if at.has_motion(spec):
+            if asm_notes or assembled or notes.get("motion") or not rnd.files.exists("motion.py"):
+                _handoff(project, "materials", "animator", "the model with materials")
+                _phase(project, "Adding the motion", step="motion", version=n)
+                await _animate(rnd, notes.get("motion", []))
+                moved = True
+            elif todo:
+                _phase(project, "Checking the motion still drives the rebuilt parts", step="motion", version=n)
+                fault = await _stage_fault(rnd, before, "motion", todo)
+                if fault:
+                    _handoff(project, "materials", "animator", "the model with materials")
+                    _phase(project, "Adding the motion again", step="motion", version=n)
+                    await _animate(rnd, [fault])
+                    moved = True
         rnd.files.write("part_reports.json", _json(rnd.part_reports))
 
         _phase(project, "Building, exporting and rendering the full model", step="render", version=n)
@@ -291,21 +461,30 @@ async def _run(project, request, changes, next_version=False):
         _handoff(project, "animator" if moved else "materials", "critic",
                  f"v{n} with {'motion' if moved else 'materials'}")
         _phase(project, "The critic is reviewing the renders", step="review", version=n)
-        review = await _critic(rnd, outcome, last_review, prev_dir)
-        passed = outcome["checks"]["passed"] and review["score"] >= pass_score
+        review = await _critic(rnd, outcome, last_review, prev_dir, judge=judge)
+        judge = True  # a further round in this build works on this review's own changes
+        reviewed = review.get("score") is not None
+        passed = reviewed and outcome["checks"]["passed"] and review["score"] >= pass_score
         rnd.files.write("review.json", _json(review))
-        db.update_version(project, n, status="done", score=review["score"], passed=int(passed), review=review,
-                          checks=outcome["checks"])
+        # a version the critic could not review keeps no score and no review: "review again" can give it one
+        db.update_version(project, n, status="done", score=review["score"], passed=int(passed),
+                          review=review if reviewed else None, checks=outcome["checks"])
         db.add_event("version_done", project=project,
                      data={"version": n, "score": review["score"], "passed": passed, "summary": review["summary"],
                            "changes": len(review.get("changes") or [])})
-        if best is None or review["score"] > best["score"]:
-            best = {"version": n, "score": review["score"], "passed": passed, "summary": review["summary"],
-                    "changes": review["changes"][:3], "gates": outcome["checks"]["gates"]}
+        rank = review["score"] if reviewed else -1.0
+        if best is None or rank > best["rank"]:
+            best = {"version": n, "score": review["score"], "rank": rank, "passed": passed,
+                    "summary": review["summary"], "changes": review["changes"][:3],
+                    "gates": outcome["checks"]["gates"]}
             if outcome["checks"].get("game"):
                 best["game_files"] = {k: outcome["checks"]["game"].get(k) for k in ("triangles", "budget")}
-        if anchor is None or review["score"] > anchor["score"]:
+        if reviewed and (anchor is None or anchor.get("score") is None or review["score"] > anchor["score"]):
             anchor = {"version": n, "score": review["score"], "dir": rnd.dir}
+        if not reviewed:
+            db.add_event("warning", project=project, agent="critic",
+                         data={"text": f"v{n} could not be reviewed; ask for \"review v{n} again\" to score it"})
+            break  # no review, so no changes for another round
         if passed:
             _handoff(project, "critic", "director", f"v{n} passed with {review['score'] / 10:.1f}")
             break
@@ -332,18 +511,19 @@ async def _run(project, request, changes, next_version=False):
         return {"ok": False, "error": "no version could be built; see the events for the tracebacks"}
     # The next version starts from the best one. After the person's own changes that is this build's
     # best (it carries their changes); after the critic's changes alone, a worse result keeps the old one.
+    best.pop("rank", None)
     base_after = anchor["version"] if anchor else best["version"]
     db.update_project(project, status="done" if best["passed"] else "needs_changes", base_version=base_after)
     extra = {}
     if base_after != best["version"]:
         extra["next_starts_from"] = (f"v{best['version']} scored lower than v{base_after}, so the next version "
                                      f"starts from v{base_after}")
-    if not best["passed"]:
+    if best["score"] is None:
+        extra["not_reviewed"] = True
+        _handoff(project, "critic", "director", f"v{best['version']} could not be reviewed")
+    elif not best["passed"]:
         _handoff(project, "critic", "director", f"best: v{best['version']} with {best['score'] / 10:.1f}")
-    _handoff(project, "critic", "librarian", f"v{best['version']} to keep")
-    _phase(project, "The librarian is keeping the good parts", step="library", version=best["version"])
-    await _librarian(project, best["version"], library)
-    return {"ok": True, **best, **extra}
+    return {"ok": True, **best, **extra, "keep": best["version"]}  # run() has the librarian keep its good parts
 
 
 
@@ -481,16 +661,14 @@ async def _try_library(project, request, changes, next_version):
         return failed(str(exc))
     after = record["after"]
     found = _library_checks(after)
-    game = await _game_export(folder, project, spec)
-    if game:
-        found["game"] = game
     files.write("measure.json", _json(after))
-    files.write("checks.json", _json(found))
     files.write("asset.json", _json(record))
     _phase(project, "Rendering the model", step="render", version=n)
-    with runner.acting("critic", project, f"rendering v{n}", "render") as act:
-        rendered, _, sheets = await render.render_version(blend, folder / "renders")
-        act.ok = bool(rendered.ok and sheets.get("turntable"))
+    (rendered, _, sheets), game = await asyncio.gather(_render(project, n, blend, folder / "renders"),
+                                                       _game_export(folder, project, spec))
+    if game:
+        found["game"] = game
+    files.write("checks.json", _json(found))
     if not rendered.ok or not sheets.get("turntable"):
         info = rendered.summary()
         return failed("rendering failed: " + (info.get("traceback") or info.get("error") or "no images"))
@@ -570,6 +748,10 @@ async def _try_parts(project, request, changes, next_version):
         if not changes:
             return {"ok": False, "error": "this mechanism was built exactly from its numbers, so another version "
                                           "would be the same: say what to change (\"make the big gear 30 teeth\")"}
+        direct = change_router.direct_mechanism(changes, before)
+        if direct and 0.5 <= direct["rpm"] <= 600 and direct["rpm"] != before.get("rpm"):
+            _phase(project, "Setting your change on the mechanism sheet", step="spec")
+            return await _run_parts(project, direct, [])
         _phase(project, "The engineer is changing the mechanism", step="spec")
         found = await _engineer(project, changes, before)
         if found["custom"]:
@@ -668,15 +850,14 @@ async def _run_parts(project, sheet, assumed, note=""):
     files.write("measure.json", _json(measure))
     files.write("mesh_check.json", _json(mesh))
     files.write("motion_report.json", _json(result.outputs.get("motion") or {}))
-    game = await _game_export(folder, project, spec)
+    _phase(project, "Rendering the mechanism", step="render", version=n)
+    (rendered, _, sheets), game = await asyncio.gather(
+        _render(project, n, blend, folder / "renders", motion=files.exists("motion.py"),
+                views=families.views("mechanical")),
+        _game_export(folder, project, spec))
     if game:
         found["game"] = game
     files.write("checks.json", _json(found))
-    _phase(project, "Rendering the mechanism", step="render", version=n)
-    with runner.acting("critic", project, f"rendering v{n}", "render") as act:
-        rendered, _, sheets = await render.render_version(blend, folder / "renders", motion=files.exists("motion.py"),
-                                                          views=families.views("mechanical"))
-        act.ok = bool(rendered.ok and sheets.get("turntable"))
     if not rendered.ok or not sheets.get("turntable"):
         info = rendered.summary()
         return failed("rendering failed: " + (info.get("traceback") or info.get("error") or "no images"))
@@ -796,6 +977,15 @@ async def _try_character(project, request, changes, next_version):
         if not changes:
             return {"ok": False, "error": "this character was built exactly from its sheet, so another version "
                                           "would be the same: say what to change (\"make her ten years older\")"}
+        direct = change_router.direct_character(changes, before, list(character.BUILDS), character.HEIGHT_RANGE)
+        if direct:
+            try:  # only on a sheet that reads back as it was written, so nothing else in it can shift
+                sheet = character.clean({**before, **direct})[0] if character.clean(before)[0] == before else None
+            except character.CharacterError:
+                sheet = None
+            if sheet and sheet != before:
+                _phase(project, "Setting your change on the character sheet", step="spec")
+                return await _run_character(project, sheet, [], "")
         _phase(project, "The character designer is changing the character", step="spec")
         found = await _designer(project, changes, before)
         return await _run_character(project, found["sheet"], found["assumed"], found["notes"])
@@ -868,19 +1058,23 @@ async def _run_character(project, sheet, assumed, notes=""):
                                      "skeleton": "53-bone game skeleton" + (" plus spring chains" if (made.get("springs")
                                                                                                     or {}).get("chains")
                                                                            else "")}))
-    game = await _game_export(folder, project, spec)
+    _phase(project, "Rendering the character", step="render", version=n)
+
+    async def game_then_clips():
+        made_game = await _game_export(folder, project, spec)
+        await _clip_sheet(folder, project, n)
+        return made_game
+
+    # the renders, the game files and the clip strips all read the saved model: made side by side
+    (rendered, _, sheets), game = await asyncio.gather(
+        _render(project, n, blend, folder / "renders", views=["front", "right"]), game_then_clips())
     if game:
         found["game"] = game
         found["triangles"] = (game.get("triangles") or {}).get("game") or found.get("triangles")
     files.write("checks.json", _json(found))
-    _phase(project, "Rendering the character", step="render", version=n)
-    with runner.acting("critic", project, f"rendering v{n}", "render") as act:
-        rendered, _, sheets = await render.render_version(blend, folder / "renders", views=["front", "right"])
-        act.ok = bool(rendered.ok and sheets.get("turntable"))
     if not rendered.ok or not sheets.get("turntable"):
         info = rendered.summary()
         return failed("rendering failed: " + (info.get("traceback") or info.get("error") or "no images"))
-    await _clip_sheet(folder, project, n)
     failing = [k for k, g in found["gates"].items() if not g["pass"]]
     summary = (f"{what[0].upper()}{what[1:]}, built from the character sheet: a {made.get('bones')}-bone game "
                f"skeleton, {found.get('triangles')} triangles in the game file, clips: "
@@ -926,6 +1120,15 @@ def _report_character(project, outcome):
               "real animation clips come in the next stages of the character path.")
     card = director.version_card(project, outcome["version"])
     db.add_message("assistant", text, project, meta={"version": card} if card else None)
+
+
+async def _render(project, number, blend, out_dir, **options):
+    """The final renders of a saved version, shown on the map as the critic rendering. Returns what
+    render.render_version returns."""
+    with runner.acting("critic", project, f"rendering v{number}", "render") as act:
+        rendered, renders, sheets = await render.render_version(blend, out_dir, **options)
+        act.ok = bool(rendered.ok and sheets.get("turntable"))
+    return rendered, renders, sheets
 
 
 async def _game_export(folder, project, spec):
@@ -1784,25 +1987,127 @@ async def _assemble(rnd, notes):
                            version=rnd.number, doing="placing the parts", step=True)
 
 
+async def _none():
+    return None
+
+
+def _round_of(project, folder):
+    """A finished version's folder as a round, to rebuild its model from its own files."""
+    folder = Path(folder)
+    files = ProjectFiles(folder)
+    return Round(project=project, number=int(folder.name[1:]) if folder.name[1:].isdigit() else 0, dir=folder,
+                 files=files, spec=json.loads(files.read("spec.json")), plan=json.loads(files.read("plan.json")))
+
+
+async def _assembly_faults(rnd, doing="checking the parts still fit"):
+    """The assembly this round already has, built and checked with no agent: what is wrong with it
+    as notes for the assembler, [] when every check passes."""
+    steps, _ = at.model_steps(rnd, materials=False, motion=False)
+    n = at._attempt(rnd, "assembly")
+    live = rnd.files.path(f"previews/assembly/{n:02d}/live.glb")
+    with runner.acting("assembler", rnd.project, f"{doing} for v{rnd.number}", "full_build") as act:
+        result = await blender.run_job_async(steps + [blender.measure_step(), blender.live_step(live)])
+        act.ok = result.ok
+    at._live(rnd, "assembly", n, result, "assembly")
+    if not result.ok:
+        return ["The assembly did not build:\n" + (result.summary().get("traceback") or "")[-1500:]]
+    found = checks.evaluate(result.outputs.get("measure"), at.check_spec(rnd))
+    rnd.sink["assembly_checks"] = found
+    return [f"Check {k} failed: {g['detail']}" for k, g in found["gates"].items() if not g["pass"]]
+
+
+def _size_notes(rnd, parts, before):
+    """Notes for the assembler about rebuilt parts whose measured size changed by more than the
+    part size tolerance: their neighbours were placed around the old size."""
+    tol = float(config.get("model", "part_size_tolerance", 0.03))
+    notes = []
+    for part in parts:
+        old, new = before.get(part) or {}, (rnd.part_reports.get(part) or {}).get("size_m") or {}
+        if not old or not new:
+            continue
+        if any(abs(float(new.get(a) or 0) - float(old.get(a) or 0)) > tol * max(abs(float(old.get(a) or 0)), 1e-6)
+               for a in ("x", "y", "z")):
+            was, now = (" x ".join(f"{float(s.get(a) or 0):.3f}" for a in ("x", "y", "z")) for s in (old, new))
+            notes.append(f"The part {part} was rebuilt and its size changed from {was} m to {now} m (x, y, z): "
+                         "place it again so it still meets what it attaches to, and move its neighbours only "
+                         "where they no longer fit it. Leave every other part where it is.")
+    return notes
+
+
+def _materials_shape(report):
+    """A material report in a form two builds can be compared by: every slot with what it is and
+    which parts carry it."""
+    return {str(k): {**v, "parts": sorted(v.get("parts") or [])} for k, v in (report or {}).items()
+            if isinstance(v, dict)}
+
+
+def _motion_shape(report):
+    """A motion report in a form two builds can be compared by: what moves and how many markers."""
+    report = report or {}
+    return {"animated": sorted(report.get("animated") or {}), "markers": len(report.get("markers") or []),
+            "frames": report.get("frames"), "mechanism": report.get("mechanism")}
+
+
+async def _stage_report(rnd, motion=True):
+    """The model of a round built from its files with no agent, for comparing two versions: how its
+    materials and its motion came out. {"ok": False, "failed_step", "error"} when it does not build;
+    None when the round has no code."""
+    steps, _ = at.model_steps(rnd, motion=motion)
+    if not steps:
+        return None
+    result = await blender.run_job_async(steps + [blender.material_report_step()])
+    if not result.ok:
+        info = result.summary()
+        return {"ok": False, "failed_step": result.failed_step or "",
+                "error": (info.get("traceback") or info.get("error") or "")[-1500:]}
+    return {"ok": True, "materials": _materials_shape(result.outputs.get("material_report")),
+            "motion": _motion_shape(result.outputs.get("motion"))}
+
+
+async def _stage_fault(rnd, before, stage, rebuilt):
+    """Whether the materials (or the motion) kept from the version this one starts from still work
+    now that parts were rebuilt: None when they come out as they did before, else the note for the
+    agent that redoes them. Without a `before` to compare with, the agent redoes them as it always
+    did."""
+    names = ", ".join(rebuilt)
+    what = {"materials": "materials", "motion": "motion"}[stage]
+    again = (f"The parts {names} were rebuilt for this version. Check the {what} still fit them and fix only "
+             "what no longer does; keep everything else as it is.")
+    if not before or not before.get("ok"):
+        return again
+    with runner.acting("materials" if stage == "materials" else "animator", rnd.project,
+                       f"checking the {what} of v{rnd.number}", "full_build") as act:
+        now = await _stage_report(rnd, motion=stage == "motion")
+        act.ok = bool(now and now.get("ok"))
+    if not now:
+        return again
+    if not now["ok"]:
+        if stage in now["failed_step"]:
+            return (f"The parts {names} were rebuilt and the {what} file no longer runs on them. It fails at "
+                    f"'{now['failed_step']}' with:\n{now['error']}\nFix it; keep everything else as it is.")
+        return None  # a part or the assembly fails: the full build reports it and sends it to its own agent
+    if now[stage] == before[stage]:
+        return None
+    if stage == "materials":
+        old, new = before["materials"], now["materials"]
+        diffs = [f"slot {k} is gone" for k in old if k not in new]
+        diffs += [f"slot {k} is new and has no material from the file" for k in new if k not in old]
+        diffs += [f"slot {k} changed (parts {', '.join(new[k]['parts'])})" for k in new if k in old and new[k] != old[k]]
+    else:
+        old, new = before["motion"], now["motion"]
+        diffs = [f"{k}: was {old.get(k)}, now {new.get(k)}" for k in new if new.get(k) != old.get(k)]
+    return (f"The parts {names} were rebuilt and the {what} no longer come out as before: " + "; ".join(diffs[:12])
+            + ". Fix exactly that; keep everything else as it is.")
+
+
 async def _assemble_shell(rnd, notes):
     """A car's assembly is generated from its sheet. It is built and checked without an agent; the
-    assembler is called only when the checks fail or there are notes for it."""
+    assembler is called only when the checks fail or there are notes for it. Returns whether the
+    assembler ran."""
     if rnd.files.exists("assembly.py") and not notes:
-        steps, _ = at.model_steps(rnd, materials=False)
-        n = at._attempt(rnd, "assembly")
-        live = rnd.files.path(f"previews/assembly/{n:02d}/live.glb")
-        with runner.acting("assembler", rnd.project, f"placing the car's pieces for v{rnd.number}", "full_build") as act:
-            result = await blender.run_job_async(steps + [blender.measure_step(), blender.live_step(live)])
-            act.ok = result.ok
-        at._live(rnd, "assembly", n, result, "assembly")
-        if result.ok:
-            found = checks.evaluate(result.outputs.get("measure"), at.check_spec(rnd))
-            rnd.sink["assembly_checks"] = found
-            if found["passed"]:
-                return
-            notes = [f"Check {k} failed: {g['detail']}" for k, g in found["gates"].items() if not g["pass"]]
-        else:
-            notes = ["The generated assembly did not build:\n" + (result.summary().get("traceback") or "")[-1500:]]
+        notes = await _assembly_faults(rnd, "placing the car's pieces")
+        if not notes:
+            return False
     notes = list(notes) + ["This is a car: assembly.py calls bpy_lib.shells.car.assemble(parts), which places the "
                            "wheels on the axles and seats the mirrors, wing and exhaust on the body from the sheet "
                            "stored on the body. Keep that call and correct after it only what the checks show. "
@@ -1810,6 +2115,7 @@ async def _assemble_shell(rnd, notes):
                            "car.assemble: it already seats the wing on the deck, and an offset stays put while "
                            "the sheet changes the deck under it."]
     await _assemble(rnd, notes)
+    return True
 
 
 async def _materials(rnd, notes, library):
@@ -1901,18 +2207,17 @@ async def _final_build(rnd):
         found["warnings"].append(f"parts missing from this version: {', '.join(missing)}")
     rnd.files.write("checks.json", _json(found))
     _handoff(rnd.project, "assembler", "critic", f"v{rnd.number} to render")
-    with runner.acting("critic", rnd.project, f"rendering v{rnd.number}", "render") as act:
-        family = families.of(rnd.spec)
-        rendered, renders, sheets = await render.render_version(
-            blend, rnd.files.path("renders"), car=bool(at.shell_template(plan=rnd.plan)),
-            reference_views=rnd.plan.get("reference_views"), references=at.reference_paths(rnd.project),
-            motion=rnd.files.exists("motion.py"), views=families.views(family), studio=families.studio(family))
-        act.ok = bool(rendered.ok and sheets.get("turntable"))
+    family = families.of(rnd.spec)
+    # the renders and the game files both read the saved model: they are made side by side
+    (rendered, renders, sheets), game = await asyncio.gather(
+        _render(rnd.project, rnd.number, blend, rnd.files.path("renders"), car=bool(at.shell_template(plan=rnd.plan)),
+                reference_views=rnd.plan.get("reference_views"), references=at.reference_paths(rnd.project),
+                motion=rnd.files.exists("motion.py"), views=families.views(family), studio=families.studio(family)),
+        _game_export(rnd.dir, rnd.project, rnd.spec))
     if not rendered.ok or not sheets.get("turntable"):
         info = rendered.summary()
         return {"ok": False, "fatal": True, "failed_step": rendered.failed_step,
                 "error": "rendering failed: " + (info.get("traceback") or info.get("error") or "no images")}
-    game = await _game_export(rnd.dir, rnd.project, rnd.spec)
     if game:
         found["game"] = game
         rnd.files.write("checks.json", _json(found))
@@ -1920,7 +2225,9 @@ async def _final_build(rnd):
             "exports": result.outputs.get("exports", {}), "device": rendered.outputs.get("device")}
 
 
-async def _critic(rnd, outcome, last_review, prev_dir=None):
+async def _critic(rnd, outcome, last_review, prev_dir=None, judge=True):
+    """judge=False: this version carries the person's own changes, not the last review's change
+    list, so that list is shown for what it is and none of it is marked landed or missed."""
     rubric_text = at.rubric_file(rnd.plan, rnd.spec).read_text(encoding="utf-8")
     plan_summary = [{k: p.get(k) for k in ("name", "description", "dimensions", "material")} for p in rnd.plan["parts"]]
     lines = [f"Review version {rnd.number}.", "", "## Spec", _json(rnd.spec), "", "## Plan (parts)",
@@ -1991,17 +2298,21 @@ async def _critic(rnd, outcome, last_review, prev_dir=None):
                   "At least one change must aim at one of your two weakest areas: the next version works on what "
                   "looks worst, and areas that already look right are left alone. Before any material change, call "
                   "inspect_materials and drop what is already set.", ""]
-    previous_changes = (last_review or {}).get("changes") or []
+    listed = (last_review or {}).get("changes") or []
+    previous_changes = listed if judge else []
     previous_sheet = Path(prev_dir) / "renders" / "sheet_turntable.jpg" if prev_dir else None
     previous_sheet = previous_sheet if previous_sheet and previous_sheet.is_file() else None
     if last_review:
         lines += ["## The version this one was built from, and its review",
                   f"It scored {last_review['score']}: {last_review.get('summary', '')}",
-                  "Its change list, by number:",
+                  "Its change list, by number:" if judge else
+                  "This version was built for changes the person asked for themselves, so nobody worked on that "
+                  "review's change list. Here it is for what it is worth: put on your new list whichever of these "
+                  "still apply to what you see, and do not treat any as tried.",
                   *[f"{i}. {c.get('target')} | {c.get('parameter', '')}: {c.get('change', '')}"
                     + (f" (already missed {c['misses']} time{'s' if c['misses'] != 1 else ''}: if it missed again it "
-                       "is stuck and leaves the list by itself)" if c.get("misses") else "")
-                    for i, c in enumerate(previous_changes, 1)], ""]
+                       "is stuck and leaves the list by itself)" if c.get("misses") and judge else "")
+                    for i, c in enumerate(listed, 1)], ""]
         stuck = last_review.get("stuck") or []
         if stuck:
             lines += ["These changes are stuck: they missed twice, so the builders cannot make them with the tools "
@@ -2017,15 +2328,41 @@ async def _critic(rnd, outcome, last_review, prev_dir=None):
     if refs:
         lines.append("\nThis model has reference images (the person's, or photos the research kept): compare "
                      "with them too (view_reference).")
-    for attempt in range(2):
+    waits = list(CRITIC_RETRY_S)
+    reminded = False
+    error = None
+    while True:
         tools = at.critic_tools(rnd, outcome["sheets"], previous_sheet, previous_changes,
                                 (last_review or {}).get("stuck") or []) + refs
-        await runner.run_agent("critic", "\n".join(lines), tools,
-                               project=rnd.project, version=rnd.number, doing=f"reviewing v{rnd.number}", step=True)
+        res = await runner.run_agent("critic", "\n".join(lines), tools,
+                                     project=rnd.project, version=rnd.number, doing=f"reviewing v{rnd.number}",
+                                     step=True)
         if rnd.sink.get("review"):
             return rnd.sink["review"]
+        error = getattr(res, "error", None)
+        if error and runner.account_limit(error):
+            break  # out of usage: trying again before the reset fails the same way
+        if error and not getattr(res, "turns", None):
+            # the run stopped before the critic said anything (Claude Code crashed): wait, then ask again
+            if not waits:
+                break
+            await asyncio.sleep(waits.pop(0))
+            continue
+        if reminded:
+            break
+        reminded = True  # it answered but did not submit: once more, with a reminder
         lines.append("\nYou must look with view_renders and then call submit_review.")
-    return {"scores": {}, "summary": "The critic did not submit a review.", "changes": [], "score": 0.0}
+    return not_reviewed(error)
+
+
+CRITIC_RETRY_S = (30, 120)  # waits before asking the critic again after a run that stopped without an answer
+
+
+def not_reviewed(error=None):
+    """The review of a version the critic could not review: no score (never a 0), no changes."""
+    why = runner.account_limit(error) if error else None
+    return {"scores": {}, "changes": [], "score": None, "reviewed": False,
+            "summary": "The critic could not review this version" + (f" ({why})" if why else "") + "."}
 
 
 async def _librarian(project, number, library):

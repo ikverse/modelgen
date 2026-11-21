@@ -15,6 +15,12 @@ import pprint
 
 STYLES = ("coupe", "sedan", "hatch", "suv", "van")
 
+# The rear bumper of each style: (how far out, its top above the underside, how soft its top edge, how
+# far along the sides), in metres.
+REAR_BUMPERS = {"sport": (0.065, 0.34, 0.08, 0.45), "classic": (0.05, 0.38, 0.10, 0.40),
+                "compact": (0.04, 0.36, 0.09, 0.30), "step": (0.08, 0.45, 0.04, 0.35), "none": (0.0, 0.0, 0.0, 0.0)}
+REAR_BUMPER_OF = {"coupe": "sport", "sedan": "classic", "hatch": "compact", "suv": "step", "van": "step"}
+
 # Side-profile and plan numbers of a typical car of each style. Y values are positions along the
 # car (front is negative), Z values heights above the floor.
 PRESETS = {
@@ -102,6 +108,10 @@ COMMON = dict(
                           # "van" (long and straight); empty: the car's style
     belt_rise=None,       # how much the windows' lower edge rises from front to back (empty: by dlo_style)
     dlo_corner=0.12,      # how round the window opening's corners are (0.05 crisp to 0.2 very round)
+    dlo_front="point",    # the side windows' front end: "point" (the glass runs forward to a point at the mirror,
+                          # down the windshield pillar) or "upright" (it stops short with an upright edge)
+    dlo_rear="",          # their rear end: "point" (the glass runs back to a point along the rear pillar) or
+                          # "upright" (empty: upright for a van, point for the others)
     lamp_shape=None,      # projector headlight shape: "swept", "angular", "slim", "round", "rect", "oval" (one
                           # big upright oval), "blade" (a thin sliver pointed at its inner end) or "split" (an
                           # LED slit up high, the main lamp down in the bumper corner) (empty: swept for a coupe
@@ -114,6 +124,9 @@ COMMON = dict(
     grille="",            # upper grille: "slot" (a bar between the lamps), "small" (a short slot), "wide" (a big
                           # trapezoid between the lamps), "tall" (an upright grille between the lamps) or "none"
                           # (empty: wide for a sedan, tall for an SUV, slot for the others)
+    grille_pattern="horizontal",  # bars across the upper grille: "horizontal", "vertical", "mesh" (crossed) or "none"
+    intake_pattern="mesh",  # bars across the lower front intake: "horizontal", "vertical", "mesh" or "none"
+    rear_pattern="vertical",  # bars across the rear diffuser opening ("none": the diffuser keeps its three fins)
     intake="",            # lower intake: "full" (a wide mouth with corner intakes), "center" (a narrower central
                           # mouth), "split" (two big side intakes and a small centre one) or "low" (a slim slot
                           # low down) (empty: full for a coupe, center for a sedan or hatch, low for an SUV or van)
@@ -124,15 +137,25 @@ COMMON = dict(
     plate_rear="",        # rear number plate: "bumper" or "panel" (on the tailgate or boot face, between the
                           # lamps) (empty: panel for a hatch, SUV or van, bumper for the others)
     diffuser=False,       # a black lower rear panel with vertical fins
-    raised_bumpers=False,  # front bumper, lip and rear bumper raised out of the body (off: flush, shown by their
-                          # shut lines; raised ones stick out as fins on a nose or tail that slopes back)
+    raised_bumpers=False,  # front bumper and lip raised out of the body (off: flush, shown by their shut
+                          # lines; raised ones stick out as fins on a nose that slopes back)
+    rear_bumper_style="",  # the rear bumper, swelling out of the tail as one smooth surface with it: "sport" (low
+                          # and tight), "classic" (medium, a rounder edge), "compact" (small), "step" (tall, a
+                          # flat step on top) or "none" (empty: sport for a coupe, classic for a sedan, compact
+                          # for a hatch, step for an SUV or van)
+    rear_bumper_out=None,  # how far it stands out of the tail (empty: the style's)
+    rear_bumper_top=None,  # its top edge's height above the car's underside (empty: the style's)
+    rear_bumper_edge=None,  # how far down its top edge rolls from the body into the bumper: bigger is softer
+    rear_bumper_wrap=None,  # how far it runs forward along the sides before it fades out
     door_length=None,     # the front door's length; the side glass splits where it ends (empty: at window_split)
     dlo_end=None,         # where the side glass ends, toward the back (empty: at deck_front); a mid-engine car
                           # ends it behind the door, the long engine cover behind it painted
     rear_glass_length=None,  # how far the rear window runs back from roof_rear (empty: down to deck_front)
     lamp_style="projector",  # headlights: "projector" (housing, two lenses, light strip, cut along the nose
                           # surface), "popup" (closed lids on the hood, a thin lamp strip in the bumper; 80s-90s
-                          # wedges) or "flush" (one lens cut straight back from the front)
+                          # wedges), "popup_open" (the same lids raised: a wedge pod on each hood corner, its
+                          # upright front face a lit lens, its body-colour lid sloping back into the hood) or
+                          # "flush" (one lens cut straight back from the front)
     bumper=0.035,         # how far the front and rear bumpers stand out of the body
     front_lip=0.025,      # how far the front lip stands out beyond the bumper
     skirt=0.025,          # how far the side skirts stand out of the lower side
@@ -195,6 +218,8 @@ def resolve(sheet):
     s["half_width"] = s["width"] / 2 - s["flare"]  # the body side away from the wheels
     if s["dlo_style"] is None:
         s["dlo_style"] = style
+    if not s["dlo_rear"]:
+        s["dlo_rear"] = "upright" if style == "van" else "point"
     if s["belt_rise"] is None:
         s["belt_rise"] = {"coupe": 0.06, "sedan": 0.035, "hatch": 0.05, "suv": 0.04, "van": 0.0}.get(s["dlo_style"], 0.04)
     if s["lamp_shape"] is None:
@@ -243,7 +268,22 @@ def resolve(sheet):
     s.setdefault("mirror_z", s["belt_z"] - 0.03)
     s.setdefault("wing_y", s["y_rear"] - 0.22)
     s.setdefault("wing_spacing", min(1.0, s["width"] * 0.55))
-    s.setdefault("exhaust_x", s["half_width"] * 0.55)
+    if not s["rear_bumper_style"]:
+        s["rear_bumper_style"] = REAR_BUMPER_OF[style]
+    # the tips clear of the bumper's corner vents, where it has them
+    s.setdefault("exhaust_x", s["half_width"] * (0.36 if s["rear_bumper_style"] in ("sport", "classic") else 0.55))
+    preset = REAR_BUMPERS.get(s["rear_bumper_style"], REAR_BUMPERS["none"])
+    given_top = s["rear_bumper_top"] is not None
+    for key, value in zip(("rear_bumper_out", "rear_bumper_top", "rear_bumper_edge", "rear_bumper_wrap"), preset):
+        if s[key] is None:
+            s[key] = 0.09 if key == "rear_bumper_out" and style == "van" and value else value
+    if s["rear_bumper_style"] != "none":
+        if not given_top:  # under the tail lamps of a low tail
+            s["rear_bumper_top"] = round(min(s["rear_bumper_top"], max(0.22, s["tail_z"] - s["ride_height"] - 0.22)), 4)
+        # it fades out behind the rear wheel opening
+        room = s["y_rear"] - (s["axle_rear"] + s["arch_radius"] + s["boxed_width"] + 0.06)
+        s["rear_bumper_wrap"] = round(max(0.1, min(s["rear_bumper_wrap"], room)), 4)
+        s.setdefault("exhaust_z", round(s["ride_height"] + max(0.10, 0.38 * s["rear_bumper_top"]), 4))
     s.setdefault("exhaust_z", s["ride_height"] + 0.12)
     s["features_in"] = list(sheet.get("features") or [])
     return s
@@ -320,6 +360,11 @@ def check(sheet):
                 len(f.get("aim") or []) == 3 and len(f.get("at") or []) == 3):
             out.append(f"feature {f['name']}: view aim needs `aim` (the direction the cut travels) and `at` "
                        "(the point its outline is centred on), each [x, y, z]")
+        elif not f.get("remove") and f.get("bars") not in (None, *GRILLE_PATTERNS):
+            out.append(f"feature {f['name']}: bars must be one of {', '.join(GRILLE_PATTERNS)}")
+        elif not f.get("remove") and f.get("bars") not in (None, "none") and (
+                f.get("kind", "recess") != "recess" or f.get("view") not in ("front", "rear")):
+            out.append(f"feature {f['name']}: bars go only on a recess cut from the front or the rear")
     unknown = [v for v in s["vents"] or [] if v not in VENTS]
     if unknown:
         out.append(f"unknown vents {unknown}: use any of {', '.join(VENTS)}")
@@ -331,6 +376,9 @@ def check(sheet):
         out.append("belt_rise must be between 0 and 0.15 m")
     if not 0.03 <= s["dlo_corner"] <= 0.25:
         out.append("dlo_corner must be between 0.03 and 0.25")
+    for key in ("dlo_front", "dlo_rear"):
+        if s[key] not in ("point", "upright"):
+            out.append(f"{key} must be point or upright")
     if s["lamp_shape"] not in LAMP_SHAPES:
         out.append(f"lamp_shape must be one of {', '.join(LAMP_SHAPES)}")
     if s["tail_lamp_style"] not in TAIL_LAMP_STYLES:
@@ -341,8 +389,20 @@ def check(sheet):
         out.append(f"grille must be one of {', '.join(GRILLES)}")
     if s["intake"] not in INTAKES:
         out.append(f"intake must be one of {', '.join(INTAKES)}")
+    for key in ("grille_pattern", "intake_pattern", "rear_pattern"):
+        if s[key] not in GRILLE_PATTERNS:
+            out.append(f"{key} must be one of {', '.join(GRILLE_PATTERNS)}")
     if s["plate_rear"] not in ("bumper", "panel"):
         out.append("plate_rear must be bumper or panel")
+    if s["rear_bumper_style"] not in REAR_BUMPERS:
+        out.append(f"rear_bumper_style must be one of {', '.join(REAR_BUMPERS)}")
+    elif s["rear_bumper_style"] != "none":
+        if not 0.02 <= s["rear_bumper_out"] <= 0.15:
+            out.append("rear_bumper_out must be between 0.02 and 0.15 m")
+        if not 0.2 <= s["rear_bumper_top"] <= 0.7:
+            out.append("rear_bumper_top must be between 0.2 and 0.7 m above the underside")
+        if not 0.03 <= s["rear_bumper_edge"] <= 0.2 or s["rear_bumper_edge"] > s["rear_bumper_top"] - 0.08:
+            out.append("rear_bumper_edge must be between 0.03 and 0.2 m and leave 0.08 m of bumper under it")
     if not 0.25 <= s["lamp_span"] <= 0.7:
         out.append("lamp_span must be between 0.25 and 0.7")
     if not 0.04 <= s["lamp_height"] <= 0.25:
@@ -372,6 +432,15 @@ def check(sheet):
     if s["diffuser_height"] is not None and not 0.05 <= s["diffuser_height"] <= 0.6:
         out.append("diffuser_height must be between 0.05 and 0.6 m")
     return out
+
+
+def rear_bumper(s):
+    """The rear bumper the body is built with: {"out", "top" (its top edge's height above the floor),
+    "edge", "wrap"}, or None for rear_bumper_style "none"."""
+    if s["rear_bumper_style"] == "none":
+        return None
+    return dict(out=s["rear_bumper_out"], top=round(s["ride_height"] + s["rear_bumper_top"], 4),
+                edge=s["rear_bumper_edge"], wrap=s["rear_bumper_wrap"])
 
 
 def face_setback_at(s, end, x, z, widest):
@@ -828,24 +897,58 @@ def side_openings(s):
             z += 0.05 * _smooth((t - 0.74) / 0.06)
         return z
 
-    ys = [_lerp(ya, yb, i / 64) for i in range(65)]
-    inside = [y for y in ys if top(y) > bottom(y) + 0.12]  # glass at least 12 cm tall: the pillars take the rest
+    # an end that comes to a point runs on until the opening is only DLO_TIP tall: forward down the
+    # windshield pillar to the belt line at the mirror, back along the rear pillar; an upright end
+    # stops where the glass would be less than 12 cm tall, with a short upright edge
+    front_point, rear_point = s["dlo_front"] == "point", s["dlo_rear"] == "point"
+    y_lo = ya - 0.25 if front_point else ya
+    y_hi = yb + 0.05 if rear_point else yb
+    middle = (ya + yb) / 2
+    ys = [_lerp(y_lo, y_hi, i / 160) for i in range(161)]
+    # where the roof does not come down to the belt line by itself (an upright tail, a tall cab), the
+    # opening is drawn in to its point over the last stretch: the lower edge sweeps up to the roof at
+    # the back, the upper edge comes down to the belt line at the front
+    reach = 0.35
+
+    def lower(y):
+        z = bottom(y)
+        if rear_point and y > y_hi - reach:
+            z += max(0.0, top(y) - z - DLO_TIP * 0.8) * _smooth((y - (y_hi - reach)) / reach) ** 2
+        return z
+
+    def upper(y):
+        z = top(y)
+        if front_point and y < y_lo + reach:
+            z -= max(0.0, z - bottom(y) - DLO_TIP * 0.8) * _smooth((y_lo + reach - y) / reach) ** 2
+        return z
+
+    def pointed(y):
+        return front_point if y < middle else rear_point
+
+    inside = [y for y in ys if upper(y) > lower(y) + (DLO_TIP if pointed(y) else 0.12)]
     if len(inside) < 3:
         return [], []
     cut = s["dlo_corner"]
-    dlo = _rounded([(y, top(y)) for y in inside] + [(y, bottom(y)) for y in reversed(inside)][::8]
-                   + [(inside[0], bottom(inside[0]))], cut=cut)
+    crisp = front_point or rear_point  # a point stays a point: soft corners would blunt it
+
+    def outline(run, m, soft):
+        under = [(y, lower(y) + m) for y in reversed(run)][::20 if crisp else 8]
+        if under[-1][0] != run[0]:
+            under.append((run[0], lower(run[0]) + m))
+        return _rounded([(y, upper(y) - m) for y in run] + under, cut=min(soft, 0.05) if crisp else soft,
+                        rounds=1 if crisp else 2)
+
+    dlo = outline(inside, 0.0, cut)
     m = DLO_MARGIN
     split = glass_split(s)
-    glass_ys = [y for y in inside if top(y) - m > bottom(y) + m + 0.08]
-    pieces = [[y for y in glass_ys if y < split - B_PILLAR / 2 and y > inside[0] + m * 0.6],
-              [y for y in glass_ys if y > split + B_PILLAR / 2 and y < inside[-1] - m * 0.6]]
-    glass = []
-    for piece in pieces:
-        if len(piece) >= 3:
-            glass.append(_rounded([(y, top(y) - m) for y in piece] + [(y, bottom(y) + m) for y in reversed(piece)][::6]
-                                  + [(piece[0], bottom(piece[0]) + m)], cut=max(0.06, cut * 0.8)))
+    glass_ys = [y for y in inside if upper(y) - m > lower(y) + m + (DLO_TIP - 0.005 if pointed(y) else 0.08)]
+    pieces = [[y for y in glass_ys if y < split - B_PILLAR / 2 and (front_point or y > inside[0] + m * 0.6)],
+              [y for y in glass_ys if y > split + B_PILLAR / 2 and (rear_point or y < inside[-1] - m * 0.6)]]
+    glass = [outline(piece, m, max(0.06, cut * 0.8)) for piece in pieces if len(piece) >= 3]
     return dlo, glass
+
+
+DLO_TIP = 0.03  # how tall a side window still is at an end that comes to a point
 
 
 def _side_glass(s):
@@ -869,28 +972,24 @@ def _arch_band(cy, cz, r_in, r_out, a0=-12.0, a1=192.0, n=24):
 
 
 def _raised(s):
-    """The shapes that stand out of the skin: bumpers, lip, side skirts, boxed flares, a hood bulge."""
+    """The shapes that stand out of the skin: the front bumper and lip, side skirts, boxed flares, a hood
+    bulge. (The rear bumper is no raised box: it swells out of the skin itself, see rear_bumper.)"""
     hw = s["half_width"]
     zb, yf, yr = s["ride_height"], s["y_front"], s["y_rear"]
     r, band = s["arch_radius"], s["boxed_width"]
     nose = min(yf + 0.45, s["axle_front"] - r - band - 0.04)
-    tail = max(yr - 0.45, s["axle_rear"] + r + band + 0.04)
     front_top = s["nose_z"] - 0.17
-    rear_top = zb + 0.40
     under = zb - 0.12  # bumpers, lip and skirts reach under the car, so no outline edge skims the underside
     raise_ = dict(kind="raise", material="paint")
     # the bumpers stay on the end faces: drawn inside the body's width and stopped a little behind the
     # end's own curve, they never run back along the sides, where a cut nearly along the surface would
     # stand out as a fin
     bumper_front = min(nose, yf + s["nose_point"] + 0.28)
-    bumper_rear = max(tail, yr - s["tail_point"] - 0.28)
     out = [
         dict(name="front_bumper", view="front", until=bumper_front, height=s["bumper"],
              outline={"poly": _box(-hw * 0.97, hw * 0.97, under, front_top, 0.03)}, **raise_),
         dict(name="front_lip", view="front", until=bumper_front, height=s["bumper"] + s["front_lip"],
              outline={"poly": _box(-hw * 0.88, hw * 0.88, under, zb + 0.05, 0.02)}, **raise_),
-        dict(name="rear_bumper", view="rear", until=bumper_rear, height=s["bumper"],
-             outline={"poly": _box(-hw * 0.97, hw * 0.97, under, rear_top, 0.03)}, **raise_),
     ] if s["raised_bumpers"] else []
     out += [
         dict(name="side_skirts", view="side", until=hw - s["tuck"] - 0.06, height=s["skirt"],
@@ -921,7 +1020,9 @@ def nose_aim(s, x, z, on_hood=0.3):
     """Where a lamp at (x, z) of the nose faces: (aim, at), the direction a cut into the nose surface
     travels there (the surface's inward normal, leaning `on_hood` of the way toward the hood's) and
     a point on or just in front of that surface. From the sheet's own maths, so it follows the plan
-    shape (nose_point, nose_round), the rake and the hood's slope."""
+    shape (nose_point, nose_round), the rake and the hood's slope. The maths is an estimate of the
+    built skin (it can sit centimetres off and lean many degrees wrong), so a detail placed with it is
+    marked `on_nose`, and the build (bpy_lib.shells.car) measures the real surface there instead."""
     zb, yf = s["ride_height"], s["y_front"]
     widest = max(1e-6, s["half_width"] * taper(s, yf))
     t = min(1.0, abs(x) / widest)
@@ -950,10 +1051,11 @@ def nose_aim(s, x, z, on_hood=0.3):
     return [round(-c, 4) for c in normal], [round(x, 4), round(at_y, 4), round(z, 4)]
 
 
-LAMP_STYLES = ("projector", "popup", "flush")
+LAMP_STYLES = ("projector", "popup", "popup_open", "flush")
 LAMP_SHAPES = ("swept", "angular", "slim", "round", "rect", "oval", "blade", "split")
 GRILLES = ("slot", "small", "wide", "tall", "none")
 INTAKES = ("full", "center", "split", "low")
+GRILLE_PATTERNS = ("horizontal", "vertical", "mesh", "none")
 
 
 def lamp_box(s):
@@ -964,11 +1066,35 @@ def lamp_box(s):
     return hw * 0.87 - w / 2, w, s["lamp_height"]
 
 
+POPUP_LID_LENGTH = 0.30   # front to back, the hinge at the back
+
+
+def popup_lid(s):
+    """(inner x, outer x, front y, length) of the right pop-up lamp lid on the hood; the left mirrors it."""
+    hw = s["half_width"]
+    return hw * 0.4, hw * 0.8, s["y_front"] + s["nose_point"] * 0.6 + 0.10, POPUP_LID_LENGTH
+
+
+def popup_pods(s):
+    """The raised pop-up lamps of lamp_style "popup_open", for the assembly: one dict per side with the
+    pod's centre x, front y, width, length and the height of its upright front face. Each pod stands on
+    its lid: seen from the side a wedge, the front face upright (the lens), the lid sloping back down into
+    the hood at the hinge. Empty for any other lamp_style."""
+    if s["lamp_style"] != "popup_open":
+        return []
+    x0, x1, y0, length = popup_lid(s)
+    width = x1 - x0 - 0.01
+    face = round(min(0.15, max(0.10, width * 0.55)), 3)
+    return [dict(x=side * (x0 + x1) / 2, y=y0 + 0.005, width=round(width, 4), length=length - 0.01, face=face)
+            for side in (1, -1)]
+
+
 def _headlights(s, nose, lamp_z):
     """The headlights of the sheet's lamp_style: "projector" (a dark housing with a light bezel, two
     round projector lenses in chrome rings and a light strip, cut along the nose's own surface, placed
     by lamp_span, lamp_height and lamp_drop), "popup" (closed pop-up lids on the hood with a thin lamp
-    strip in the bumper) or "flush" (one lens cut straight back from the front). lamp_bar adds a light
+    strip in the bumper), "popup_open" (the same, the lids raised as pods: see popup_pods) or "flush" (one lens cut
+    straight back from the front). lamp_bar adds a light
     strip across the nose joining the two."""
     out = _headlight_lamps(s, nose, lamp_z)
     if s["lamp_bar"] and s["lamp_style"] == "projector":
@@ -988,10 +1114,9 @@ def _headlight_lamps(s, nose, lamp_z):
                      material="lamp_front", depth=0.012, frame=0.012, frame_material="trim", frame_depth=0.005,
                      outline={"poly": [(hw * 0.34, lamp_z - 0.055), (hw * 0.88, lamp_z - 0.035),
                                        (hw * 0.9, lamp_z + 0.05), (hw * 0.36, lamp_z + 0.06)]})]
-    if style == "popup":
-        y0 = s["y_front"] + s["nose_point"] * 0.6 + 0.10
-        x0, x1 = hw * 0.4, hw * 0.8
-        lid = [(x0, y0), (x1, y0 + 0.02), (x1, y0 + 0.30), (x0, y0 + 0.30), (x0, y0)]
+    if style in ("popup", "popup_open"):
+        x0, x1, y0, length = popup_lid(s)
+        lid = [(x0, y0), (x1, y0 + 0.02), (x1, y0 + length), (x0, y0 + length), (x0, y0)]
         strip_z = s["nose_z"] - 0.17 - 0.06  # inside the front bumper, under its top edge
         return [dict(name="headlight_lids", kind="groove", view="top", mirror_x=True, until=0.0, width=0.005,
                      material="trim", path=_soft(lid), optional=True),
@@ -1002,7 +1127,7 @@ def _headlight_lamps(s, nose, lamp_z):
     # projector: everything cut along the nose surface at the lamp, in the sheet's lamp_shape
     cx, w, h = lamp_box(s)
     aim, at = nose_aim(s, cx, lamp_z)
-    on = dict(view="aim", aim=aim, at=at, until=0.25, mirror_x=True)
+    on = dict(view="aim", aim=aim, at=at, until=0.25, mirror_x=True, on_nose=True)
     shape = s["lamp_shape"]
     lens_r = h * 0.27
     lenses = [(-w * 0.22, 0.008), (w * 0.2, 0.012)]
@@ -1053,7 +1178,7 @@ def _headlight_lamps(s, nose, lamp_z):
         main_z = s["nose_z"] - 0.17 - 0.08  # inside the front bumper, under its top edge
         mw, mh = w * 0.62, 0.075
         maim, mat = nose_aim(s, cx + w * 0.12, main_z, on_hood=0.0)
-        low = dict(view="aim", aim=maim, at=mat, until=0.25, mirror_x=True)
+        low = dict(view="aim", aim=maim, at=mat, until=0.25, mirror_x=True, on_nose=True)
         out.append(dict(name="headlight_main", kind="recess", material="trim", depth=0.03 + s["bumper"], frame=0.008,
                         frame_material="chrome", frame_depth=0.006, optional=True,
                         outline={"rect": [0.0, 0.0, mw, mh, 0.02]}, **low))
@@ -1190,7 +1315,7 @@ def _panel_lines(s):
         return max(0.2, edge(s, y)[0] - s["fender_valley"] * 0.6)
 
     cowl = s["windshield_base"] - 0.05
-    if s["lamp_style"] == "popup":
+    if s["lamp_style"] in ("popup", "popup_open"):
         front = yf + s["nose_point"] * 0.6 + 0.10 + 0.33  # behind the pop-up lids
     else:
         front = yf + s["nose_point"] + 0.12
@@ -1228,7 +1353,8 @@ def _panel_lines(s):
                           (round(yf + s["nose_point"] + 0.07, 4), round(s["nose_z"] - 0.13, 4))], **line))
     out.append(dict(name="rear_bumper_joint", view="side",
                     path=[(round(s["axle_rear"] + R * math.cos(b), 4), round(s["wheel_radius"] + R * math.sin(b), 4)),
-                          (round(yr - s["tail_point"] - 0.07, 4), round(zb + 0.42, 4))], **line))
+                          (round(yr - s["tail_point"] - 0.07, 4),
+                           round((rear_bumper(s) or {}).get("top", zb + 0.42), 4))], **line))
     return out
 
 
@@ -1422,25 +1548,35 @@ def default_features(s):
     nose = min(yf + 0.45, s["axle_front"] - r - s["boxed_width"] - 0.04)
     tail = max(yr - 0.45, s["axle_rear"] + r + s["boxed_width"] + 0.04)
     lamp_z = s["nose_z"] - s["lamp_drop"]
-    feats += _headlights(s, nose, lamp_z) + _grille(s, nose, lamp_z) + _intakes(s, nose) + _tail_lamps(s, tail)
+    feats += (_headlights(s, nose, lamp_z) + _separated(_grille(s, nose, lamp_z), _intakes(s, nose))
+              + _tail_lamps(s, tail))
     if s["plate_rear"] == "panel":  # on the tailgate or boot face, above the bumper, between the lamps
         feats.append(dict(name="plate", kind="recess", view="rear", until=tail, material="trim", depth=0.012,
                           outline={"rect": [0.0, zb + 0.40 + 0.05 + 0.065, 0.44, 0.13, 0.015]}))
     else:
-        feats.append(dict(name="plate", kind="recess", view="rear", until=tail, material="trim", depth=0.012 + bumper,
+        feats.append(dict(name="plate", kind="recess", view="rear", until=tail, material="trim", depth=0.012,
                           outline={"rect": [0.0, zb + 0.24, 0.44, 0.13, 0.015]}))
+    # (the rear bumper is the skin itself, so what is cut into it is as deep as it says)
     feats.append(dict(name="reflectors", kind="recess", view="rear", mirror_x=True, until=tail, material="lamp_rear",
-                      depth=0.006 + bumper, outline={"rect": [0.36, zb + 0.24, 0.14, 0.035, 0.008]}))
+                      depth=0.006, outline={"rect": [0.36, zb + 0.24, 0.14, 0.035, 0.008]}))
     if s["diffuser"]:  # a black panel low in the rear bumper, with vertical fins
         # its foot 8 cm up: any lower and the cut grazes the floor where it curves under
         low, top = zb + 0.08, (zb + 0.26 if s["plate_rear"] == "panel" else zb + 0.165)
         if s["diffuser_height"] is not None:
             top = low + s["diffuser_height"]
+        rb = rear_bumper(s)
+        if rb:  # inside the bumper, under its rolled top edge
+            top = max(low + 0.05, min(top, rb["top"] - rb["edge"] - 0.01))
         feats.append(dict(name="diffuser", kind="recess", view="rear", until=tail, material="trim", optional=True,
-                          depth=0.03 + bumper, outline={"rect": [0.0, (low + top) / 2, 0.8, top - low, 0.02]}))
-        for i, x in enumerate((-0.2, 0.0, 0.2)):
+                          depth=0.04, outline={"rect": [0.0, (low + top) / 2, 0.8, top - low, 0.02]},
+                          bars=s["rear_pattern"]))
+        for i, x in enumerate((-0.2, 0.0, 0.2) if s["rear_pattern"] == "none" else ()):
             feats.append(dict(name=f"diffuser_fin_{i + 1}", kind="groove", view="rear", until=tail, material="chrome",
                               width=0.01, optional=True, path=[(x, low + 0.015), (x, top - 0.015)]))
+    if s["rear_bumper_style"] in ("sport", "classic"):  # an air vent with bars in each corner of the bumper
+        feats.append(dict(name="rear_vents", kind="recess", view="rear", mirror_x=True, until=tail, material="trim",
+                          optional=True, depth=0.03, bars=s["rear_pattern"],
+                          outline={"rect": [round(hw * 0.62, 4), zb + 0.125, 0.15, 0.05, 0.012]}))
     if s["deck_front"] - s["roof_rear"] < 0.3:
         # a near-upright tail (a van's): seen from above its glass is a sliver on the tail's top edge,
         # so it is cut from behind instead
@@ -1454,6 +1590,90 @@ def default_features(s):
     return feats
 
 
+OPENING_GAP = 0.03  # metres of body left between the upper grille and the lower intake
+
+
+def _separated(grille, intakes):
+    """The grille and the intakes, the intake mouth's top lowered where it would run into the grille:
+    two openings that overlap cut one ragged hole."""
+    if not grille:
+        return intakes
+    g_bottom = min(v for _, v in outline_points(grille[0]["outline"]))
+    out = []
+    for f in intakes:
+        rect = (f.get("outline") or {}).get("rect")
+        if f.get("name") == "intake" and f.get("view") == "front" and rect:
+            cu, cv, w, hgt, r = rect
+            top, bottom = cv + hgt / 2, cv - hgt / 2
+            limit = g_bottom - OPENING_GAP
+            if top > limit:
+                top = max(bottom + 0.06, limit)
+                f = dict(f, outline={"rect": [cu, round((top + bottom) / 2, 4), w, round(top - bottom, 4),
+                                              round(min(r, (top - bottom) / 3), 4)]})
+        out.append(f)
+    return grille + out
+
+
+BAR = 0.01         # a grille bar's thickness
+BAR_PITCH = 0.035  # centre to centre; a mesh's bars are set wider apart each way
+BAR_INSET = 0.012  # bars stop this far inside the opening's edge
+
+
+def _spans(points, at, along_u):
+    """Where a line across a closed outline is inside it: for along_u the line v = at, else u = at.
+    Returns a sorted list of (start, end) on the line."""
+    hits = []
+    n = len(points)
+    for i in range(n):
+        (u0, v0), (u1, v1) = points[i], points[(i + 1) % n]
+        a0, a1, b0, b1 = (v0, v1, u0, u1) if along_u else (u0, u1, v0, v1)
+        if (a0 <= at < a1) or (a1 <= at < a0):
+            hits.append(b0 + (at - a0) * (b1 - b0) / (a1 - a0))
+    hits.sort()
+    return [(hits[i], hits[i + 1]) for i in range(0, len(hits) - 1, 2)]
+
+
+def grille_bars(s, feats=None):
+    """The bars across each opening that has a pattern (the upper grille, the lower front intake, the
+    rear diffuser), for the assembly to build: one dict per bar with the opening's view ("front" or
+    "rear"), its `until`, the bar's rectangle (u0, u1, v0, v1) in that view's plane and how deep it is.
+    Each bar stays BAR_INSET inside the opening's outline, whatever its shape."""
+    feats = features(s) if feats is None else feats
+    out = []
+    for f in feats:
+        pattern = f.get("bars") or "none"
+        if pattern == "none" or f.get("view") not in ("front", "rear") or f.get("kind", "recess") != "recess":
+            continue
+        pts = outline_points(f["outline"])
+        us, vs = [p[0] for p in pts], [p[1] for p in pts]
+        depth = round(min(0.03, 0.6 * float(f.get("depth", 0.02))), 4)
+        pitch = BAR_PITCH * (1.4 if pattern == "mesh" else 1.0)
+        base = dict(opening=f["name"], view=f["view"], until=f.get("until", 0.0), depth=depth)
+        first_bar = len(out)
+        for along_u in ((True, False) if pattern == "mesh" else (pattern == "horizontal",)):
+            lo, hi = (min(vs), max(vs)) if along_u else (min(us), max(us))
+            lo, hi = lo + BAR_INSET, hi - BAR_INSET
+            if hi - lo < BAR:
+                continue
+            count = int((hi - lo) // pitch) + 1
+            first = (lo + hi) / 2 - (count - 1) * pitch / 2  # centred in the opening
+            for k in range(count):
+                at = first + k * pitch
+                for a, b in _spans(pts, at, along_u):
+                    a, b = a + BAR_INSET, b - BAR_INSET
+                    if b - a < 0.02:
+                        continue
+                    if along_u:
+                        out.append(dict(base, u0=round(a, 4), u1=round(b, 4), v0=round(at - BAR / 2, 4),
+                                        v1=round(at + BAR / 2, 4)))
+                    else:
+                        out.append(dict(base, u0=round(at - BAR / 2, 4), u1=round(at + BAR / 2, 4), v0=round(a, 4),
+                                        v1=round(b, 4)))
+        if f.get("mirror_x"):  # the same bars in the opening's twin on the other side
+            out += [dict(b, u0=-b["u1"], u1=-b["u0"]) for b in out[first_bar:]]
+    return out
+
+
 def _grille(s, nose, lamp_z):
     """The upper grille of the sheet's `grille`, kept between the headlights."""
     style = s["grille"]
@@ -1461,7 +1681,8 @@ def _grille(s, nose, lamp_z):
         return []
     cx, w, h = lamp_box(s)
     gx = max(0.12, cx - w / 2 - 0.04)  # the grille's half-width at most: just inside the lamps' inner ends
-    g = dict(name="grille", kind="recess", view="front", until=nose, material="trim", depth=0.025)
+    g = dict(name="grille", kind="recess", view="front", until=nose, material="trim", depth=0.025,
+             bars=s["grille_pattern"])
     if style == "small":
         return [dict(outline={"rect": [0.0, lamp_z - 0.01, min(s["half_width"] * 0.36, 2 * gx), 0.045, 0.012]}, **g)]
     if style == "wide":  # a big trapezoid, narrowing toward its foot, reaching down into the bumper
@@ -1479,7 +1700,8 @@ def _intakes(s, nose):
     """The lower intakes of the sheet's `intake`, and the indicators beside them."""
     hw, zb, bumper = s["half_width"], s["ride_height"], s["bumper"]
     style = s["intake"]
-    mouth = dict(name="intake", kind="recess", view="front", until=nose, material="trim", depth=0.05 + bumper)
+    mouth = dict(name="intake", kind="recess", view="front", until=nose, material="trim", depth=0.05 + bumper,
+                 bars=s["intake_pattern"])
     indicators = dict(name="indicators", kind="recess", mirror_x=True, material="lamp_amber", depth=0.006 + bumper,
                       **_on_nose(s, hw * 0.74, zb + 0.30, 0.12, 0.035, 0.01))  # off the corner
     if style == "center":
@@ -1504,13 +1726,13 @@ def _on_nose_poly(s, x, z, w, hgt):
     aim, at = nose_aim(s, x, z, on_hood=0.0)
     poly = _rounded([(-w / 2, -hgt / 2), (w / 2, -hgt / 2), (w / 2, hgt / 2), (-w / 2 + w * 0.3, hgt / 2)],
                     cut=0.12, rounds=2)
-    return dict(view="aim", aim=aim, at=at, until=0.25, outline={"poly": poly})
+    return dict(view="aim", aim=aim, at=at, until=0.25, outline={"poly": poly}, on_nose=True)
 
 
 def _on_nose(s, x, z, w, hgt, r):
     """The view, until and outline of a rect detail at (x, z) on the nose, cut along the nose's normal."""
     aim, at = nose_aim(s, x, z, on_hood=0.0)
-    return dict(view="aim", aim=aim, at=at, until=0.25, outline={"rect": [0.0, 0.0, w, hgt, r]})
+    return dict(view="aim", aim=aim, at=at, until=0.25, outline={"rect": [0.0, 0.0, w, hgt, r]}, on_nose=True)
 
 
 VENTS =("gill", "side_intake", "hood_vents", "fender_trim")
@@ -1613,7 +1835,7 @@ ACCESSORIES = {
     "side_mirror": dict(kw=("length", "height", "depth", "stalk"),
                         anchor="the stalk foot where it meets the door; built for the right side, housing toward +X "
                                "and up; the left one is a mirror image"),
-    "wing": dict(kw=("span", "chord", "height", "endplates", "uprights"),
+    "wing": dict(kw=("span", "chord", "height", "endplates", "uprights", "style", "angle_deg", "plate_height"),
                  anchor="the midpoint between the upright feet, feet on Z = 0; span along X, leading edge toward -Y"),
     "exhaust": dict(kw=("radius", "length", "count", "spacing"),
                     anchor="the centre of the pipe's front end; the pipe runs toward +Y"),
@@ -1622,9 +1844,83 @@ ACCESSORIES = {
 
 ACCESSORY_DEFAULTS = {  # the shell helpers' own defaults, for the sizes in the plan
     "side_mirror": dict(length=0.17, height=0.10, depth=0.085, stalk=0.06),
-    "wing": dict(chord=0.26, height=0.30, endplates=True),
+    "wing": dict(style="gt", endplates=True),
     "exhaust": dict(radius=0.045, length=0.16, count=1, spacing=0.11),
 }
+
+
+WING_STYLES = {  # chord, the plank's height above the feet, its tilt in degrees, the end plates' height, the dip
+    "gt": (0.27, 0.24, 12.0, 0.15, 0.0),
+    "street": (0.22, 0.15, 9.0, 0.09, 0.0),
+    "curved": (0.27, 0.22, 12.0, 0.15, 0.05),
+}
+MIN_WING_LIFT = 0.12  # metres: a wing's plank stands at least this high above the deck, on its brackets
+WING_SHEET = 0.008    # the thickness of the end plates and the brackets' flat bars
+
+
+def wing_geometry(span=1.62, chord=None, height=None, upright_spacing=0.95, endplates=True, uprights=2,
+                  angle_deg=None, style="gt", plate_height=None):
+    """Every flat shape of a rear wing (bpy_lib.shell.wing builds them) and its size, in plain Python:
+    {"blade": the plank's section, tilted and at its height, as (y, z) points; "plate": an end plate's
+    outline or None; "brackets": [(x, [bars as (y, z) polygons])]; "foot": (y0, y1, thickness); "dip"
+    and "lift" (the height added along the span of a curved plank); "sheet"; "size": (width, depth,
+    height)}. The feet stand on z = 0 round the origin; the leading edge is toward -Y."""
+    if style not in WING_STYLES:
+        raise ValueError(f"unknown wing style {style!r}: use one of {', '.join(WING_STYLES)}")
+    d_chord, d_height, d_angle, d_plate, dip = WING_STYLES[style]
+    c = float(chord or d_chord)
+    height = max(float(height or d_height), MIN_WING_LIFT)
+    angle = math.radians(float(d_angle if angle_deg is None else angle_deg))
+    plate_h = float(plate_height or d_plate)
+    t, lip = 0.012, 0.014
+    cos, sin, tan = math.cos(angle), math.sin(angle), math.tan(angle)
+
+    def lift(x):  # a curved plank: low in the middle, rising to the plates
+        return dip * ((min(1.0, abs(x) / (span / 2))) ** 2.2 - 0.35) if dip else 0.0
+
+    def tilted(points, z0, a=1.0):
+        ca, sa = (cos, sin) if a == 1.0 else (math.cos(angle * a), math.sin(angle * a))
+        return [(round(y * ca - z * sa, 5), round(z0 + y * sa + z * ca, 5)) for y, z in points]
+
+    # a flat plank: a softly rounded leading edge, a small upturned lip along the trailing edge
+    section = [(-c / 2, 0.0), (-c / 2 + 0.012, t / 2), (c / 2 - 0.016, t / 2), (c / 2 - 0.005, t / 2 + lip),
+               (c / 2, t / 2 + lip), (c / 2, -t / 2), (-c / 2 + 0.012, -t / 2)]
+    blade = tilted(section, height)
+    plate = None
+    if endplates:  # a flat plate with cut corners, taller than the plank, most of it above
+        length, ph = c * 1.2, plate_h
+        plate = tilted([(-length / 2, -0.015), (-length / 2 + 0.05, 0.04), (length / 2 - 0.035, ph * 0.62),
+                        (length / 2, ph * 0.62 - 0.03), (length / 2, -ph * 0.38 + 0.035),
+                        (length / 2 - 0.05, -ph * 0.38), (-length / 2 + 0.07, -ph * 0.38)], height + lift(span / 2),
+                       a=0.6)
+
+    def bar(y0, z0, y1, z1, w=0.02):
+        dy, dz = y1 - y0, z1 - z0
+        ln = math.hypot(dy, dz)
+        ny, nz = -dz / ln * w / 2, dy / ln * w / 2
+        return [(round(y0 + ny, 5), round(z0 + nz, 5)), (round(y1 + ny, 5), round(z1 + nz, 5)),
+                (round(y1 - ny, 5), round(z1 - nz, 5)), (round(y0 - ny, 5), round(z0 - nz, 5))]
+
+    count = max(1, int(uprights))
+    xs = [0.0] if count == 1 else [upright_spacing * (i / (count - 1) - 0.5) for i in range(count)]
+    brackets = []
+    for x in xs:
+        top = height + lift(x)
+
+        def under(y):  # the plank's underside there, the leg's end a little inside it
+            return top + y * tan - 0.004
+
+        brackets.append((round(x, 5), [bar(-0.085, 0.0, -0.035, under(-0.035)), bar(0.095, 0.0, 0.045, under(0.045)),
+                                       bar(-0.07, top * 0.3, 0.06, top * 0.72, 0.014),
+                                       bar(0.08, top * 0.3, -0.045, top * 0.72, 0.014)]))
+    foot = (-0.115, 0.125, 0.008)
+    points = blade + (plate or []) + [(foot[0], 0.0), (foot[1], 0.0)]
+    if dip:
+        points += [(y, z + lift(0.0)) for y, z in blade] + [(y, z + lift(span / 2)) for y, z in blade]
+    ys, zs = [y for y, _ in points], [z for _, z in points]
+    size = (round(span + (2 * WING_SHEET if plate else 0.0), 4), round(max(ys) - min(ys), 4), round(max(zs), 4))
+    return dict(blade=blade, plate=plate, brackets=brackets, foot=foot, dip=dip, lift=lift, sheet=WING_SHEET,
+                size=size)
 
 
 def accessory_size(kind, s, options=None):
@@ -1635,9 +1931,9 @@ def accessory_size(kind, s, options=None):
     elif kind == "side_mirror":
         w, d, h = o["stalk"] + o["length"] + 0.012, o["depth"] + 0.004, o["stalk"] * 0.6 + o["height"] + 0.01
     elif kind == "wing":
-        span = float(o.get("span", round(s["width"] * 0.92, 3)))
-        plates = bool(o.get("endplates", True))
-        w, d, h = span + (0.02 if plates else 0.0), o["chord"] * (1.19 if plates else 1.0), o["height"] + 0.01
+        kw = {k: o[k] for k in ACCESSORIES["wing"]["kw"] if o.get(k) is not None}
+        kw.setdefault("span", round(s["width"] * 0.92, 3))
+        w, d, h = wing_geometry(upright_spacing=s["wing_spacing"], **kw)["size"]
     else:
         w = 2 * o["radius"] + (int(o["count"]) - 1) * o["spacing"]
         d, h = o["length"], 2 * o["radius"]

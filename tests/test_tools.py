@@ -438,7 +438,7 @@ def test_assembly_and_materials_attempts_export_a_live_view(tmp_path, monkeypatc
     _fake_blender(monkeypatch, seen)
     rnd = make_round(tmp_path)
     rnd.files.write("parts/body.py", "def build():\n    pass\n")
-    (write_assembly, _) = at.assembler_tools(rnd)
+    write_assembly = next(t for t in at.assembler_tools(rnd) if t.name == "write_assembly")
     asyncio.run(write_assembly.fn({"code": "def assemble(parts):\n    pass\n"}))
     write_materials = next(t for t in at.materials_tools(rnd, Library(tmp_path / "lib")) if t.name == "write_materials")
     asyncio.run(write_materials.fn({"code": "def apply(parts):\n    pass\n"}))

@@ -22,15 +22,19 @@ TOOL_SPOTS = {
     ("librarian", "add_material"): "archive_version",
     ("materials", "list_recipes"): "pick_material", ("materials", "get_library_material"): "pick_material",
     ("materials", "search_library"): "pick_material", ("materials", "write_materials"): "make_material",
+    ("materials", "edit_materials"): "make_material",
     ("critic", "view_renders"): "view_renders", ("critic", "submit_review"): "view_renders",
     ("critic", "view_reference"): "view_renders", ("critic", "render"): "render_views",
     ("architect", "submit_plan"): "plan_parts", ("architect", "view_reference"): "plan_parts",
     ("architect", "search_library"): "fetch_plans", ("architect", "get_library_part"): "fetch_plans",
     ("brief", "submit_spec"): "pin_note", ("brief", "view_reference"): "pin_note",
-    ("assembler", "write_assembly"): "check_fit", ("assembler", "full_build"): "check_fit",
-    ("builder", "write_part"): "run_blender", ("builder", "search_library"): "read_parts",
+    ("assembler", "write_assembly"): "check_fit", ("assembler", "edit_assembly"): "check_fit",
+    ("assembler", "full_build"): "check_fit",
+    ("builder", "write_part"): "run_blender", ("builder", "edit_part"): "run_blender",
+    ("builder", "search_library"): "read_parts",
     ("builder", "get_library_part"): "read_parts",
-    ("animator", "write_motion"): "preview_frames", ("animator", "list_motion_helpers"): "motion_desk",
+    ("animator", "write_motion"): "preview_frames", ("animator", "edit_motion"): "preview_frames",
+    ("animator", "list_motion_helpers"): "motion_desk",
 }
 STEPS = [("catalog", "Ready-made", "brief"), ("research", "Research", "brief"),
          ("spec", "Spec", "brief"), ("plan", "Plan", "architect"), ("build", "Build", "builder"),
@@ -199,7 +203,8 @@ def _run(project, start, builders):
             step["note"] = f"{len(data['parts'])} part{'s' if len(data['parts']) != 1 else ''}"
         if key == "review" and done_v:
             d = done_v[-1]["data"]
-            step["note"] = f"v{d['version']}: {d['score'] / 10:.1f} / 10" + (" · passed" if d.get("passed") else "")
+            score = f"{d['score'] / 10:.1f} / 10" if d.get("score") is not None else "not scored"
+            step["note"] = f"v{d['version']}: {score}" + (" · passed" if d.get("passed") else "")
         if state == "failed":  # the step the run failed on says why
             step["note"] = _failure_reason(finished["data"].get("error"))
         steps.append(step)

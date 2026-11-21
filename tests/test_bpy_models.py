@@ -399,3 +399,164 @@ def test_the_studio_renders_a_colour_close_to_its_true_value(tmp_path):
     im = Image.open(result.outputs["renders"]["v"][0]).convert("RGB")
     grey = sum(sum(im.getpixel((x, y))) / 3 for x in range(90, 110) for y in range(90, 110)) / 400
     assert 112 <= grey <= 150, f"mid grey rendered as {grey:.0f} of 255 (true value 128)"
+
+
+POPUP_CAR = '''from bpy_lib import shell, helpers as h
+from bpy_lib.shells import car, car_sheet
+
+SHEET = {"style": "coupe", "length": 4.3, "width": 1.75, "height": 1.2, "lamp_style": "popup_open",
+         "diffuser": True, "grille_pattern": "horizontal", "intake_pattern": "mesh", "rear_pattern": "vertical"}
+S = car_sheet.resolve(SHEET)
+
+
+def build_body():
+    return car.body(SHEET)
+
+
+def build_wheel():
+    return shell.wheel(diameter=S["wheel_diameter"], width=S["wheel_width"], hub_reach=S["hub_reach"], spokes=6)
+
+
+def build_wing():
+    return shell.wing(span=1.3, chord=0.26, height=0.05, upright_spacing=S["wing_spacing"])  # asked too low
+
+
+def assemble(parts):
+    car.assemble(parts)
+'''
+
+
+@pytest.mark.blender
+def test_open_popups_grille_bars_and_a_raised_wing_are_built(tmp_path):
+    from modelgen.bpy_lib.shells import car_sheet
+    min_lift = car_sheet.MIN_WING_LIFT
+    file = tmp_path / "popup_car.py"
+    file.write_text(POPUP_CAR, encoding="utf-8")
+    steps = [blender.part_step(p, file, func=f"build_{p}") for p in ("body", "wheel", "wing")]
+    steps += [blender.assembly_step(file), blender.measure_step()]
+    result = blender.run_job(steps, timeout=900)
+    assert result.ok, result.traceback or result.stdout[-2000:]
+    parts = {}
+    for p in result.outputs["measure"]["parts"]:
+        parts.setdefault(p["part"], []).append(p)
+    s = car_sheet.resolve({"style": "coupe", "length": 4.3, "width": 1.75, "height": 1.2,
+                           "lamp_style": "popup_open"})
+    pods = parts["popup_lamps"][0]
+    x0, x1, y0, length = car_sheet.popup_lid(s)
+    # both pods on the hood's front corners, standing up out of it
+    assert pods["min"][1] >= y0 - 0.02 and pods["max"][1] <= y0 + length + 0.02
+    assert pods["size"][0] >= 2 * x1 - 0.1 and pods["max"][2] > s["nose_z"]
+    bars = parts["grilles"][0]
+    assert bars["min"][1] < s["y_front"] + 0.5 and bars["max"][1] > s["y_rear"] - 0.5  # front and rear openings
+    wing = parts["wing"][0]
+    deck = car_sheet.resolve({"style": "coupe", "length": 4.3, "height": 1.2})["deck_z"]
+    assert wing["max"][2] - deck >= min_lift  # lifted on its brackets even when asked too low
+    want = car_sheet.wing_geometry(span=1.3, chord=0.26, height=0.05, upright_spacing=s["wing_spacing"])["size"]
+    for got, size in zip(wing["size"], want):  # the plan's size for a wing is the size it is built at
+        assert abs(got - size) <= 0.03 * size + 0.004, (wing["size"], want)
+    assert wing["islands"] >= 1 + 2 + 2 * 4  # the plank, two plates, and open brackets of separate bars
+
+
+BUMPER_SKINS = '''import bmesh
+from bpy_lib import shell
+from bpy_lib.shells import car, car_sheet
+
+
+def _skin(style, bumper):
+    sheet = {"style": style} if bumper else {"style": style, "rear_bumper_style": "none"}
+    s = car_sheet.resolve(sheet)
+    return s, car._skin(s, car_sheet.features(s), name=f"{style}_{'with' if bumper else 'plain'}")
+
+
+def _tail(obj, z):
+    hit = shell.surface_point(obj, (0.0, 9.0, z), (0, -1, 0))
+    assert hit, z
+    return hit[0].y
+
+
+def _check(style):
+    s, with_b = _skin(style, True)
+    _, plain = _skin(style, False)
+    b = car_sheet.rear_bumper(s)
+    for obj in (with_b, plain):
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        assert all(e.is_manifold for e in bm.edges), f"{style}: the skin is not closed"
+        bm.free()
+        ys = [v.co.y for v in obj.data.vertices]
+        front, rear = car_sheet.end_protrusion(car_sheet.features(s))  # raised lamps bring the ends out fully
+        assert abs(max(ys) - (s["y_rear"] - rear)) < 0.002 and abs(min(ys) - (s["y_front"] + front)) < 0.002, (
+            style, min(ys), max(ys))
+    low, high = b["top"] - b["edge"] - 0.04, b["top"] + 0.06
+    stands = (_tail(with_b, low) - _tail(with_b, high)) - (_tail(plain, low) - _tail(plain, high))
+    assert abs(stands - b["out"]) < 0.02, f"{style}: the bumper stands out {stands:.3f}, not {b['out']}"
+    # its top edge rolls out of the body: no step between neighbouring heights through the edge
+    zs = [b["top"] + 0.02 - 0.01 * k for k in range(int((b["edge"] + 0.04) / 0.01) + 1)]
+    ys = [_tail(with_b, z) for z in zs]
+    steps = [abs(q - p) for p, q in zip(ys, ys[1:])]
+    assert max(steps) < max(0.012, 2.6 * b["out"] * 0.01 / b["edge"]), (style, max(steps))
+    return with_b
+
+
+def build_coupe():
+    return _check("coupe")
+
+
+def build_sedan():
+    return _check("sedan")
+
+
+def build_hatch():
+    return _check("hatch")
+
+
+def build_suv():
+    return _check("suv")
+
+
+def build_van():
+    return _check("van")
+'''
+
+
+@pytest.mark.blender
+def test_every_style_gets_a_smooth_rear_bumper_on_one_closed_skin(tmp_path):
+    from modelgen.bpy_lib.shells import car_sheet
+    file = tmp_path / "bumper_skins.py"
+    file.write_text(BUMPER_SKINS, encoding="utf-8")
+    steps = [blender.part_step(style, file, func=f"build_{style}") for style in car_sheet.STYLES]
+    result = blender.run_job(steps, timeout=900)
+    assert result.ok, result.traceback or result.stdout[-2000:]
+
+
+LAMP_BODIES = '''import bmesh
+from bpy_lib.shells import car
+
+
+def _body(style, shape):
+    obj = car.body({"style": style, "lamp_style": "projector", "lamp_shape": shape})
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    assert all(e.is_manifold for e in bm.edges), f"{style} {shape}: the body is not closed"
+    bm.free()
+    return obj
+
+'''
+
+
+@pytest.mark.blender
+@pytest.mark.parametrize("style", ["coupe", "sedan", "hatch", "suv", "van"])
+def test_every_headlight_shape_cuts_cleanly_on_every_style(tmp_path, style):
+    """The lamps are cut along the built nose's own surface (not the sheet's estimate of it), so every
+    shape goes into every style's nose and the body stays one closed piece."""
+    from modelgen.bpy_lib.shells import car_sheet
+    shapes = car_sheet.LAMP_SHAPES
+    code = LAMP_BODIES + "".join(f"\ndef build_{shape}():\n    return _body({style!r}, {shape!r})\n" for shape in shapes)
+    file = tmp_path / "lamp_bodies.py"
+    file.write_text(code, encoding="utf-8")
+    steps = [blender.part_step(shape, file, func=f"build_{shape}") for shape in shapes] + [blender.measure_step()]
+    result = blender.run_job(steps, timeout=1800)
+    assert result.ok, result.traceback or result.stdout[-2000:]
+    parts = {p["part"]: p for p in result.outputs["measure"]["parts"]}
+    for shape in shapes:
+        assert parts[shape]["islands"] == 1 and parts[shape]["non_manifold_edges"] == 0, (style, shape)

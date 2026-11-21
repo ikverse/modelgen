@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from modelgen import pipeline
+from modelgen import pipeline, runner
 from modelgen.bpy_lib.shells import car_archetypes, car_sheet
 from modelgen.tools import agent_tools as at
 from modelgen.tools import checks, render
@@ -470,3 +470,198 @@ def test_reference_images_are_paired_with_the_same_view(tmp_path):
     assert render.pair_sheet([(tmp_path / "missing.png", tmp_path / "side.png", "side")], tmp_path / "x.jpg") is None
     steps = render.final_steps(tmp_path, car=True)
     assert steps[-1]["views"] == render.CAR_VIEWS and len(render.final_steps(tmp_path)) == 3
+
+
+def test_open_popups_stand_as_two_mirrored_pods_on_their_lids():
+    s = car_sheet.resolve({"style": "coupe", "length": 4.3, "lamp_style": "popup_open"})
+    assert not car_sheet.check({"style": "coupe", "lamp_style": "popup_open"})
+    pods = car_sheet.popup_pods(s)
+    x0, x1, y0, length = car_sheet.popup_lid(s)
+    assert len(pods) == 2 and pods[0]["x"] == -pods[1]["x"] > 0
+    for pod in pods:
+        assert x0 <= abs(pod["x"]) <= x1 and pod["y"] >= y0 and pod["length"] <= length
+        assert 0.10 <= pod["face"] <= 0.15 and pod["width"] < x1 - x0
+    names = [f["name"] for f in car_sheet.features(s)]
+    assert "headlight_lids" in names  # the lids' shut lines are cut as for closed pop-ups
+    assert car_sheet.popup_pods(car_sheet.resolve({"style": "coupe", "lamp_style": "popup"})) == []
+
+
+def test_every_air_opening_gets_bars_inside_its_outline():
+    s = car_sheet.resolve({"style": "coupe", "length": 4.3, "diffuser": True, "grille_pattern": "horizontal",
+                           "intake_pattern": "mesh", "rear_pattern": "vertical"})
+    feats = car_sheet.features(s)
+    bars = car_sheet.grille_bars(s, feats)
+    by = {}
+    for b in bars:
+        by.setdefault(b["opening"], []).append(b)
+    assert set(by) == {"grille", "intake", "diffuser", "rear_vents"}
+    vents = by.pop("rear_vents")  # one in each corner of the bumper, the left one's bars the right one's mirrored
+    assert sorted((b["u0"], b["u1"]) for b in vents if b["u1"] < 0) == sorted((-b["u1"], -b["u0"]) for b in vents
+                                                                                if b["u0"] > 0)
+    assert all(b["v1"] - b["v0"] == pytest.approx(car_sheet.BAR) for b in by["grille"])  # horizontal
+    assert all(b["u1"] - b["u0"] == pytest.approx(car_sheet.BAR) for b in by["diffuser"])  # vertical
+    crossed = by["intake"]
+    assert any(b["u1"] - b["u0"] > 0.1 for b in crossed) and any(b["v1"] - b["v0"] > 0.05 for b in crossed)
+    outlines = {f["name"]: car_sheet.outline_points(f["outline"]) for f in feats if f["name"] in by}
+    for name, items in by.items():
+        us = [p[0] for p in outlines[name]]
+        vs = [p[1] for p in outlines[name]]
+        for b in items:  # inside the opening, clear of its edge
+            assert min(us) < b["u0"] < b["u1"] < max(us) and min(vs) < b["v0"] < b["v1"] < max(vs), name
+    assert not any(f["name"].startswith("diffuser_fin") for f in feats)  # the bars replace the fins
+    plain = car_sheet.resolve({"style": "coupe", "diffuser": True, "grille_pattern": "none",
+                               "intake_pattern": "none", "rear_pattern": "none"})
+    assert car_sheet.grille_bars(plain) == []
+    assert any(f["name"].startswith("diffuser_fin") for f in car_sheet.features(plain))
+
+
+def test_bars_on_an_added_opening_and_bad_patterns_are_refused():
+    vent = {"name": "rear_vent", "kind": "recess", "view": "rear", "until": 1.9, "depth": 0.02,
+            "outline": {"rect": [0.0, 0.3, 0.6, 0.1, 0.01]}, "bars": "vertical"}
+    s = car_sheet.resolve({"style": "coupe", "features": [vent]})
+    assert any(b["opening"] == "rear_vent" for b in car_sheet.grille_bars(s))
+    assert car_sheet.check({"style": "coupe", "features": [dict(vent, bars="zigzag")]})
+    assert car_sheet.check({"style": "coupe", "features": [dict(vent, view="side")]})
+    assert car_sheet.check({"style": "coupe", "intake_pattern": "dots"})
+
+
+def test_the_grille_and_the_intake_below_it_never_overlap():
+    for style in car_sheet.STYLES:
+        for lamp in car_sheet.LAMP_STYLES:
+            s = car_sheet.resolve({"style": style, "lamp_style": lamp})
+            feats = {f["name"]: f for f in car_sheet.features(s)}
+            if "grille" not in feats or "intake" not in feats or "rect" not in feats["intake"]["outline"]:
+                continue
+            g_bottom = min(v for _, v in car_sheet.outline_points(feats["grille"]["outline"]))
+            cu, cv, w, hgt, r = feats["intake"]["outline"]["rect"]
+            assert cv + hgt / 2 <= g_bottom - car_sheet.OPENING_GAP + 1e-6 or hgt <= 0.06 + 1e-6, (style, lamp)
+
+
+def test_a_critic_that_stops_without_an_answer_is_asked_again_then_left_unscored(tmp_path, monkeypatch):
+    rnd = car_round(tmp_path)
+    calls, waits = [], []
+
+    async def crashed(name, prompt, tools=(), **kw):
+        calls.append(name)
+        return runner.RunResult(agent=name, ok=False, error="ClaudeIn: Claude Code stopped without an answer.")
+
+    async def no_wait(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(pipeline.runner, "run_agent", crashed)
+    monkeypatch.setattr(pipeline.asyncio, "sleep", no_wait)
+    review = asyncio.run(pipeline._critic(rnd, {"sheets": {"turntable": "t.jpg"}, "checks": {"passed": True}},
+                                          None))
+    assert review["score"] is None and review["reviewed"] is False and review["changes"] == []
+    assert len(calls) == 1 + len(pipeline.CRITIC_RETRY_S) and waits == list(pipeline.CRITIC_RETRY_S)
+
+    calls.clear()
+
+    async def out_of_usage(name, prompt, tools=(), **kw):
+        calls.append(name)
+        return runner.RunResult(agent=name, ok=False, error="You've hit your session limit · resets 1:40am")
+
+    monkeypatch.setattr(pipeline.runner, "run_agent", out_of_usage)
+    review = asyncio.run(pipeline._critic(rnd, {"sheets": {"turntable": "t.jpg"}, "checks": {"passed": True}},
+                                          None))
+    assert len(calls) == 1 and review["score"] is None and "session limit" in review["summary"]
+
+
+def test_review_again_scores_a_built_version_without_rebuilding(tmp_path, monkeypatch):
+    from modelgen import config, db
+    name = db.create_project("red car", "a red car")["name"]
+    folder = pipeline.version_dir(name, 1)
+    rnd = car_round(tmp_path)
+    (folder / "renders").mkdir(parents=True)
+    Image.new("RGB", (8, 8)).save(folder / "renders" / "sheet_turntable.jpg")
+    for f in ("spec.json", "plan.json"):
+        (folder / f).write_text((rnd.dir / f).read_text(encoding="utf-8") if (rnd.dir / f).is_file()
+                                else '{"parts": []}', encoding="utf-8")
+    (folder / "checks.json").write_text('{"passed": true, "gates": {}}', encoding="utf-8")
+    db.add_version(name, 1, note="round 1")
+    db.update_version(name, 1, status="done", score=None, passed=0, review=None)
+    seen = {}
+
+    async def critic(rnd_, outcome, last_review, prev_dir=None, judge=True):
+        seen["sheets"] = outcome["sheets"]
+        return {"score": 85.0, "summary": "good", "changes": [], "scores": {}}
+
+    monkeypatch.setattr(pipeline, "_critic", critic)
+    out = asyncio.run(pipeline.run(name, review=1))
+    v = db.get_version(name, 1)
+    assert out["ok"] and out["score"] == 85.0 and v["score"] == 85.0 and v["review"]["summary"] == "good"
+    assert seen["sheets"]["turntable"].endswith("sheet_turntable.jpg")
+    assert db.highest_version_number(name) == 1  # nothing rebuilt
+
+
+def test_every_style_gets_its_rear_bumper_and_the_tail_details_sit_on_it():
+    seen = set()
+    for style in car_sheet.STYLES:
+        s = car_sheet.resolve({"style": style, "diffuser": True})
+        assert not car_sheet.check({"style": style, "diffuser": True})
+        b = car_sheet.rear_bumper(s)
+        assert s["rear_bumper_style"] == car_sheet.REAR_BUMPER_OF[style] and b["out"] >= 0.04
+        seen.add((s["rear_bumper_style"], b["out"], b["edge"]))
+        assert b["top"] < s["tail_z"] and b["top"] - b["edge"] > s["ride_height"] + 0.08
+        assert s["y_rear"] - b["wrap"] > s["axle_rear"] + s["arch_radius"]  # it fades out behind the wheel opening
+        feats = {f["name"]: f for f in car_sheet.features(s)}
+        assert "rear_bumper" not in feats  # no raised box: the bumper is the skin itself
+        diffuser = car_sheet.outline_points(feats["diffuser"]["outline"])
+        assert max(v for _, v in diffuser) <= b["top"] - b["edge"]
+        assert s["ride_height"] < s["exhaust_z"] < b["top"] - b["edge"]
+        assert feats["rear_bumper_joint"]["path"][-1][1] == pytest.approx(b["top"])
+        assert ("rear_vents" in feats) == (s["rear_bumper_style"] in ("sport", "classic"))
+    assert len(seen) >= 4  # the styles differ
+    plain = car_sheet.resolve({"style": "coupe", "rear_bumper_style": "none"})
+    assert car_sheet.rear_bumper(plain) is None and plain["exhaust_z"] == pytest.approx(plain["ride_height"] + 0.12)
+    assert car_sheet.check({"style": "coupe", "rear_bumper_style": "boxy"})
+    assert car_sheet.check({"style": "coupe", "rear_bumper_out": 0.4})
+
+
+def test_the_wing_is_a_thin_tilted_plank_on_brackets_with_taller_plates():
+    for style in car_sheet.WING_STYLES:
+        g = car_sheet.wing_geometry(span=1.3, style=style)
+        ys, zs = [y for y, _ in g["blade"]], [z for _, z in g["blade"]]
+        chord = car_sheet.WING_STYLES[style][0]
+        rise = max(zs) - min(zs)
+        assert 0.03 < rise < 0.12 and max(ys) - min(ys) > chord * 0.9  # tilted, and thin: no airfoil hump
+        lead = min(g["blade"], key=lambda p: p[0])
+        trail = max(g["blade"], key=lambda p: p[0])
+        assert trail[1] > lead[1] + 0.02  # nose down, the trailing edge up
+        plate_z = [z for _, z in g["plate"]]
+        assert max(plate_z) - min(plate_z) > rise and max(plate_z) >= max(zs) - 0.02  # the plates stand taller
+        assert len(g["brackets"]) == 2 and all(len(bars) == 4 for _, bars in g["brackets"])  # two legs, a cross brace
+        assert min(zs) >= car_sheet.MIN_WING_LIFT - 0.05
+    low = car_sheet.wing_geometry(span=1.3, height=0.04)  # asked too low: still lifted on its brackets
+    assert min(z for _, z in low["blade"]) > 0.07
+    assert car_sheet.wing_geometry(span=1.3, style="curved")["lift"](0.65) > car_sheet.wing_geometry(
+        span=1.3, style="curved")["lift"](0.0)
+    with pytest.raises(ValueError):
+        car_sheet.wing_geometry(style="ducktail")
+    plan = car_sheet.make_plan({"sheet": {"style": "coupe"}, "accessories": {"wing": {"style": "street", "span": 1.4}}})
+    wing = next(p for p in plan["parts"] if p["name"] == "wing")
+    assert "style='street'" in wing["seed"] and wing["dimensions"]["width"] == pytest.approx(1.416)
+
+
+def test_side_windows_run_to_a_point_or_stop_upright_as_the_sheet_says():
+    def ends(sheet):
+        s = car_sheet.resolve(sheet)
+        dlo, glass = car_sheet.side_openings(s)
+        tips = []
+        for y_end in (min(y for y, _ in dlo), max(y for y, _ in dlo)):
+            near = [z for y, z in dlo if abs(y - y_end) < 0.006]  # the height of the very end
+            tips.append(max(near) - min(near))
+        return s, dlo, glass, tips
+
+    for style in car_sheet.STYLES:
+        s, dlo, glass, (front, rear) = ends({"style": style})
+        assert not car_sheet.check({"style": style})
+        assert s["dlo_front"] == "point" and s["dlo_rear"] == ("upright" if style == "van" else "point")
+        assert front < 0.07, (style, front)  # the front end narrows to a tip at the mirror
+        assert (rear < 0.07) == (style != "van"), (style, rear)
+        assert len(glass) == 2 and not car_sheet._crosses(dlo) and not any(car_sheet._crosses(g) for g in glass)
+        # the point reaches forward of where an upright window starts
+        _, upright, _, (u_front, u_rear) = ends({"style": style, "dlo_front": "upright", "dlo_rear": "upright"})
+        assert u_front > 0.08 and u_rear > 0.08, style
+        assert min(y for y, _ in dlo) < min(y for y, _ in upright) - 0.05, style
+    assert car_sheet.check({"style": "coupe", "dlo_front": "round"})

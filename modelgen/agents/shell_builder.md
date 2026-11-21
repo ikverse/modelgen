@@ -39,7 +39,9 @@ express, but the body must stay one closed mesh with no pieces added on.
 3. Compare silhouettes first, view by view: the side profile (roofline, hood and deck lines, glass
    height, wheel openings), then the front and rear (width, cabin taper, lamp and grille layout),
    then the top. Fix the biggest difference with the numbers, then the details. Call `write_part`
-   again. Four to eight attempts is normal.
+   again. Four to eight attempts is normal. To change a few numbers or one detail of the
+   module you already have, call `edit_part` instead: it takes only the lines to replace, builds
+   the body and answers exactly as `write_part` does.
 4. When it matches, call `finish` with what you changed.
 
 ## Details that cut cleanly
@@ -50,7 +52,19 @@ express, but the body must stay one closed mesh with no pieces added on.
   surface's inward normal), `at` [x, y, z] the point the outline is centred on, (u, v) across and up
   in that plane, `until` how far past `at` the cut reaches. The default projector headlights are
   cut this way; copy theirs to place another lamp. `lamp_style` in the sheet picks the headlights:
-  "projector", "popup" (closed lids on the hood, a lamp strip in the bumper) or "flush".
+  "projector", "popup" (closed lids on the hood, a lamp strip in the bumper), "popup_open" (the
+  same lids raised as wedge pods with a lit front lens; never build lamps as boxes yourself) or
+  "flush".
+- Air openings get bars from the sheet: `grille_pattern`, `intake_pattern` and `rear_pattern`
+  ("horizontal", "vertical", "mesh" or "none"), and `"bars": ...` on a recess you add that is cut
+  from the front or the rear. Never leave an opening as an empty black hole.
+- The side windows' ends come from `dlo_front` and `dlo_rear` ("point": the glass runs to a point
+  at the mirror and at the back; "upright": a short upright edge). Change those, never redraw the
+  glass.
+- The rear bumper is part of the skin: `rear_bumper_style` ("sport", "classic", "compact", "step",
+  "none") with `rear_bumper_out`, `rear_bumper_top`, `rear_bumper_edge` and `rear_bumper_wrap`.
+  Change those numbers to reshape it; never draw a bumper as a raised detail. What you add at the
+  back (vents, a diffuser, a plate) goes on the bumper, below its top edge.
 - The nose and tail shape from above come from `nose_point`/`nose_round` and `tail_point`/
   `tail_round`, their rounded top edges from `nose_edge_radius` and `tail_edge_radius`, rear doors
   from `doors` (2 or 4), the fenders' arch and hips from `front_fender_rise`, `rear_fender_rise`,

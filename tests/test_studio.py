@@ -374,6 +374,17 @@ def test_a_finished_run_has_no_time_left():
     assert run["percent"] == 100 and run["current"] is None and run["eta_s"] == 0
 
 
+def test_a_version_without_a_score_shows_not_scored():
+    name = db.create_project("red car", "a red car")["name"]
+    db.add_event("build_started", project=name, data={"kind": "new"})
+    pipeline._phase(name, "Rendering", step="render", version=1)
+    db.add_event("version_done", project=name, data={"version": 1, "passed": True, "summary": "a car"})
+    db.add_event("finished", project=name, data={"ok": True, "score": None})
+    run = studio_state._run(name, db.last_event("build_started", name), [])
+    notes = [s.get("note") for s in run["steps"]]
+    assert "v1: not scored · passed" in notes, notes
+
+
 def test_the_step_a_run_failed_on_says_why():
     name = db.create_project("airpods", "AirPods")["name"]
     db.add_event("build_started", project=name, data={"kind": "new", "text": "AirPods"})
@@ -505,8 +516,28 @@ def _fake_build(monkeypatch, name, scores):
     """Run the pipeline with every agent and Blender step faked; each version gets the next score."""
     from modelgen.tools import blender
     from modelgen.tools.files import ProjectFiles
-    scores, seen = list(scores), {"notes": [], "prev": [], "motion": []}
+    scores, seen = list(scores), {"notes": [], "prev": [], "motion": [], "judge": [], "route": None, "ran": [],
+                                  "faults": {}}
     monkeypatch.setattr(blender, "available", lambda: True)
+
+    async def route(project, changes, spec, plan):
+        return seen["route"]  # None: the architect plans the change, as before the router
+
+    async def stage_report(rnd, motion=True):
+        return {"ok": True, "materials": {}, "motion": {}}
+
+    async def assembly_faults(rnd, doing=""):
+        seen["ran"].append("check assembly")
+        return list(seen["faults"].get("assembly", []))
+
+    async def stage_fault(rnd, before, stage, rebuilt):
+        seen["ran"].append(f"check {stage}")
+        return seen["faults"].get(stage)
+
+    def agent(label):
+        async def run(rnd, notes, *a, **k):
+            seen["ran"].append((label, list(notes)))
+        return run
 
     async def nothing(*a, **k):
         return None
@@ -523,7 +554,8 @@ def _fake_build(monkeypatch, name, scores):
                  "warnings": []}
         return {"ok": True, "checks": found, "measure": {}, "sheets": {"turntable": "t.jpg"}}
 
-    async def critic(rnd, outcome, last_review, prev_dir=None):
+    async def critic(rnd, outcome, last_review, prev_dir=None, judge=True):
+        seen["judge"].append(judge)
         s = scores.pop(0)
         return {"score": s, "scores": {}, "summary": f"scored {s}",
                 "changes": [{"target": "seat", "parameter": "edge", "change": f"round it (v{rnd.number})"}]}
@@ -533,9 +565,11 @@ def _fake_build(monkeypatch, name, scores):
         rnd.files.write("motion.py", "def animate(parts): pass\n")
 
     for fn, fake_fn in (("_build_parts", build_parts), ("_final_build", final_build), ("_critic", critic),
-                        ("_assemble", nothing), ("_materials", nothing), ("_animate", animate),
-                        ("_librarian", nothing)):
+                        ("_assemble", agent("assembler")), ("_materials", agent("materials")),
+                        ("_animate", animate), ("_librarian", nothing), ("_stage_report", stage_report),
+                        ("_assembly_faults", assembly_faults), ("_stage_fault", stage_fault)):
         monkeypatch.setattr(pipeline, fn, fake_fn)
+    monkeypatch.setattr(pipeline.change_router, "route", route)
     folder = pipeline.version_dir(name, 1)
     files = ProjectFiles(folder)
     files.write("spec.json", json.dumps({"object": "stool"}))
@@ -846,3 +880,217 @@ def test_a_deleted_versions_number_is_not_used_again():
     db.delete_version(name, 2)
     assert db.highest_version_number(name) == 2  # its run still holds the number
     assert db.highest_version_number("no-such-model") == 0
+
+
+# --- a change runs only the work it needs ------------------------------------------------------
+
+def _no_architect(monkeypatch):
+    async def architect_change(*a, **k):
+        raise AssertionError("a routed change does not go to the architect")
+    monkeypatch.setattr(pipeline, "_architect_change", architect_change)
+
+
+def _finished_model(name):
+    """Give v1 the files of a finished model, so a change starts from them."""
+    from modelgen.tools.files import ProjectFiles
+    files = ProjectFiles(pipeline.version_dir(name, 1))
+    files.write("parts/seat.py", "def build(): pass\n")
+    files.write("assembly.py", "def assemble(parts): pass\n")
+    files.write("materials.py", "def apply(parts): pass\n")
+    return files
+
+
+def test_a_routed_change_reaches_only_the_part_it_names_without_the_critics_list(monkeypatch):
+    name = scored_project(status="needs_changes", score=55.0, passed=False)
+    seen = _fake_build(monkeypatch, name, [70.0])
+    _no_architect(monkeypatch)
+    seen["route"] = {"parts": ["seat"], "assembly": False, "materials": False, "motion": False, "why": ""}
+    asyncio.run(pipeline._run(name, None, "make the seat round"))
+    notes = seen["notes"][0]
+    assert list(notes) == ["seat"] and len(notes["seat"]) == 1 and "make the seat round" in notes["seat"][0]
+    assert "30 mm" not in str(notes)       # the critic's open change waits for "Build next version"
+    assert seen["judge"] == [False]         # so the critic does not mark it landed or missed
+    assert db.get_project(name)["base_version"] == 2
+
+
+def test_a_change_the_router_cannot_place_is_planned_by_the_architect_as_before(monkeypatch):
+    name = scored_project(status="needs_changes", score=55.0, passed=False)
+    seen = _fake_build(monkeypatch, name, [70.0])
+
+    async def architect_change(project, spec, plan, changes, library):
+        return plan, {"seat"}
+    monkeypatch.setattr(pipeline, "_architect_change", architect_change)
+    asyncio.run(pipeline._run(name, None, "add a backrest"))
+    assert set(seen["notes"][0]) == {"seat", "assembly", "materials"} and "30 mm" not in str(seen["notes"][0])
+
+
+def test_a_colour_change_runs_the_materials_agent_alone(monkeypatch):
+    name = scored_project(status="needs_changes", score=55.0, passed=False)
+    seen = _fake_build(monkeypatch, name, [70.0])
+    _no_architect(monkeypatch)
+    _finished_model(name)
+    seen["route"] = {"parts": [], "assembly": False, "materials": True, "motion": False, "why": ""}
+    asyncio.run(pipeline._run(name, None, "paint it red"))
+    assert seen["notes"] == []                                   # no builder ran
+    assert [r[0] for r in seen["ran"]] == ["materials"] and "paint it red" in seen["ran"][0][1][0]
+
+
+def test_rebuilt_parts_keep_the_assembly_and_materials_that_still_fit(monkeypatch):
+    name = scored_project(status="needs_changes", score=55.0, passed=False)
+    seen = _fake_build(monkeypatch, name, [70.0, 70.0])
+    _no_architect(monkeypatch)
+    _finished_model(name)
+    seen["route"] = {"parts": ["seat"], "assembly": False, "materials": False, "motion": False, "why": ""}
+    asyncio.run(pipeline._run(name, None, "make the seat round"))
+    assert seen["ran"] == ["check assembly", "check materials"]  # checked, and no agent redid them
+    files = _finished_model(name)
+    db.update_project(name, base_version=1)
+    seen["ran"].clear()
+    seen["faults"] = {"assembly": ["Check no_floaters failed: 1 piece"], "materials": "slot wood is gone"}
+    asyncio.run(pipeline._run(name, None, "make the seat round"))
+    assert seen["ran"] == ["check assembly", ("assembler", ["Check no_floaters failed: 1 piece"]),
+                           "check materials", ("materials", ["slot wood is gone"])]
+    assert files.exists("assembly.py")
+
+
+def test_a_rebuilt_part_that_changed_size_goes_back_to_the_assembler():
+    rnd = pipeline.Round(project="p", number=2, dir=None, files=None, spec={}, plan={})
+    rnd.part_reports = {"seat": {"size_m": {"x": 0.40, "y": 0.40, "z": 0.03}},
+                        "leg": {"size_m": {"x": 0.04, "y": 0.04, "z": 0.451}}}
+    before = {"seat": {"x": 0.30, "y": 0.40, "z": 0.03}, "leg": {"x": 0.04, "y": 0.04, "z": 0.45}}
+    notes = pipeline._size_notes(rnd, ["seat", "leg"], before)
+    assert len(notes) == 1 and "seat" in notes[0] and "0.300 x 0.400 x 0.030" in notes[0]
+
+
+def test_the_router_answers_what_a_change_needs_or_leaves_it_to_the_architect(monkeypatch):
+    from modelgen import change_router
+    plan = {"parts": [{"name": "seat", "description": "round seat"}, {"name": "leg", "description": "leg"}]}
+    answers = []
+
+    async def run_agent(name, prompt, tools, **kw):
+        assert name == "router" and "make the seat round" in prompt and "seat" in prompt
+        reply = tools[0].fn(answers.pop(0))
+        if reply.get("ok") is False and answers:
+            tools[0].fn(answers.pop(0))
+        return runner.RunResult(agent="router")
+    monkeypatch.setattr(change_router.runner, "run_agent", run_agent)
+
+    def ask(*args):
+        answers[:] = args
+        return asyncio.run(change_router.route("p", "make the seat round", {"object": "stool"}, plan))
+
+    base = {"parts": [], "assembly": False, "materials": False, "motion": False, "plan": False}
+    assert ask({**base, "parts": ["seat"], "motion": True}) == {
+        "parts": ["seat"], "plan": False, "assembly": False, "materials": False, "motion": False, "why": ""}
+    assert ask({**base, "parts": ["seat"], "plan": True}) is None       # a part to add: the architect plans it
+    assert ask(base) is None                                             # nothing named: the architect plans it
+    assert ask({**base, "parts": ["backrest"]}) is None                  # an unknown part is refused, nothing routed
+    assert ask({**base, "parts": ["backrest"]}, {**base, "materials": True})["materials"] is True
+    assert change_router.describe({**base, "parts": ["seat"], "materials": True}) == \
+        "the builder of seat, the materials agent"
+
+
+def test_an_edit_changes_a_few_lines_and_builds_like_a_write():
+    from modelgen.tools import agent_tools as at
+    code = "def build():\n    width = 0.30\n    depth = 0.30\n"
+    assert at.patched(code, [{"old": "width = 0.30", "new": "width = 0.45"}]) == (
+        "def build():\n    width = 0.45\n    depth = 0.30\n", None)
+    assert "appears 2 times" in at.patched(code, [{"old": "0.30", "new": "0.45"}])[1]
+    assert "appears 0 times" in at.patched(code, [{"old": "height", "new": "h"}])[1]
+    assert "no code" in at.patched("", [{"old": "a", "new": "b"}])[1]
+    assert "at least one edit" in at.patched(code, [])[1]
+
+    class Files:
+        def exists(self, path):
+            return True
+
+        def read(self, path):
+            return code
+
+    built = []
+
+    async def write(args):
+        built.append(args["code"])
+        return {"ok": True}
+    rnd = type("R", (), {"files": Files()})()
+    tool = at._edit_tool(rnd, "edit_part", "parts/seat.py", write, "write_part")
+    assert asyncio.run(tool.fn({"edits": [{"old": "depth = 0.30", "new": "depth = 0.40"}]})) == {"ok": True}
+    assert built == ["def build():\n    width = 0.30\n    depth = 0.40\n"]
+    assert asyncio.run(tool.fn({"edits": [{"old": "nope", "new": "x"}]}))["ok"] is False and len(built) == 1
+
+
+def test_every_agent_that_writes_code_can_also_edit_it():
+    from modelgen.tools import agent_tools as at
+    from modelgen.tools.files import ProjectFiles
+    name = scored_project()
+    rnd = pipeline.Round(project=name, number=1, dir=pipeline.version_dir(name, 1),
+                         files=ProjectFiles(pipeline.version_dir(name, 1)), spec={"object": "stool"},
+                         plan={"parts": [{"name": "seat"}]})
+    for tools, wanted in ((at.builder_tools(rnd, "seat"), "edit_part"), (at.assembler_tools(rnd), "edit_assembly"),
+                          (at.materials_tools(rnd), "edit_materials"), (at.animator_tools(rnd), "edit_motion")):
+        assert wanted in [t.name for t in tools]
+
+
+def test_a_build_records_where_its_time_went(monkeypatch):
+    name = scored_project()
+
+    async def run(*a, **k):
+        db.add_event("phase", project=name, data={"text": "Building", "step": "build"})
+        db.add_event("tool_call", project=name, agent="builder-1", data={"tool": "write_part"})
+        db.add_event("tool_done", project=name, agent="builder-1", data={"tool": "write_part"})
+        db.add_event("run", project=name, agent="builder-1", data={"role": "builder", "seconds": 12.5, "cost_usd": 0.2})
+        db.add_event("phase", project=name, data={"text": "Rendering", "step": "render"})
+        return {"ok": True, "version": 1}
+    monkeypatch.setattr(pipeline, "_run", run)
+    asyncio.run(pipeline.run(name, changes="make it red"))
+    found = json.loads((pipeline.version_dir(name, 1) / "timings.json").read_text(encoding="utf-8"))
+    assert found["build"] == "changes" and set(found["steps"]) == {"build", "render"}
+    assert found["agents"] == {"builder": {"runs": 1, "seconds": 12.5, "usd": 0.2}}
+    assert found["tools"]["write_part"]["calls"] == 1 and found["total_seconds"] >= 0
+
+
+def test_the_librarian_files_the_parts_while_the_report_is_written(monkeypatch):
+    name = scored_project()
+    order = []
+
+    async def run(*a, **k):
+        return {"ok": True, "version": 1, "score": 84.0, "keep": 1}
+
+    async def librarian(project, number, library):
+        order.append("librarian starts")
+        await asyncio.sleep(0.02)
+        order.append("librarian ends")
+
+    async def on_done(project, outcome):
+        order.append("report")
+        assert "keep" not in outcome
+    monkeypatch.setattr(pipeline, "_run", run)
+    monkeypatch.setattr(pipeline, "_librarian", librarian)
+    asyncio.run(pipeline.run(name, request="a stool", on_done=on_done))
+    assert order == ["report", "librarian starts", "librarian ends"] or order == ["librarian starts", "report",
+                                                                                 "librarian ends"]
+    assert "keep" not in db.last_event("finished", name)["data"]
+
+
+@pytest.mark.parametrize("built_by, judge", [("changes", False), ("next", True)])
+def test_review_again_marks_the_old_change_list_only_for_a_version_built_from_it(monkeypatch, built_by, judge):
+    name = scored_project(status="needs_changes", score=55.0, passed=False)
+    folder = pipeline.version_dir(name, 2)
+    (folder / "renders").mkdir(parents=True)
+    Image.new("RGB", (8, 8)).save(folder / "renders" / "sheet_turntable.jpg")
+    (folder / "spec.json").write_text('{"object": "stool"}', encoding="utf-8")
+    (folder / "plan.json").write_text('{"parts": [{"name": "seat"}]}', encoding="utf-8")
+    (folder / "checks.json").write_text('{"passed": true, "gates": {}}', encoding="utf-8")
+    db.add_event("build_started", project=name, data={"kind": built_by, "text": "make the seat round"})
+    db.add_event("version_started", project=name, data={"version": 2, "round": 1})
+    db.add_version(name, 2)
+    db.update_version(name, 2, status="done", score=None, passed=0, review=None)
+    seen = {}
+
+    async def critic(rnd, outcome, last_review, prev_dir=None, judge=True):
+        seen.update(judge=judge, last=last_review)
+        return {"score": 70.0, "summary": "fine", "changes": [], "scores": {}}
+    monkeypatch.setattr(pipeline, "_critic", critic)
+    out = asyncio.run(pipeline.run(name, review=2))
+    assert out["ok"] and out["score"] == 70.0
+    assert seen["judge"] is judge and seen["last"]["changes"][0]["change"] == "make it 30 mm"

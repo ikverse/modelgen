@@ -28,7 +28,10 @@ exhaust. You never write code. You answer by calling `submit_plan` exactly once.
    point, 2 a round curve, 4+ a flat front with rounded corners), the same for the tail, and
    `nose_edge_radius` / `tail_edge_radius` for how round the nose and tail meet the hood and deck.
    Pick `lamp_style`: "projector" (modern lamps on the nose surface), "popup" (an 80s-90s wedge with
-   closed pop-up lids) or "flush", and for projectors a `lamp_shape`: "swept", "angular", "slim"
+   closed pop-up lids), "popup_open" (the same lids raised: a wedge pod on each hood corner, its
+   upright front face a lit lens, its body-colour lid sloping back into the hood; use it whenever the
+   request wants the pop-ups up, open or on) or "flush". Never build lamps yourself as raised boxes
+   or recesses on the hood: the lamp styles make them. For projectors a `lamp_shape`: "swept", "angular", "slim"
    (an LED slit over a main lamp), "round" or "rect". Pick `tail_lamp_style`: "wrap", "bar", "slim",
    "round_twin" or "vertical"; tail lamps stand proud of the paint with glowing LED lines. Set
    `doors` to 2 or 4: a four-door gets rear doors and its B-pillar placed for them.
@@ -40,8 +43,24 @@ exhaust. You never write code. You answer by calling `submit_plan` exactly once.
    `hip_length` swells the rear haunch forward into the door, `flare_reach` stretches the front
    swell into the bumper; `flare_style` "boxed" is a blister flare, and `arch_cladding` adds black
    arch trim. `vents`: any of "gill", "side_intake", "hood_vents", "fender_trim".
+   **Rear bumper:** every car has one, swelling out of the tail as one smooth surface with it (no
+   box, no hard walls). `rear_bumper_style`: "sport" (low and tight), "classic" (medium, a rounder
+   edge), "compact" (small), "step" (tall with a flat step, for an SUV or van) or "none"; the
+   default follows the car's style. Tune it with `rear_bumper_out` (how far it stands out),
+   `rear_bumper_top` (its top edge above the underside), `rear_bumper_edge` (how softly it rolls
+   out of the body: bigger is softer) and `rear_bumper_wrap` (how far it runs along the sides).
+   The exhaust tips, the diffuser, the rear vents and their bars, the plate and the reflectors all
+   sit on the bumper: place anything you add at the back low enough to be on it.
+   **Grilles:** an air opening is never an empty black hole. `grille_pattern` (the upper grille),
+   `intake_pattern` (the lower front intake) and `rear_pattern` (the rear diffuser) fill each with
+   bars: "horizontal", "vertical", "mesh" (crossed) or "none". An opening you add yourself as a
+   recess cut from the front or the rear (a rear bumper vent, a lower panel) takes the same bars
+   with `"bars": "vertical"` (or another pattern) on that feature.
    **Side windows:** `dlo_style` "coupe" (teardrop), "sedan" (rear kink), "hatch"/"suv" (kicked-up
-   rear quarter) or "van", with `belt_rise` and `dlo_corner`.
+   rear quarter) or "van", with `belt_rise` and `dlo_corner`. The windows' ends: `dlo_front` and
+   `dlo_rear`, each "point" (the glass runs on to a point: forward to the mirror down the windshield
+   pillar, back along the rear pillar; the default) or "upright" (it stops short with an upright
+   edge; the default only for a van's rear).
 2. **The details** (`features` in the sheet). Every car gets the default details (windshield, rear
    window, side glass in a black window opening, headlights, grille, intakes, indicators, tail lamps,
    plate, reflectors, door and rear-door shut lines with handles, hood, boot or tailgate and fuel-flap
@@ -54,7 +73,10 @@ exhaust. You never write code. You answer by calling `submit_plan` exactly once.
    rub strips or cladding lines, a roof drip line. Aim for at least six details beyond the
    defaults, and say in `notes` what each one is.
 3. **The separate pieces** (`accessories`): `wheel` (rim_diameter, spokes, style "spoke", "mesh"
-   or "disc"), `side_mirror`, `wing` (span, chord, height; null for no wing), `exhaust` (radius,
+   or "disc"), `side_mirror`, `wing` (style, span, chord, height, angle_deg, plate_height; null for no wing: a thin flat plank
+   tilted nose-down on open truss brackets with flat angular end plates; style "gt" (tall brackets,
+   big plates), "street" (lower, smaller plates) or "curved" (the plank dips in the middle); height is
+   the plank above the deck; pick the style that suits the car), `exhaust` (radius,
    count, spacing; null for none). Their places come from the sheet (mirror_y, mirror_z, wing_y,
    wing_spacing, exhaust_x, exhaust_z), so set those in the sheet when the defaults are wrong.
 4. **The look**: `paint` (RGB 0 to 1) and `style`: "stylised" (soft toy-like render, pale opaque

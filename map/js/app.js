@@ -1388,6 +1388,19 @@ window.MG = window.MG || {};
   }
   app.setUpdate = setUpdate;
 
+  async function restartServer() {
+    if (!app.handlers.restart) return;
+    if (!window.confirm('Restart ModelGen? This page reconnects by itself in a few seconds.')) return;
+    try {
+      const r = await app.handlers.restart(false);
+      if (r.action === 'confirm') {
+        if (!window.confirm(`Running now: ${r.running.join(', ')}. Restart anyway? A build stops (what the team built so far is kept) and a job goes back in the queue and starts over.`)) return;
+        await app.handlers.restart(true);
+      }
+      toast('Restarting ModelGen. This page reconnects by itself in a few seconds.');
+    } catch (e) { toast('Not restarted: ' + e.message); }
+  }
+
   async function saveSettings(change) {
     if (!app.handlers.saveSettings) return;
     try {
@@ -1598,6 +1611,7 @@ window.MG = window.MG || {};
       else if (a === 'stop-build') stopBuild();
       else if (a === 'update-now') installUpdate();
       else if (a === 'update-check') checkUpdate();
+      else if (a === 'restart') restartServer();
       else if (a === 'retry-build') retryBuild();
       else if (a === 'delete-model') deleteModel();
       else if (a === 'export') exportSelected();

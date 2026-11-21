@@ -494,3 +494,35 @@ def test_a_drawn_character_exports_cel_bands_and_outline_widths_on_every_materia
         extras = mat.get("extras") or {}
         assert "mg_toon_colors" in extras and extras.get("mg_outline", 0) > 0, mat["name"]
     assert not any("outline" in m["name"] for m in gltf["meshes"])  # the render-only ink shells stay out
+
+
+# --- a change that sets one plain value needs no designer --------------------------------------
+
+def test_a_plain_height_or_build_is_set_on_the_sheet_and_anything_else_goes_to_the_designer():
+    from modelgen import change_router
+    sheet, _ = ch.clean({"age": 30, "sex": "female", "build": "slim"})
+    builds = list(ch.BUILDS)
+
+    def direct(text):
+        return change_router.direct_character(text, sheet, builds, ch.HEIGHT_RANGE)
+
+    assert direct("make her 180 cm tall") == {"height_cm": 180.0} and direct("height 172 cm") == {"height_cm": 172.0}
+    assert direct("make her muscular") == {"build": "muscular", "muscle": None, "weight": None}
+    for other in ("make her 5 cm taller", "make her more muscular", "make her slim", "give her a red coat",
+                  "make her taller and muscular", "make her 900 cm tall", "make her ten years older",
+                  "she should look like a tired detective who has not slept in three days at all"):
+        assert direct(other) is None, other
+    changed, _ = ch.clean({**sheet, **direct("make her muscular")})
+    assert changed["build"] == "muscular" and changed["muscle"] > sheet["muscle"]
+    assert {k: v for k, v in changed.items() if k not in ("build", "muscle", "weight")} == \
+        {k: v for k, v in sheet.items() if k not in ("build", "muscle", "weight")}
+    assert ch.clean(sheet)[0] == sheet  # a sheet reads back as written, so the rest cannot shift
+
+
+def test_only_the_driving_speed_of_a_mechanism_is_set_without_the_engineer():
+    from modelgen import change_router
+    sheet = {"parts": [{"name": "pinion", "teeth": 12}], "driver": "pinion", "rpm": 30.0, "direction": "clockwise"}
+    assert change_router.direct_mechanism("run it at 120 rpm", sheet)["rpm"] == 120.0
+    assert change_router.direct_mechanism("run it at 120 rpm", sheet)["parts"] == sheet["parts"]
+    for other in ("make it 20 rpm faster", "make the pinion 14 teeth", "use a bigger gear", "120 rpm and 14 teeth"):
+        assert change_router.direct_mechanism(other, sheet) is None, other

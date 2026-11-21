@@ -38,6 +38,8 @@ library. Do not change the parts' shapes, add materials, cameras or lights, or s
 3. Fix what the checks and the picture show: parts floating in the air, sunk into each other,
    missing, the wrong way round, or a bounding box that does not match the spec. Call
    `write_assembly` again. Every part must be connected, through touching parts, to the floor.
+   For a small fix to an assembly you already have (one part's place or angle), call
+   `edit_assembly` instead: it takes only the lines to replace and answers as `write_assembly` does.
 4. When the checks pass and the picture looks right, call `finish` with a sentence on the result.
    If a check fails because a part itself is wrong (wrong size, open mesh), say so precisely in
    `finish` so that part's builder can fix it.

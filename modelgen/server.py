@@ -20,8 +20,8 @@ from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketD
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (api_v1, config, db, director, jobs, pipeline, questions, runner, settings_store, studio_state, talk,
-               updater, uploads)
+from . import (api_v1, config, db, director, jobs, lifetime, pipeline, questions, runner, settings_store, studio_state,
+               talk, updater, uploads)
 from .tools.files import OutsideProject, ProjectFiles
 from .tools.library import Library, clean_name
 
@@ -72,6 +72,23 @@ def _broadcast(item):
     _loop.call_soon_threadsafe(_schedule_snapshot)
 
 
+def _busy():
+    """What a restart would interrupt, and what keeps an --auto-stop server up with no page open:
+    running builds and /v1 jobs that are building or queued."""
+    return updater.running_builds() + [f"{j['client']}: {j['object']}"
+                                       for j in db.list_jobs(status="building") + db.queued_jobs()]
+
+
+_watch = lifetime.Watch(lambda: bool(_busy()))
+
+
+async def _auto_stop(stop):
+    while not _watch.due():
+        await asyncio.sleep(lifetime.CHECK_S)
+    print("The last ModelGen page closed, so ModelGen stopped.")
+    stop()
+
+
 async def _ticker():
     """Done and failed fade back to free after a while; a regular snapshot shows that."""
     while True:
@@ -99,6 +116,7 @@ async def lifespan(app):
     ticker = asyncio.create_task(_ticker())
     checker = asyncio.create_task(updater.loop(asyncio.sleep))
     builder = asyncio.create_task(jobs.worker()) if app.state.run_jobs else None
+    stopper = asyncio.create_task(_auto_stop(app.state.stop)) if app.state.stop else None
     try:
         yield
     finally:
@@ -106,6 +124,8 @@ async def lifespan(app):
         checker.cancel()
         if builder:
             builder.cancel()
+        if stopper:
+            stopper.cancel()
         updater.unsubscribe(_update_changed)
         db.unsubscribe(_broadcast)
         _loop = None
@@ -124,6 +144,7 @@ class FreshStaticFiles(StaticFiles):
 
 app = FastAPI(title="ModelGen", lifespan=lifespan)
 app.state.run_jobs = True  # the tests turn the job worker off and drive jobs.run themselves
+app.state.stop = None  # main() sets it with --auto-stop: how the server stops after its last page closes
 app.include_router(api_v1.router)
 app.mount("/static", FreshStaticFiles(directory=config.WEB_DIR), name="static")
 app.mount("/map", FreshStaticFiles(directory=MAP_DIR, html=True), name="map")
@@ -325,6 +346,23 @@ async def api_update_install(payload: dict = Body(default={})):
         return await asyncio.to_thread(updater.install, True)
     except updater.UpdateError as exc:
         raise HTTPException(409, str(exc))
+
+
+@app.post("/api/restart")
+async def api_restart(payload: dict = Body(default={})):
+    """Start a fresh ModelGen and close this one; the page reconnects. With a build or job running,
+    the answer asks the page to confirm first ({"action": "confirm"}); force=true then stops the
+    builds (what was built so far is kept) and a building job goes back in the queue."""
+    running = _busy()
+    if running and not (payload or {}).get("force"):
+        return {"action": "confirm", "running": running}
+    try:
+        lifetime.restart()
+    except FileNotFoundError as exc:
+        raise HTTPException(409, str(exc))
+    for name in updater.running_builds():
+        pipeline.stop(name)
+    return {"action": "restarting"}
 
 
 # --- projects and versions -----------------------------------------------------------------
@@ -580,6 +618,7 @@ async def ws(socket: WebSocket):
     await socket.accept()
     queue = asyncio.Queue()
     _clients.add(queue)
+    _watch.opened()
 
     async def sender():
         while True:
@@ -609,6 +648,7 @@ async def ws(socket: WebSocket):
         pass
     finally:
         _clients.discard(queue)
+        _watch.closed()
         send_task.cancel()
 
 
@@ -616,15 +656,23 @@ def main():
     parser = argparse.ArgumentParser(description="Start the ModelGen page")
     parser.add_argument("--open", action="store_true", help="open the page in the browser")
     parser.add_argument("--port", type=int, default=int(config.get("server", "port", 8770)))
+    parser.add_argument("--auto-stop", action="store_true",
+                        help="stop a little after the last page closes, once no build or job is running")
     args = parser.parse_args()
     host = config.get("server", "host", "127.0.0.1")
     url = f"http://{host}:{args.port}/"
     jobs.BASE_URL = url.rstrip("/")  # the /v1 API's file links are absolute
-    print(f"ModelGen is running at {url}  (close this window to stop it)")
+    print(f"ModelGen is running at {url}  (close this window to stop it"
+          + (", or close its page)" if args.auto_stop else ")"))
     if args.open:
         threading.Timer(1.5, webbrowser.open, [url]).start()
     import uvicorn
-    uvicorn.run(app, host=host, port=args.port, log_level="warning")
+    # a browser can keep an idle connection open after its page closed; do not wait on it for ever
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=args.port, log_level="warning",
+                                           timeout_graceful_shutdown=5))
+    if args.auto_stop:
+        app.state.stop = lambda: setattr(server, "should_exit", True)
+    server.run()
 
 
 if __name__ == "__main__":
